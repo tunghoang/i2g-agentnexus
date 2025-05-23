@@ -1,0 +1,50 @@
+File Operations & Metadata (5 questions)
+
+What metadata is in file 1054310702.las?
+List all LAS files in the data directory
+Compare the depth ranges of files 1054310702.las and 1054310703.las
+How many curves are present in 1054310703.las?
+What is the well name and location for 1054310702.las?
+
+Curve Analysis & Data Quality (5 questions)
+
+Analyze the GR curve in well 1054310702.las
+What is the average resistivity value in well 1054310703.las?
+Check the quality of neutron porosity data in 1054310702.las
+Are there any quality issues with 1054310703.las?
+What is the depth resolution of data in file 1054310702.las?
+
+Formation Evaluation (5 questions)
+
+Evaluate formation properties in well 1054310702.las
+Calculate porosity from the density log in 1054310703.las
+What is the net pay thickness in well 1054310703.las using default cutoffs?
+Calculate water saturation in well 1054310702.las using Archie's equation
+Identify potential hydrocarbon-bearing zones in 1054310702.las
+
+Shale Volume Calculation (3 questions)
+
+Calculate the volume of shale in well 1054310702.las using the gamma ray method
+Calculate the volume of shale in well 1054310703.las using the gamma ray method
+What is the average shale content in well 1054310728.las?
+
+Well Correlation & Formation Tops (5 questions)
+
+Correlate the formations between wells 1054310702.las and 1054310703.las
+Identify common marker horizons in wells 1054310702.las and 1054310728.las
+How do the gamma ray logs correlate across wells 1054310702.las and 1054310703.las?
+Find matching formation tops between wells in the data directory
+Correlate formations across wells 1054310702.las, 1054310728.las, and 1054310703.las
+
+Expert Knowledge & Interpretation (4 questions)
+
+I'm looking at a well log with high resistivity but low porosity. What could that mean?
+Can you help me understand how to identify tight gas sands in logs?
+What does a high neutron-density separation indicate?
+How do I interpret gamma ray spikes in a carbonate reservoir?
+
+Advanced Analysis (3 questions)
+
+Compare the petrophysical properties of wells 1054310702.las and 1054310703.las
+Using gamma ray and resistivity, identify potential shale-sand sequences in well 1054310703.las
+Which well shows the thickest reservoir section based on porosity cutoff of 10%?
