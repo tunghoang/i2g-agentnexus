@@ -1,0 +1,22 @@
+# Default SEG-Y Trace Header Template
+# Based on SEG-Y Rev 1 Standard
+# Format: "FIELD_NAME"  BYTE_POSITION
+
+# Essential positioning fields
+"SX"  73
+"SY"  77
+"XY SCALER"  71
+
+# 2D Survey fields
+"SHOT POINT"  17
+"CDP"  21
+"SP_SCALAR"  69
+
+# 3D Survey fields  
+"IN LINE"  189
+"CROSS LINE"  193
+
+# Additional useful fields
+"ELEVATION"  41
+"OFFSET"  37
+"TRACE_NUMBER"  1

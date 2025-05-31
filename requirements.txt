@@ -22,3 +22,12 @@ beautifulsoup4>=4.12.0
 flask>=2.3.0
 fastapi>=0.100.0
 uvicorn>=0.22.0
+
+# Production SEG-Y Tools
+psutil>=5.9.0          # Memory monitoring and system info
+scipy>=1.10.0          # Statistical analysis for QC
+
+# NEW: Intelligent SEG-Y Processing Dependencies
+scikit-learn>=1.3.0    # For PCA analysis in pattern recognition
+joblib>=1.3.0          # For potential parallel processing and caching
+segyio

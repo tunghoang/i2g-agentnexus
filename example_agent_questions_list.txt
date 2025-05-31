@@ -48,3 +48,17 @@ Advanced Analysis (3 questions)
 Compare the petrophysical properties of wells 1054310702.las and 1054310703.las
 Using gamma ray and resistivity, identify potential shale-sand sequences in well 1054310703.las
 Which well shows the thickest reservoir section based on porosity cutoff of 10%?
+
+
+
+> What files are available in my data directory?
+> Parse 1054310895.las and show me the metadata
+> What's the system status?
+> Analyze 3X_75_PR.SGY for quality issues
+
+✅ analyze the formation in 1054310680.las (already working)
+✅ classify all seismic files matching *.sgy
+✅ detect template for survey_3d.sgy
+✅ get system status
+✅ intelligent analysis of seismic_data.sgy
+✅ compare seismic surveys for compatibility
