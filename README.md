@@ -10,13 +10,12 @@ Agentic framework integrating SEG-Y seismic analysis and LAS well log evaluation
 ### Core Capabilities
 🔍 **Multi-Format Support** - SEG-Y seismic files and LAS well logs  
 📊 **Intelligent Analysis** - Survey classification, quality control, and formation evaluation  
-🔗 **Data Integration** - Well-to-seismic correlation and multi-file processing  
 🛡️ **Quality Assurance** - Automated validation with industry-standard thresholds  
 🧠 **AI Expertise** - Natural language geological interpretation and workflow guidance  
 📈 **Advanced Analytics** - Dynamic range analysis, geometry mapping, and petrophysical calculations  
 
 ### AI Agentic Architecture
-**Google Agent-to-Agent (A2A)** - Specialized subsurface data interpretation expert agent  
+**Google Agent-to-Agent (A2A)** - Specialized subsurface data expert agent  
 **Anthropic Model Context Protocol (MCP)** - 16 standardized tool integrations  
 **LangChain Orchestration** - Intelligent multi-agent workflow coordination  
 
@@ -176,21 +175,21 @@ graph TD
 
 ### Agent Responsibilities
 
-#### 🎯 **LangChain Meta-Agent (Orchestrator)**
+#### **LangChain Meta-Agent (Orchestrator)**
 **Role**: Query analysis, agent coordination, and response synthesis
 - **Input Processing**: Parses user queries and determines analysis requirements
 - **Agent Selection**: Routes queries to appropriate specialized agents and tools
 - **Workflow Orchestration**: Manages multi-step analysis workflows
 - **Response Integration**: Synthesizes results from multiple agents into coherent answers
 
-#### 🧠 **Google A2A Expert Agent (Technical Specialist)**
+#### **Google A2A Expert Agent (Technical Specialist)**
 **Role**: Technical guidance and workflow recommendations
 - **Data Characterization**: Provides technical analysis of file properties
 - **Quality Evaluation**: Applies industry-standard assessment criteria  
 - **Workflow Guidance**: Recommends processing sequences based on data characteristics
 - **Technical Consultation**: Answers questions about file formats and processing methods
 
-#### 🛠️ **Anthropic MCP Tools (Execution Layer)**
+#### **Anthropic MCP Tools (Execution Layer)**
 **Role**: Data processing and analysis execution
 - **File Processing**: Handles SEG-Y and LAS file parsing and validation
 - **Technical Analysis**: Performs calculations, quality control, and data extraction
@@ -436,19 +435,6 @@ mivaa-agentnexus/
 
 ---
 
-## 🤝 Contributing
-
-```bash
-# Development setup
-git clone -b develop https://github.com/mivaa-admin/mivaa-agentnexus.git
-pip install -r requirements-dev.txt
-python -m pytest tests/
-```
-
-**Guidelines**: Follow PEP 8, add docstrings, include tests, update docs.
-
----
-
 ## 📄 License & Support
 
 - **License**: MIT License
@@ -461,6 +447,4 @@ python -m pytest tests/
 
 Built with **Google A2A**, **Anthropic MCP**, **segyio**, **lasio**, **LangChain**, **FastMCP**, and **OpenAI**.
 
-**Technical framework for geophysical data analysis and processing workflows** 🎯
-
-*Production-ready agentic framework providing technical analysis of geophysical data formats using industry-standard libraries.*
+**Technical framework for geophysical data analysis and processing workflows** 
