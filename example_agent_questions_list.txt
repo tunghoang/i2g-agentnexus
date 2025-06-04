@@ -62,3 +62,12 @@ Which well shows the thickest reservoir section based on porosity cutoff of 10%?
 ✅ get system status
 ✅ intelligent analysis of seismic_data.sgy
 ✅ compare seismic surveys for compatibility
+
+> list files
+> Extract complete metadata from 3X_75_PR.SGY
+> Extract metadata from 3X_75_PR.SGY
+> Quick summary of shots0001_0200.segy
+> Extract complete metadata from Model94_shots.segy
+> Extract complete metadata from F3_Dip_steered_median_subvolume_IL230-430_XL475-675_T1600-1800.sgy
+> Get comprehensive metadata for Model94_shots.segy
+> Get comprehensive metadata for Model94_shots.segy (second attempt)

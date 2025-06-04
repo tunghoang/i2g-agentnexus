@@ -13,6 +13,7 @@ import datetime
 import csv
 from pathlib import Path
 from typing import Any, Optional
+from functools import wraps
 
 # Third-party Libraries
 import numpy as np
@@ -60,6 +61,7 @@ from formation_evaluation import (
 try:
     from production_segy_tools import (
         production_segy_parser,
+        segy_complete_metadata_harvester,
         find_segy_file,
         NumpyJSONEncoder,
         TemplateValidator,          # ADD THIS
@@ -77,7 +79,7 @@ try:
     from survey_classifier import SurveyClassifier
 
     SEGYIO_COMPONENTS_AVAILABLE = True
-    print("✓ Segyio-based SEG-Y processing enabled")
+    # print("✓ Segyio-based SEG-Y processing enabled")
     INTELLIGENT_SEGY_AVAILABLE = True
 
 except ImportError as e:
@@ -133,6 +135,12 @@ FILE_TYPE_CONFIG = {
     }
 }
 
+def protect_from_recursion():
+    """Increase recursion limit with protection"""
+    original_limit = sys.getrecursionlimit()
+    sys.setrecursionlimit(2000)  # Increase from 1000 to 2000
+    return original_limit
+
 
 def detect_file_type(pattern_or_filename):
     """Automatically detect file type from pattern or filename"""
@@ -144,9 +152,13 @@ def detect_file_type(pattern_or_filename):
             if ext.lower() in text:
                 return file_type
 
-    # Default to LAS if no extension specified
-    if not any(ext in text for config in FILE_TYPE_CONFIG.values() for ext in config["extensions"]):
-        return "las"  # Default
+    # Only default to LAS if pattern explicitly suggests it
+    if text in ["*", "list", "files"] or not text:
+        return None  # Show all file types
+
+    # Default to LAS only for LAS-like patterns
+    if "well" in text or "log" in text:
+        return "las"
 
     return None
 
@@ -917,6 +929,8 @@ def main():
     if not check_api_key():
         return 1
 
+    protect_from_recursion()
+
     # Parse arguments
     args = parse_arguments()
 
@@ -933,7 +947,7 @@ def main():
 
     # Initialize SEG-Y Production System
     try:
-        print("\n🔧 Initializing SEG-Y Production System...")
+        # print("\n🔧 Initializing SEG-Y Production System...")
 
         # Create required directories
         template_dir = Path("./templates")
@@ -950,7 +964,7 @@ def main():
             try:
                 template_validator = TemplateValidator()
                 default_template = template_validator.create_default_template(str(template_dir))
-                print(f"✓ SEG-Y templates initialized: {template_dir.resolve()}")
+                # print(f"✓ SEG-Y templates initialized: {template_dir.resolve()}")
             except Exception as e:
                 print(f"⚠️  Template system initialization failed: {e}")
 
@@ -958,25 +972,25 @@ def main():
             try:
                 memory_monitor = MemoryMonitor()
                 available_memory = memory_monitor.get_available_memory_gb()
-                print(f"✓ Memory monitoring initialized: {available_memory:.1f}GB available")
+                # print(f"✓ Memory monitoring initialized: {available_memory:.1f}GB available")
             except Exception as e:
                 print(f"⚠️  Memory monitoring initialization failed: {e}")
 
             # Create default configuration
             try:
                 default_config_path = create_default_config(str(config_dir / "segy_config.yaml"))
-                print(f"✓ SEG-Y configuration created: {default_config_path}")
+                # print(f"✓ SEG-Y configuration created: {default_config_path}")
             except Exception as e:
                 print(f"⚠️  Configuration creation failed: {e}")
 
             # Validate SEG-Y system
             try:
                 validator = SegyioValidator()
-                print(f"✓ SEG-Y validator ready")
+                # print(f"✓ SEG-Y validator ready")
             except Exception as e:
                 print(f"⚠️  Validator initialization failed: {e}")
 
-            print("✓ SEG-Y Production System initialized successfully with segyio")
+            # print("✓ SEG-Y Production System initialized successfully with segyio")
         else:
             print("⚠️  Segyio components not available - using fallback mode")
             print("✓ Directory structure created")
@@ -1249,7 +1263,17 @@ def main():
     def create_enhanced_agent_with_tools(a2a_agent, mcp_tools, model="gpt-4o", temperature=0.0):
         """Create an agent that actually uses the tools"""
 
-        llm = ChatOpenAI(model=model, temperature=temperature)
+        llm = ChatOpenAI(
+            model=model,
+            temperature=temperature,
+            max_tokens=1500,
+            request_timeout=30,
+            max_retries=2,
+            # ADD this to force proper format:
+            model_kwargs={
+                "stop": ["Observation:", "\nObservation:", "Observation:\n"]
+            }
+        )
 
         # Enhanced system prompt that tells the agent to USE the tools
         system_prompt = """You are an expert subsurface data analyst with access to powerful analysis tools for both well logs and seismic data.
@@ -1273,6 +1297,7 @@ def main():
     - segy_template_detect: Template detection using segyio native header reading
     - segy_survey_compare: Compare SEG-Y files for processing compatibility
     - quick_segy_summary: Get fast overview of SEG-Y files without full processing
+    - segy_complete_metadata_harvester: Extract comprehensive metadata from all header types (EBCDIC, Binary, Trace)
 
     GENERAL TOOLS:
     - list_files: List available data files matching patterns
@@ -1292,7 +1317,13 @@ def main():
     3. Call segy_qc with "survey.sgy" to check data quality
     4. Call segy_analysis with "survey.sgy" for detailed geometry analysis
     5. For quick overview, use quick_segy_summary instead of full analysis
-    6. Interpret results and provide expert seismic analysis
+    6. For comprehensive metadata extraction, use segy_complete_metadata_harvester for all header types
+    7. Interpret results and provide expert seismic analysis
+    
+    Alternative workflows:
+    - Complete file characterization: Use segy_complete_metadata_harvester for one-stop comprehensive analysis
+    - Quick assessment: Use quick_segy_summary for fast inventory and basic parameters
+    - Traditional detailed analysis: Use steps 1-4 above for specialized multi-tool analysis
 
     For multi-file analysis ("correlate all wells" or "analyze seismic survey"):
     1. Call list_files to see available files
@@ -2411,6 +2442,24 @@ def main():
         except Exception as e:
             return create_error_response(f"Quick summary failed: {str(e)}")
 
+    @mcp_server.tool(name="segy_complete_metadata_harvester",
+                     description="Extract comprehensive metadata from all SEG-Y header types (EBCDIC, Binary, Trace)")
+    def segy_complete_metadata_harvester_wrapper(file_path=None, **kwargs):
+        """Complete metadata harvester using segyio for all header types"""
+        try:
+            params = segy_tools.handle_input(file_path, **kwargs)
+            # Import and call the real function
+            import production_segy_tools as pst
+            return pst.segy_complete_metadata_harvester(**params)
+        except Exception as e:
+            return create_error_response(
+                f"Complete metadata harvester failed: {str(e)}",
+                suggestions=[
+                    "Check file accessibility and format",
+                    "Verify segyio components are installed",
+                    "Ensure file is valid SEG-Y format"
+                ]
+            )
     # ========================================
     # SYSTEM TOOLS
     # ========================================
@@ -2445,7 +2494,7 @@ def main():
                 "segy_survey_analysis", "segy_template_detect", "segy_batch_classify",
                 "segy_survey_compare", "intelligent_segy_analysis",
                 "intelligent_survey_analysis", "quick_segy_summary",
-                "intelligent_qc_analysis", "system_status"
+                "intelligent_qc_analysis", "segy_complete_metadata_harvester","system_status"
             ]
 
             # Data directory info
@@ -2540,7 +2589,7 @@ def main():
             "well_correlation", "list_files", "calculate_shale_volume"
         ],
         "segy_tools": [
-            "segy_parser", "segy_analysis", "segy_qc", "segy_survey_analysis"
+            "segy_parser", "segy_analysis", "segy_qc", "segy_survey_analysis", "segy_complete_metadata_harvester"
         ],
         "intelligent_segy_tools": [
             "segy_classify", "segy_template_detect", "segy_survey_compare"
@@ -2671,7 +2720,17 @@ def main():
         print("\nCreating Hybrid Subsurface Data Management Agent")
 
         # Create LLM for agent
-        llm = ChatOpenAI(model=model, temperature=temperature)
+        llm = ChatOpenAI(
+            model=model,
+            temperature=temperature,
+            max_tokens=1500,
+            request_timeout=30,
+            max_retries=2,
+            # ADD this to force proper format:
+            model_kwargs={
+                "stop": ["Observation:", "\nObservation:", "Observation:\n"]
+            }
+        )
 
         # Configuration constants
         AGENT_CONFIG = {
@@ -2706,12 +2765,18 @@ def main():
                 "quality_statement": "You provide reliable, production-quality analysis with comprehensive error handling, progress tracking, and detailed validation. Your intelligent capabilities solve common processing bottlenecks automatically while maintaining enterprise-grade reliability."
             },
             "agent_params": {
-                "max_iterations": 10,
-                "max_execution_time": 300,  # 5 minutes
-                "early_stopping_method": "generate",
-                "handle_parsing_errors": True
-            }
+            "max_iterations": 3,        # CHANGE from 10 to 3
+            "max_execution_time": 45,   # CHANGE from 120 to 45
+            "early_stopping_method": "generate",
+            "handle_parsing_errors": True
+}
         }
+
+        # "agent_params": {
+        #     "max_iterations": 10,  # ← Change this to 2
+        #     "max_execution_time": 300,  # ← Change this to 60
+        #     "early_stopping_method": "generate",  # ← Change this to "force"
+        #     "handle_parsing_errors": True
 
         TOOL_DEFINITIONS = {
             # LAS Tools - Direct MCP calls (unchanged)
@@ -2749,6 +2814,10 @@ def main():
                                     "description": "Compare multiple SEG-Y files for processing compatibility with segyio validation."},
             "quick_segy_summary": {"mcp_tool": "quick_segy_summary",
                                    "description": "Get instant overview of SEG-Y files with segyio-powered fast inventory and basic parameters."},
+            "segy_complete_metadata_harvester": {
+                "mcp_tool": "segy_complete_metadata_harvester",
+                "description": "Extract comprehensive metadata from all SEG-Y header types (EBCDIC, Binary, Trace) with intelligent parsing and quality assessment."
+            },
 
             # System Tools
             "system_status": {"mcp_tool": "system_status",
@@ -2775,8 +2844,8 @@ def main():
 
         # Direct command patterns - updated for streamlined tools
         COMMAND_PATTERNS = {
-            # SEG-Y Commands - Updated for 8-tool structure
-            ("classify", "segy", ".sgy"): "segy_classify",  # Now handles both single and batch
+            # SEG-Y Commands - Updated for 9-tool structure (adding complete metadata harvester)
+            ("classify", "segy", ".sgy"): "segy_classify",
             ("detect template", "find template"): "segy_template_detect",
             ("compare", "survey", "segy"): "segy_survey_compare",
             ("parse", "intelligent"): ("segy_parser", {"auto_detect": True}),
@@ -2784,6 +2853,12 @@ def main():
             ("analyze", "survey"): "segy_survey_analysis",
             ("quick", "summary"): "quick_segy_summary",
             ("analyze", "segy"): "segy_analysis",
+
+            # Add your new complete metadata harvester
+            ("extract complete metadata", "complete metadata",
+             "comprehensive metadata"): "segy_complete_metadata_harvester",
+            ("extract comprehensive", "harvest metadata", "all headers"): "segy_complete_metadata_harvester",
+            ("metadata from all", "all header types"): "segy_complete_metadata_harvester",
 
             # LAS Commands (unchanged)
             ("parse all",): ("las_parser", {"selection_mode": "all"}),
@@ -3189,21 +3264,40 @@ def main():
             def get_stats(self):
                 return self.stats.copy()
 
-        # Create agent executor with EXPLICIT tool usage instructions
+
+        # suffix = """Use the following format:
+        #
+        # Question: the input question you must answer
+        # Thought: you should always think about what to do
+        # Action: the action to take, should be one of the available tools
+        # Action Input: the input to the action
+        # Observation: the result of the action
+        # ... (this Thought/Action/Action Input/Observation can repeat N times)
+        # Thought: I now know the final answer
+        # Final Answer: the final answer to the original input question
+        #
+        # Begin!
+        #
+        # Question: {input}
+        # Thought: I need to analyze this request and determine which tools to use to get actual data.
+        # {agent_scratchpad}"""
+
+        # Create agent executor
         enhanced_prefix = create_system_prompt(AGENT_CONFIG)
-        suffix = """Begin!
 
-    Question: {input}
-    Thought: I need to analyze this request and determine which tools to use. If the user is asking about analyzing data files, I MUST use the appropriate tools to get actual results.
-    {agent_scratchpad}"""
+        # Use LangChain's default suffix (most reliable)
+        prompt = ZeroShotAgent.create_prompt(tools, prefix=enhanced_prefix)
 
-        prompt = ZeroShotAgent.create_prompt(tools, prefix=enhanced_prefix, suffix=suffix,
-                                             input_variables=["input", "agent_scratchpad"])
         memory = ConversationBufferMemory(memory_key="chat_history")
         llm_chain = LLMChain(llm=llm, prompt=prompt)
         agent = ZeroShotAgent(llm_chain=llm_chain, tools=tools, verbose=verbose)
-        agent_executor = AgentExecutor.from_agent_and_tools(agent=agent, tools=tools, memory=memory,
-                                                            **AGENT_CONFIG["agent_params"])
+        agent_executor = AgentExecutor.from_agent_and_tools(
+            agent=agent,
+            tools=tools,
+            memory=memory,
+            return_intermediate_steps=False,
+            **AGENT_CONFIG["agent_params"]
+        )
 
         # Create hybrid agent
         hybrid_agent = HybridAgent(agent_executor, enhanced_direct_command_processor, FALLBACK_HANDLERS)
@@ -3501,6 +3595,9 @@ def main():
                 print("⏳ Please wait...")
 
                 try:
+                    # ADD RATE LIMITING - Wait 1 second before processing
+                    time.sleep(1)
+
                     # Process the query using our hybrid agent
                     response = meta_agent.run(user_input)
                     cleaned_response = clean_response(response)
@@ -3512,12 +3609,17 @@ def main():
                                         log_dir=args.log_dir)
 
                 except Exception as e:
-                    error_message = f"Error processing query: {str(e)}"
-                    print(f"\n❌ {error_message}")
-                    traceback.print_exc()
+                    error_msg = str(e)
+                    if "rate limit" in error_msg.lower() or "429" in error_msg:
+                        print("⚠️ Rate limit reached. Please wait 30 seconds before trying again.")
+                        time.sleep(30)
+                    elif "recursion" in error_msg.lower():
+                        print("⚠️ Processing too complex. Try a simpler request or a smaller file.")
+                    else:
+                        print(f"⚠️ Error: {error_msg}")
 
                     # Still log the error for tracking
-                    save_qa_interaction(user_input, error_message,
+                    save_qa_interaction(user_input, error_msg,
                                         log_format=args.log_format,
                                         log_dir=args.log_dir)
 
