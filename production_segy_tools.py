@@ -24,10 +24,239 @@ from datetime import datetime
 import re
 import hashlib
 from dataclasses import dataclass
+from scipy.signal import hilbert
+from scipy.spatial import ConvexHull
+from collections import Counter
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+
+def smart_truncate_metadata_json(metadata_dict, max_length=2000, target_format="summary"):
+    """
+    Intelligently truncate metadata JSON while keeping it valid
+
+    Args:
+        metadata_dict: Dictionary containing metadata
+        max_length: Maximum character length for output
+        target_format: "summary", "simplified", or "full"
+
+    Returns:
+        str: Valid JSON string under max_length
+    """
+
+    def estimate_json_size(obj):
+        """Estimate JSON size without full serialization"""
+        return len(json.dumps(obj, separators=(',', ':')))
+
+    def create_summary_version(metadata):
+        """Create a summary version with only essential information"""
+        summary = {
+            "file_info": {
+                "file_path": metadata.get("file_info", {}).get("file_path"),
+                "filename": metadata.get("file_info", {}).get("filename"),
+                "file_size_mb": metadata.get("file_info", {}).get("file_size_mb"),
+                "total_traces": metadata.get("file_info", {}).get("total_traces"),
+                "samples_per_trace": metadata.get("file_info", {}).get("samples_per_trace")
+            },
+            "binary_header": {
+                "technical_specifications": {
+                    "sample_interval_microseconds": metadata.get("binary_header", {}).get("technical_specifications",
+                                                                                          {}).get(
+                        "sample_interval_microseconds"),
+                    "samples_per_trace": metadata.get("binary_header", {}).get("technical_specifications", {}).get(
+                        "samples_per_trace"),
+                    "data_format": metadata.get("binary_header", {}).get("technical_specifications", {}).get(
+                        "data_format")
+                },
+                "survey_parameters": {
+                    "survey_type_code": metadata.get("binary_header", {}).get("survey_parameters", {}).get(
+                        "survey_type_code"),
+                    "coordinate_units": metadata.get("binary_header", {}).get("survey_parameters", {}).get(
+                        "coordinate_units")
+                }
+            },
+            "processing_summary": {
+                "extraction_successful": True,
+                "truncated": True,
+                "truncation_reason": "Output optimized for MCP rate limits"
+            },
+            "extraction_metadata": metadata.get("extraction_metadata", {})
+        }
+
+        # Remove None values
+        return _remove_none_values(summary)
+
+    def create_simplified_version(metadata):
+        """Create simplified version without trace sampling details"""
+        simplified = metadata.copy()
+
+        # Remove or simplify large sections
+        if "trace_headers_analysis" in simplified:
+            trace_analysis = simplified["trace_headers_analysis"]
+            # Keep only summary statistics, remove individual samples
+            if "sampling_info" in trace_analysis:
+                trace_analysis["sampling_info"] = {
+                    "traces_sampled": trace_analysis["sampling_info"].get("traces_sampled"),
+                    "sampling_successful": trace_analysis["sampling_info"].get("sampling_successful")
+                }
+
+            # Simplify statistics to just basic metrics
+            if "statistics" in trace_analysis:
+                stats = trace_analysis["statistics"]
+                simplified_stats = {}
+                for field, field_stats in stats.items():
+                    if isinstance(field_stats, dict):
+                        simplified_stats[field] = {
+                            "min": field_stats.get("min"),
+                            "max": field_stats.get("max"),
+                            "count": field_stats.get("count")
+                        }
+                trace_analysis["statistics"] = simplified_stats
+
+        # Simplify EBCDIC headers
+        if "ebcdic_header" in simplified:
+            simplified["ebcdic_header"] = {
+                "text_headers_count": simplified["ebcdic_header"].get("text_headers_count"),
+                "encoding_info": simplified["ebcdic_header"].get("encoding_info"),
+                "first_header_preview": simplified["ebcdic_header"].get("first_header_preview", "")[
+                                        :200] + "..." if len(
+                    simplified["ebcdic_header"].get("first_header_preview", "")) > 200 else simplified[
+                    "ebcdic_header"].get("first_header_preview")
+            }
+
+        return _remove_none_values(simplified)
+
+    def _remove_none_values(obj):
+        """Recursively remove None values from dict/list"""
+        if isinstance(obj, dict):
+            return {k: _remove_none_values(v) for k, v in obj.items() if v is not None}
+        elif isinstance(obj, list):
+            return [_remove_none_values(item) for item in obj if item is not None]
+        else:
+            return obj
+
+    # Try different approaches in order of preference
+    approaches = []
+
+    if target_format == "full":
+        approaches = [
+            ("full", metadata_dict),
+            ("simplified", lambda: create_simplified_version(metadata_dict)),
+            ("summary", lambda: create_summary_version(metadata_dict))
+        ]
+    elif target_format == "simplified":
+        approaches = [
+            ("simplified", lambda: create_simplified_version(metadata_dict)),
+            ("summary", lambda: create_summary_version(metadata_dict))
+        ]
+    else:  # summary
+        approaches = [
+            ("summary", lambda: create_summary_version(metadata_dict))
+        ]
+
+    for approach_name, data_source in approaches:
+        try:
+            # Get the data
+            if callable(data_source):
+                data = data_source()
+            else:
+                data = data_source
+
+            # Convert to JSON with minimal formatting
+            json_str = json.dumps(data, separators=(',', ':'), ensure_ascii=False)
+
+            # Check if it fits
+            if len(json_str) <= max_length:
+                logging.info(f"Smart truncation: {approach_name} format fits ({len(json_str)} chars)")
+                return json_str
+            else:
+                logging.info(f"Smart truncation: {approach_name} format too large ({len(json_str)} chars)")
+
+        except Exception as e:
+            logging.warning(f"Smart truncation: {approach_name} format failed: {e}")
+            continue
+
+    # Last resort: Create minimal metadata
+    minimal = {
+        "file_info": {
+            "filename": metadata_dict.get("file_info", {}).get("filename", "unknown"),
+            "total_traces": metadata_dict.get("file_info", {}).get("total_traces", 0),
+        },
+        "processing_summary": {
+            "extraction_successful": True,
+            "truncated": True,
+            "truncation_reason": "Minimal output due to size constraints"
+        },
+        "extraction_metadata": {
+            "processing_duration_seconds": metadata_dict.get("extraction_metadata", {}).get(
+                "processing_duration_seconds", 0)
+        }
+    }
+
+    json_str = json.dumps(minimal, separators=(',', ':'))
+    logging.warning(f"Smart truncation: Using minimal format ({len(json_str)} chars)")
+    return json_str
+
+
+def replace_truncation_logic():
+    """
+    This is the replacement code for the truncation logic in production_segy_tools.py
+
+    Replace the section around line 1048 that does simple truncation
+    """
+    replacement_code = '''
+    # Smart JSON truncation to ensure valid JSON
+    if len(metadata_json) > max_text_length:
+        logging.info(f"Metadata JSON ({len(metadata_json)} chars) exceeds limit ({max_text_length}), applying smart truncation")
+
+        try:
+            # Parse the JSON back to dict for smart truncation
+            metadata_dict = json.loads(metadata_json)
+
+            # Apply smart truncation
+            truncated_json = smart_truncate_metadata_json(
+                metadata_dict, 
+                max_length=max_text_length,
+                target_format=return_format
+            )
+
+            # Update metadata with truncation info
+            result_metadata["rate_limit_warning"] = {
+                "original_size": len(metadata_json),
+                "truncated_size": len(truncated_json),
+                "truncation_method": "smart_json_truncation"
+            }
+
+            metadata_json = truncated_json
+            logging.info(f"Smart truncation successful: {len(metadata_json)} chars")
+
+        except Exception as e:
+            logging.error(f"Smart truncation failed: {e}, falling back to simple truncation")
+            # Fallback to safe simple truncation at last complete brace
+            truncated_json = metadata_json[:max_text_length]
+
+            # Try to find last complete JSON object
+            for i in range(len(truncated_json) - 1, 0, -1):
+                if truncated_json[i] == '}':
+                    test_json = truncated_json[:i+1]
+                    try:
+                        json.loads(test_json)
+                        truncated_json = test_json
+                        break
+                    except:
+                        continue
+
+            metadata_json = truncated_json
+            result_metadata["rate_limit_warning"] = {
+                "original_size": len(metadata_json),
+                "truncated_size": len(truncated_json),
+                "truncation_method": "fallback_safe_truncation"
+            }
+    '''
+
+    return replacement_code
 
 # Enums for better type safety
 class SurveyType(Enum):
@@ -879,24 +1108,50 @@ def production_segy_parser(file_path=None, template_path=None, data_dir="./data"
             ]
         })}
 
+
 def find_segy_file(file_path: str, data_dir: str = "./data") -> str:
-    """Find a SEG-Y file with enhanced path resolution"""
-    # Check if it's already a full path
+    """Enhanced SEG-Y file finder with comprehensive path resolution"""
+
+    print(f"DEBUG: find_segy_file called with: file_path='{file_path}', data_dir='{data_dir}'")
+
+    # Strategy 1: Check if it's already a full path that exists
     if os.path.isfile(file_path):
-        return file_path
+        print(f"DEBUG: Found as full path: {file_path}")
+        return os.path.abspath(file_path)
 
-    # Check in data directory
+    # Strategy 2: Check in data directory
     potential_path = os.path.join(data_dir, file_path)
+    print(f"DEBUG: Checking potential_path: {potential_path}")
     if os.path.isfile(potential_path):
-        return potential_path
+        print(f"DEBUG: Found in data directory: {potential_path}")
+        return os.path.abspath(potential_path)
 
-    # Try adding extensions
+    # Strategy 3: Try different case variations
+    data_dir_abs = os.path.abspath(data_dir)
+    if os.path.exists(data_dir_abs):
+        for root, dirs, files in os.walk(data_dir_abs):
+            for file in files:
+                if file.lower() == file_path.lower():
+                    found_path = os.path.join(root, file)
+                    print(f"DEBUG: Found with case variation: {found_path}")
+                    return found_path
+
+    # Strategy 4: Try adding extensions
     for ext in ['.sgy', '.segy', '.SGY', '.SEGY']:
         if not file_path.lower().endswith(ext.lower()):
             potential_path = os.path.join(data_dir, file_path + ext)
+            print(f"DEBUG: Trying with extension: {potential_path}")
             if os.path.isfile(potential_path):
-                return potential_path
+                print(f"DEBUG: Found with extension: {potential_path}")
+                return os.path.abspath(potential_path)
 
+    # Strategy 5: Check current directory
+    current_dir_path = os.path.join(".", file_path)
+    if os.path.isfile(current_dir_path):
+        print(f"DEBUG: Found in current directory: {current_dir_path}")
+        return os.path.abspath(current_dir_path)
+
+    print(f"DEBUG: File not found anywhere, returning original: {file_path}")
     return file_path
 
 def find_template_file(template_path: str, template_dir: str = "./templates") -> str:
@@ -976,8 +1231,12 @@ def segy_complete_metadata_harvester(**params):
     file_path = params.get("file_path")
     data_dir = params.get("data_dir", "./data")
     include_trace_sampling = params.get("include_trace_sampling", True)
-    trace_sample_size = params.get("trace_sample_size", 100)
-    include_statistics = params.get("include_statistics", True)
+    trace_sample_size = params.get("trace_sample_size", 5)  # CHANGED: From 100 to 5
+    include_statistics = params.get("include_statistics", False)  # CHANGED: From True to False
+
+    # NEW: Rate limiting parameters
+    return_format = params.get("return_format", "summary")
+    max_text_length = params.get("max_text_length", 2000)
 
     if not file_path:
         return create_error_response("file_path parameter is required")
@@ -1005,7 +1264,103 @@ def segy_complete_metadata_harvester(**params):
             include_statistics
         )
 
-        return {"text": json.dumps(metadata, cls=NumpyJSONEncoder)}
+        # NEW: Convert to JSON string
+        metadata_json = json.dumps(metadata, cls=NumpyJSONEncoder)
+
+        # NEW: Smart JSON truncation logic
+        if len(metadata_json) > max_text_length:
+            logging.info(
+                f"Metadata JSON ({len(metadata_json)} chars) exceeds limit ({max_text_length}), applying smart truncation")
+
+            try:
+                # Apply smart truncation
+                truncated_json = smart_truncate_metadata_json(
+                    metadata,
+                    max_length=max_text_length,
+                    target_format=return_format
+                )
+
+                # Create result with truncation info
+                result = {
+                    "text": truncated_json,
+                    "metadata": {
+                        "rate_limit_warning": {
+                            "original_size": len(metadata_json),
+                            "truncated_size": len(truncated_json),
+                            "truncation_method": "smart_json_truncation",
+                            "note": "JSON intelligently truncated while preserving validity"
+                        }
+                    },
+                    "extraction_parameters": {
+                        "return_format": return_format,
+                        "max_text_length": max_text_length,
+                        "trace_sample_size": trace_sample_size,
+                        "include_statistics": include_statistics
+                    }
+                }
+
+                logging.info(f"Smart truncation successful: {len(truncated_json)} chars")
+                return result
+
+            except Exception as e:
+                logging.error(f"Smart truncation failed: {e}, falling back to safe truncation")
+
+                # Fallback to safe simple truncation at last complete brace
+                truncated_json = metadata_json[:max_text_length]
+
+                # Try to find last complete JSON object
+                for i in range(len(truncated_json) - 1, 0, -1):
+                    if truncated_json[i] == '}':
+                        test_json = truncated_json[:i + 1]
+                        try:
+                            json.loads(test_json)
+                            truncated_json = test_json
+                            break
+                        except:
+                            continue
+
+                result = {
+                    "text": truncated_json,
+                    "metadata": {
+                        "rate_limit_warning": {
+                            "original_size": len(metadata_json),
+                            "truncated_size": len(truncated_json),
+                            "truncation_method": "fallback_safe_truncation",
+                            "note": "Fallback truncation used - JSON validity attempted"
+                        }
+                    },
+                    "extraction_parameters": {
+                        "return_format": return_format,
+                        "max_text_length": max_text_length,
+                        "trace_sample_size": trace_sample_size,
+                        "include_statistics": include_statistics
+                    }
+                }
+
+                return result
+        else:
+            # Text is already short enough
+            result = {
+                "text": metadata_json,
+                "extraction_parameters": {
+                    "return_format": return_format,
+                    "max_text_length": max_text_length,
+                    "trace_sample_size": trace_sample_size,
+                    "include_statistics": include_statistics
+                }
+            }
+
+            # Add warning for full mode if very large
+            if return_format == "full" and len(metadata_json) > 10000:
+                result["metadata"] = {
+                    "rate_limit_warning": {
+                        "large_output": True,
+                        "size": len(metadata_json),
+                        "note": "Large output may cause rate limiting in MCP servers"
+                    }
+                }
+
+            return result
 
     except Exception as e:
         return create_error_response(f"Error processing file {file_path}: {str(e)}")
@@ -1635,10 +1990,13 @@ def generate_recommendations(metadata: Dict[str, Any]) -> List[str]:
 
     return recommendations
 
-def create_error_response(message: str) -> Dict[str, str]:
+def create_error_response(message):
     """Create standardized error response"""
-    return {"error": message, "status": "failed"}
-
+    return {
+        "error": True,
+        "message": message,
+        "text": json.dumps({"error": message})
+    }
 
 def aggregate_ebcdic_information(target: Dict, source: Dict) -> None:
     """Aggregate EBCDIC information from multiple headers"""
@@ -1648,13 +2006,11 @@ def aggregate_ebcdic_information(target: Dict, source: Dict) -> None:
         elif value and not target.get(key):
             target[key] = value
 
-
 def update_quality_metrics(target: Dict, source: Dict) -> None:
     """Update quality metrics aggregation"""
     target["readable_lines"] += source.get("readable_lines", 0)
     target["empty_lines"] += source.get("empty_lines", 0)
     target["non_ascii_characters"] += source.get("non_ascii_characters", 0)
-
 
 def calculate_documentation_score(extracted_info: Dict[str, Any]) -> int:
     """Calculate documentation quality score 0-100"""
@@ -1692,7 +2048,6 @@ def calculate_documentation_score(extracted_info: Dict[str, Any]) -> int:
 
     return min(score, max_score)
 
-
 def extract_processing_indicators(segy_file) -> dict:
     """Extract processing indicators from binary header - CORRECTED VERSION"""
     return {
@@ -1703,7 +2058,6 @@ def extract_processing_indicators(segy_file) -> dict:
         "correlated_data_traces": safe_bin_read(segy_file, segyio.BinField.CorrelatedTraces),
         # Removed FixedLengthTraceFlag as it doesn't exist in segyio
     }
-
 
 def assess_binary_quality(segy_file) -> dict:
     """Assess binary header quality and completeness"""
@@ -1723,7 +2077,6 @@ def assess_binary_quality(segy_file) -> dict:
         "critical_fields_present": valid_fields == len(required_fields),
         "format_code_valid": safe_bin_read(segy_file, segyio.BinField.Format) in [1, 2, 3, 5, 8]
     }
-
 
 def analyze_trace_characteristics(segy_file, sample_indices: list) -> dict:
     """Analyze trace characteristics from sampled traces"""
@@ -1767,7 +2120,6 @@ def analyze_trace_characteristics(segy_file, sample_indices: list) -> dict:
     trace_stats["header_completeness"] = (complete_headers / len(sample_indices)) * 100 if sample_indices else 0
 
     return trace_stats
-
 
 def analyze_coordinates(segy_file, sample_indices: list) -> dict:
     """Analyze coordinate information from trace headers"""
@@ -1820,7 +2172,6 @@ def analyze_coordinates(segy_file, sample_indices: list) -> dict:
 
     return coordinate_analysis
 
-
 def calculate_trace_statistics(segy_file, sample_indices: list) -> dict:
     """Calculate statistical information from trace data"""
     statistics = {
@@ -1866,7 +2217,6 @@ def calculate_trace_statistics(segy_file, sample_indices: list) -> dict:
 
     return statistics
 
-
 def assess_coordinate_system(metadata: dict) -> str:
     """Assess coordinate system status from metadata"""
     binary_header = metadata.get("binary_header", {})
@@ -1880,7 +2230,6 @@ def assess_coordinate_system(metadata: dict) -> str:
         return "Coordinates present, scaling unclear"
 
     return "Coordinate system unclear"
-
 
 def assess_header_consistency(metadata: dict) -> str:
     """Assess consistency between different header types"""
@@ -1900,7 +2249,6 @@ def assess_header_consistency(metadata: dict) -> str:
         return "Headers consistent"
     else:
         return f"Issues found: {'; '.join(issues)}"
-
 
 def estimate_processing_requirements(metadata: dict) -> dict:
     """Estimate processing requirements based on file characteristics"""
@@ -1922,7 +2270,6 @@ def estimate_processing_requirements(metadata: dict) -> dict:
 
     return requirements
 
-
 def interpret_measurement_system(system_code) -> str:
     """Interpret measurement system code"""
     if system_code == 1:
@@ -1931,7 +2278,6 @@ def interpret_measurement_system(system_code) -> str:
         return "Feet"
     else:
         return f"Unknown system code: {system_code}"
-
 
 def classify_survey_from_traces(spatial_data: dict) -> dict:
     """Classify survey type from spatial trace data"""
@@ -1959,7 +2305,6 @@ def classify_survey_from_traces(spatial_data: dict) -> dict:
         }
     }
 
-
 def calculate_coordinate_ranges(coordinate_data: dict) -> dict:
     """Calculate coordinate ranges from coordinate data"""
     ranges = {}
@@ -1975,7 +2320,6 @@ def calculate_coordinate_ranges(coordinate_data: dict) -> dict:
 
     return ranges
 
-
 def determine_organization_type(cdp_count: int, inline_count: int, crossline_count: int) -> str:
     """Determine data organization type"""
     if inline_count > 1 and crossline_count > 1:
@@ -1986,7 +2330,6 @@ def determine_organization_type(cdp_count: int, inline_count: int, crossline_cou
         return "Partial 3D Organization"
     else:
         return "Unknown Organization"
-
 
 def assess_file_complexity(metadata: dict) -> str:
     """Assess overall file complexity"""
@@ -2000,3 +2343,1261 @@ def assess_file_complexity(metadata: dict) -> str:
         return "Medium"
     else:
         return "Low"
+
+# ===================================================================
+# SURVEY POLYGON EXTRACTOR
+# ===================================================================
+
+
+# ===================================================================
+# LINEAR SURVEY POLYGON EXTRACTOR - HANDLES 2D SEISMIC LINES
+# ===================================================================
+
+import math
+import logging
+from typing import Dict, List, Tuple, Optional
+from collections import Counter
+import segyio
+
+
+class SurveyPolygonExtractor:
+    """Extract geographic survey boundary polygons from SEG-Y coordinates - handles linear surveys"""
+
+    def __init__(self):
+        self.logger = logging.getLogger(__name__)
+
+    def extract_survey_polygon(self, segy_file_path: str,
+                               coordinate_sample_rate: int = 10) -> Dict:
+        """
+        Extract survey boundary polygon from trace coordinates with improved sampling
+        """
+        self.logger.info(f"Extracting survey polygon from: {segy_file_path}")
+
+        try:
+            with segyio.open(segy_file_path, ignore_geometry=True) as f:
+                coordinates = []
+                coordinate_info = {
+                    'scalars': [],
+                    'coordinate_units': 'unknown',
+                    'quality_flags': []
+                }
+
+                total_traces = len(f.header)
+
+                # IMPROVED: Use adaptive sampling to ensure we get full extent
+                coordinates = self._extract_coordinates_adaptive_sampling(f, total_traces)
+
+                # Extract coordinate info for the sampled traces
+                sample_indices = range(0, total_traces, coordinate_sample_rate)
+                for i in sample_indices[:100]:  # Limit to 100 samples for metadata
+                    header = f.header[i]
+                    scalar = header[segyio.TraceField.ElevationScalar]
+                    coordinate_info['scalars'].append(scalar)
+
+                return self._format_polygon_output(coordinates, coordinate_info)
+
+        except Exception as e:
+            self.logger.error(f"Survey polygon extraction failed: {str(e)}")
+            return {
+                'error': str(e),
+                'survey_polygon': [],
+                'coordinate_quality': 'failed'
+            }
+
+    def _extract_coordinates_adaptive_sampling(self, f, total_traces):
+        """
+        IMPROVED: Extract coordinates using adaptive sampling to ensure full extent capture
+
+        Strategy:
+        1. Always include first and last traces
+        2. Sample evenly across the middle
+        3. Add extra samples at potential extent points
+        """
+        coordinates = []
+
+        # Strategy 1: Always include boundary traces
+        boundary_indices = [0, total_traces - 1]
+
+        # Strategy 2: Regular sampling across the file
+        sample_rate = max(10, total_traces // 1000)  # Adaptive sample rate
+        regular_indices = list(range(0, total_traces, sample_rate))
+
+        # Strategy 3: Add some random samples for good measure
+        import random
+        random_indices = random.sample(range(total_traces), min(100, total_traces // 100))
+
+        # Combine all sampling strategies
+        all_indices = set(boundary_indices + regular_indices + random_indices)
+
+        self.logger.debug(f"Sampling {len(all_indices)} traces from {total_traces} total")
+
+        for i in sorted(all_indices):
+            header = f.header[i]
+
+            # Extract coordinates from trace header
+            x = header[segyio.TraceField.GroupX]
+            y = header[segyio.TraceField.GroupY]
+            scalar = header[segyio.TraceField.ElevationScalar]
+
+            # Skip zero coordinates
+            if x == 0 and y == 0:
+                continue
+
+            # Apply coordinate scalar
+            processed_x, processed_y = self._apply_coordinate_scalar(x, y, scalar)
+
+            if processed_x is not None and processed_y is not None:
+                coordinates.append((processed_x, processed_y))
+
+        # CRITICAL: Ensure we have the actual extent by checking first/last valid coordinates
+        coordinates = self._ensure_full_extent_capture(f, coordinates, total_traces)
+
+        return coordinates
+
+    def _ensure_full_extent_capture(self, f, coordinates, total_traces):
+        """
+        CRITICAL: Ensure we capture the true spatial extent of the survey
+
+        This addresses the issue where sampling might miss the actual line endpoints
+        """
+        if not coordinates:
+            return coordinates
+
+        # Find current extent
+        x_vals = [coord[0] for coord in coordinates]
+        current_min_x = min(x_vals)
+        current_max_x = max(x_vals)
+
+        # Check first and last 10% of traces to find true extent
+        check_ranges = [
+            range(0, min(total_traces // 10, 1000)),  # First 10%
+            range(max(0, total_traces - total_traces // 10), total_traces)  # Last 10%
+        ]
+
+        extent_coordinates = []
+
+        for trace_range in check_ranges:
+            for i in trace_range:
+                header = f.header[i]
+                x = header[segyio.TraceField.GroupX]
+                y = header[segyio.TraceField.GroupY]
+                scalar = header[segyio.TraceField.ElevationScalar]
+
+                if x == 0 and y == 0:
+                    continue
+
+                processed_x, processed_y = self._apply_coordinate_scalar(x, y, scalar)
+
+                if processed_x is not None and processed_y is not None:
+                    extent_coordinates.append((processed_x, processed_y))
+
+        # Add extent coordinates if they extend beyond current range
+        for coord in extent_coordinates:
+            x_coord = coord[0]
+            if x_coord < current_min_x or x_coord > current_max_x:
+                coordinates.append(coord)
+                self.logger.debug(f"Added extent coordinate: {coord}")
+
+        self.logger.info(f"Final coordinate count: {len(coordinates)} (including extent capture)")
+
+        return coordinates
+
+    # ===================================================================
+    # NEW: LINEAR SURVEY DETECTION AND HANDLING
+    # ===================================================================
+
+    def _detect_survey_geometry(self, coordinates):
+        """
+        Detect if the survey is linear (2D line) or areal (3D/polygon)
+
+        Returns:
+            dict: {
+                'type': 'linear', 'areal', or 'point',
+                'y_range': difference between min and max Y,
+                'x_range': difference between min and max X,
+                'is_2d_line': boolean
+            }
+        """
+        if not coordinates or len(coordinates) < 2:
+            return {'type': 'point', 'y_range': 0, 'x_range': 0, 'is_2d_line': False}
+
+        x_vals = [coord[0] for coord in coordinates]
+        y_vals = [coord[1] for coord in coordinates]
+
+        x_range = max(x_vals) - min(x_vals)
+        y_range = max(y_vals) - min(y_vals)
+
+        # Determine if this is a linear survey (typical 2D seismic line)
+        # If Y range is very small compared to X range, it's likely a linear survey
+        if y_range == 0 or (x_range > 0 and y_range / x_range < 0.01):
+            return {
+                'type': 'linear',
+                'y_range': y_range,
+                'x_range': x_range,
+                'is_2d_line': True,
+                'line_length_m': x_range,
+                'geometry_issue': 'linear_survey_detected'
+            }
+        elif y_range > 0 and x_range > 0:
+            return {
+                'type': 'areal',
+                'y_range': y_range,
+                'x_range': x_range,
+                'is_2d_line': False
+            }
+        else:
+            return {
+                'type': 'point',
+                'y_range': y_range,
+                'x_range': x_range,
+                'is_2d_line': False
+            }
+
+    def _create_linear_survey_polygon(self, coordinates, buffer_width_m=100):
+        """
+        Create a polygon from a linear survey with accurate line length calculation
+        """
+        if len(coordinates) < 2:
+            return {
+                'polygon': coordinates,
+                'area_km2': 0.0,
+                'polygon_type': 'insufficient_points',
+                'geometry_type': 'linear_insufficient'
+            }
+
+        # IMPROVED: Sort coordinates by X to ensure proper line order
+        sorted_coords = sorted(coordinates, key=lambda c: c[0])
+
+        # IMPROVED: Calculate actual line length more accurately
+        # Method 1: Use true min/max from all coordinates
+        min_x = min(coord[0] for coord in coordinates)
+        max_x = max(coord[0] for coord in coordinates)
+
+        # Method 2: Calculate cumulative distance along the line (more accurate for curved lines)
+        total_distance = 0
+        if len(sorted_coords) > 1:
+            for i in range(len(sorted_coords) - 1):
+                dx = sorted_coords[i + 1][0] - sorted_coords[i][0]
+                dy = sorted_coords[i + 1][1] - sorted_coords[i][1]
+                total_distance += (dx ** 2 + dy ** 2) ** 0.5
+
+        # Use the longer of the two methods (handles both straight and curved lines)
+        straight_line_length = max_x - min_x
+        actual_line_length = max(straight_line_length, total_distance)
+
+        # Get the Y value (might be 0 or constant)
+        y_vals = [coord[1] for coord in coordinates]
+        y_center = sum(y_vals) / len(y_vals)  # Average Y value
+
+        # Create rectangular polygon with buffer
+        polygon_coords = [
+            (min_x, y_center - buffer_width_m),  # Bottom left
+            (max_x, y_center - buffer_width_m),  # Bottom right
+            (max_x, y_center + buffer_width_m),  # Top right
+            (min_x, y_center + buffer_width_m),  # Top left
+        ]
+
+        # Calculate area using the actual line length
+        length_m = actual_line_length
+        width_m = 2 * buffer_width_m
+        area_m2 = length_m * width_m
+        area_km2 = area_m2 / 1_000_000.0
+
+        self.logger.info(f"Linear survey polygon: {length_m:.1f}m × {width_m:.1f}m = {area_km2:.6f} km²")
+        self.logger.debug(f"Coordinate extent: X[{min_x:.1f}, {max_x:.1f}], Y[{min(y_vals):.1f}, {max(y_vals):.1f}]")
+
+        return {
+            'polygon': polygon_coords,
+            'area_km2': round(area_km2, 6),
+            'polygon_type': 'linear_buffered',
+            'geometry_type': 'linear_survey',
+            'line_length_m': length_m,
+            'buffer_width_m': buffer_width_m,
+            'coordinate_system': 'local',
+            'calculation_details': {
+                'straight_line_length': straight_line_length,
+                'actual_line_length': actual_line_length,
+                'coordinate_count': len(coordinates),
+                'method_used': 'cumulative_distance' if actual_line_length > straight_line_length else 'straight_line'
+            }
+        }
+
+    def _calculate_polygon_area_projected(self, coordinates):
+        """
+        Calculate area for projected coordinates using shoelace formula
+        """
+        if len(coordinates) < 3:
+            return 0.0
+
+        # Ensure polygon is closed
+        if coordinates[0] != coordinates[-1]:
+            coordinates = coordinates + [coordinates[0]]
+
+        # Shoelace formula
+        area = 0.0
+        n = len(coordinates) - 1
+
+        for i in range(n):
+            x1, y1 = coordinates[i]
+            x2, y2 = coordinates[(i + 1) % n]
+            area += (x1 * y2 - x2 * y1)
+
+        area = abs(area) / 2.0
+        area_km2 = area / 1_000_000.0
+
+        return area_km2
+
+    # ===================================================================
+    # IMPROVED POLYGON GENERATION WITH LINEAR SURVEY SUPPORT
+    # ===================================================================
+
+    def _generate_polygon(self, coordinates: List[Tuple[float, float]]) -> Dict:
+        """Generate polygon from coordinates with linear survey support"""
+        if len(coordinates) < 2:
+            return {
+                'polygon': coordinates,
+                'area_km2': 0.0,
+                'polygon_type': 'insufficient_points',
+                'coordinate_system': 'unknown',
+                'calculation_method': 'none'
+            }
+
+        # First, detect the survey geometry
+        geometry = self._detect_survey_geometry(coordinates)
+
+        self.logger.debug(f"Survey geometry detected: {geometry}")
+
+        # Handle linear surveys (2D seismic lines)
+        if geometry['is_2d_line']:
+            self.logger.info(
+                f"Linear survey detected: {geometry['line_length_m']:.1f}m line, Y-range: {geometry['y_range']:.1f}m")
+            return self._create_linear_survey_polygon(coordinates)
+
+        # Handle areal surveys (3D or true polygons)
+        try:
+            # Try to create convex hull for areal surveys
+            from scipy.spatial import ConvexHull
+            hull = ConvexHull(coordinates)
+            polygon_coords = [coordinates[i] for i in hull.vertices]
+
+            # Calculate area using proper method
+            area_km2 = self._calculate_polygon_area_projected(polygon_coords)
+
+            return {
+                'polygon': polygon_coords,
+                'area_km2': round(area_km2, 6),
+                'polygon_type': 'convex_hull',
+                'coordinate_system': 'local',
+                'calculation_method': 'planar_geometry'
+            }
+
+        except Exception as e:
+            self.logger.warning(f"Convex hull failed: {e}, using bounding box")
+
+            # Fallback: return bounding box
+            min_x = min(coord[0] for coord in coordinates)
+            max_x = max(coord[0] for coord in coordinates)
+            min_y = min(coord[1] for coord in coordinates)
+            max_y = max(coord[1] for coord in coordinates)
+
+            bbox_polygon = [
+                (min_x, min_y), (max_x, min_y),
+                (max_x, max_y), (min_x, max_y)
+            ]
+
+            # Calculate area for bounding box
+            area_km2 = self._calculate_polygon_area_projected(bbox_polygon)
+
+            return {
+                'polygon': bbox_polygon,
+                'area_km2': round(area_km2, 6),
+                'polygon_type': 'bounding_box',
+                'coordinate_system': 'local',
+                'calculation_method': 'planar_geometry'
+            }
+
+    # ===================================================================
+    # ENHANCED OUTPUT FORMATTING WITH LINEAR SURVEY DETAILS
+    # ===================================================================
+
+    def _format_polygon_output(self, coordinates, coordinate_info):
+        """Enhanced output formatting with linear survey handling"""
+
+        # Get configuration (with defaults)
+        max_coords = getattr(self, 'max_coordinates', 100)
+        return_format = getattr(self, 'return_format', 'summary')
+
+        # Generate full polygon data with linear survey support
+        polygon_data = self._generate_polygon(coordinates)
+        coord_quality = self._assess_coordinate_quality(coordinates, coordinate_info['scalars'])
+        survey_metrics = self._calculate_survey_metrics(coordinates)
+        geometry = self._detect_survey_geometry(coordinates)
+
+        # Base result with enhanced geometry information
+        result = {
+            'polygon_area_km2': polygon_data['area_km2'],
+            'coordinate_count': len(coordinates),
+            'coordinate_quality': coord_quality,
+            'coordinate_scalar_mode': self._get_scalar_mode(coordinate_info['scalars']),
+            'survey_type': survey_metrics['survey_type'],
+            'line_azimuth_degrees': survey_metrics['azimuth'],
+            'line_length_km': survey_metrics['length_km'],
+            'spatial_extent': {
+                'min_x': min(coord[0] for coord in coordinates) if coordinates else None,
+                'max_x': max(coord[0] for coord in coordinates) if coordinates else None,
+                'min_y': min(coord[1] for coord in coordinates) if coordinates else None,
+                'max_y': max(coord[1] for coord in coordinates) if coordinates else None
+            },
+            # NEW: Enhanced geometry information
+            'geometry_info': {
+                'survey_geometry': geometry['type'],
+                'is_linear_survey': geometry['is_2d_line'],
+                'x_range_m': geometry['x_range'],
+                'y_range_m': geometry['y_range'],
+                'polygon_type': polygon_data.get('polygon_type', 'unknown')
+            },
+            'area_calculation': {
+                'coordinate_system': polygon_data.get('coordinate_system', 'unknown'),
+                'calculation_method': polygon_data.get('calculation_method', 'unknown'),
+                'area_valid': polygon_data['area_km2'] > 0.0
+            },
+            'extraction_parameters': {
+                'return_format': return_format,
+                'max_coordinates': max_coords,
+                'coordinate_sample_rate': getattr(self, 'coordinate_sample_rate', 10)
+            }
+        }
+
+        # Add polygon coordinates based on format
+        if return_format == "summary":
+            # For linear surveys, return the buffered rectangle coordinates
+            if geometry['is_2d_line']:
+                result['survey_polygon'] = polygon_data['polygon'][:4]  # Just the 4 corners
+            else:
+                # Return bounding box for areal surveys
+                if coordinates:
+                    min_x, max_x = result['spatial_extent']['min_x'], result['spatial_extent']['max_x']
+                    min_y, max_y = result['spatial_extent']['min_y'], result['spatial_extent']['max_y']
+                    result['survey_polygon'] = [
+                        [min_x, min_y], [max_x, min_y], [max_x, max_y], [min_x, max_y]
+                    ]
+                else:
+                    result['survey_polygon'] = []
+
+        elif return_format == "simplified":
+            # Return limited coordinates
+            full_polygon = polygon_data['polygon']
+            if len(full_polygon) > max_coords:
+                step = len(full_polygon) // max_coords
+                result['survey_polygon'] = full_polygon[::step][:max_coords]
+            else:
+                result['survey_polygon'] = full_polygon
+
+        elif return_format == "full":
+            # Return all coordinates
+            result['survey_polygon'] = polygon_data['polygon']
+            result[
+                'rate_limit_warning'] = f"Full polygon with {len(polygon_data['polygon'])} coordinates may cause rate limits"
+
+        result['recommendations'] = self._generate_spatial_recommendations(coord_quality, len(coordinates),
+                                                                           polygon_data, geometry)
+        return result
+
+    # ===================================================================
+    # ENHANCED RECOMMENDATIONS WITH LINEAR SURVEY AWARENESS
+    # ===================================================================
+
+    def _generate_spatial_recommendations(self, quality, coord_count, polygon_data, geometry):
+        """Generate spatial analysis recommendations with linear survey awareness"""
+        recommendations = []
+
+        if quality == "no_coordinates":
+            recommendations.append("No coordinates found - check trace headers")
+        elif quality == "insufficient_points":
+            recommendations.append("Too few coordinate points for reliable polygon")
+        elif quality == "low_diversity":
+            recommendations.append("Limited coordinate diversity - check spatial sampling")
+        elif coord_count < 50:
+            recommendations.append("Consider increasing coordinate sampling rate")
+        else:
+            recommendations.append("Spatial analysis successful")
+
+        # NEW: Linear survey specific recommendations
+        if geometry['is_2d_line']:
+            recommendations.append(f"✅ Linear survey detected: {geometry['line_length_m']:.1f}m seismic line")
+            recommendations.append(f"✅ Polygon created with 100m buffer: {polygon_data['area_km2']:.3f} km²")
+            if geometry['y_range'] == 0:
+                recommendations.append("ℹ️  All Y coordinates are identical (typical for 2D seismic)")
+            recommendations.append("ℹ️  For better area representation, consider using actual survey width")
+        else:
+            # Area-specific recommendations for 3D surveys
+            if polygon_data['area_km2'] == 0.0:
+                recommendations.append("⚠️ Zero area calculated - check coordinate system")
+            elif polygon_data['area_km2'] < 0.001:
+                recommendations.append("⚠️ Very small area - verify coordinate units")
+            elif polygon_data['area_km2'] > 10000:
+                recommendations.append("⚠️ Very large area - verify coordinate system")
+            else:
+                recommendations.append(f"✅ Reasonable survey area: {polygon_data['area_km2']:.3f} km²")
+
+        recommendations.append(f"Coordinate system: {polygon_data.get('coordinate_system', 'unknown')}")
+        recommendations.append(f"Total coordinates extracted: {coord_count}")
+
+        return recommendations
+
+    # ===================================================================
+    # UNCHANGED METHODS (keeping your existing logic)
+    # ===================================================================
+
+    def _assess_coordinate_quality(self, coordinates, scalars):
+        """Assess quality of extracted coordinates"""
+        if not coordinates:
+            return "no_coordinates"
+        elif len(coordinates) < 10:
+            return "insufficient_points"
+        elif len(set(coordinates)) < len(coordinates) * 0.8:
+            return "low_diversity"
+        else:
+            return "good"
+
+    def _calculate_survey_metrics(self, coordinates):
+        """Calculate basic survey metrics"""
+        if not coordinates or len(coordinates) < 2:
+            return {
+                "survey_type": "unknown",
+                "azimuth": 0.0,
+                "length_km": 0.0
+            }
+
+        # Calculate line length and azimuth for 2D
+        if len(coordinates) < 100:  # Likely 2D
+            first_point = coordinates[0]
+            last_point = coordinates[-1]
+
+            dx = last_point[0] - first_point[0]
+            dy = last_point[1] - first_point[1]
+
+            length_m = (dx ** 2 + dy ** 2) ** 0.5
+            azimuth = math.degrees(math.atan2(dx, dy)) % 360
+
+            return {
+                "survey_type": "2D",
+                "azimuth": round(azimuth, 1),
+                "length_km": round(length_m / 1000, 2)
+            }
+        else:
+            # 3D survey
+            return {
+                "survey_type": "3D",
+                "azimuth": 0.0,
+                "length_km": 0.0
+            }
+
+    def _get_scalar_mode(self, scalars):
+        """Get most common scalar value"""
+        if not scalars:
+            return 1
+
+        # Remove zeros and find mode
+        non_zero_scalars = [s for s in scalars if s != 0]
+        if not non_zero_scalars:
+            return 1
+
+        return Counter(non_zero_scalars).most_common(1)[0][0]
+
+    def _apply_coordinate_scalar(self, x: int, y: int, scalar: int) -> Tuple[Optional[float], Optional[float]]:
+        """Apply SEG-Y coordinate scalar to raw coordinates"""
+        if scalar > 0:
+            return float(x * scalar), float(y * scalar)
+        elif scalar < 0:
+            return float(x / abs(scalar)), float(y / abs(scalar))
+        else:
+            # No scalar defined, use raw values
+            return float(x), float(y)
+
+
+# ===================================================================
+# TRACE OUTLINE GENERATOR
+# ===================================================================
+
+class TraceOutlineGenerator:
+    """Generate amplitude outlines for trace visualization"""
+
+    def __init__(self):
+        self.logger = logging.getLogger(__name__)
+
+    def extract_trace_outlines(self, segy_file_path: str,
+                               trace_sample_rate: int = 100,
+                               outline_decimation: int = 10) -> Dict:
+        """Extract trace amplitude outlines for visualization"""
+        self.logger.info(f"Extracting trace outlines from: {segy_file_path}")
+
+        try:
+            with segyio.open(segy_file_path, ignore_geometry=True) as f:
+                # NEW: Get configuration with defaults
+                max_traces = getattr(self, 'max_traces', 10)
+                return_format = getattr(self, 'return_format', 'summary')
+
+                trace_outlines = []
+                total_traces = len(f.trace)
+                samples_per_trace = len(f.samples)
+                sample_interval = segyio.tools.dt(f) / 1000.0
+
+                # Sample traces for outline extraction - LIMITED BY max_traces
+                trace_indices = list(range(0, total_traces, trace_sample_rate))[:max_traces]
+
+                for trace_idx in trace_indices:
+                    if trace_idx >= total_traces:
+                        break
+
+                    # Get trace data and header
+                    trace_data = f.trace[trace_idx]
+                    header = f.header[trace_idx]
+
+                    # Extract trace coordinates
+                    x = header[segyio.TraceField.GroupX]
+                    y = header[segyio.TraceField.GroupY]
+                    scalar = header[segyio.TraceField.ElevationScalar]
+
+                    # Apply coordinate scalar
+                    if scalar > 0:
+                        x, y = x * scalar, y * scalar
+                    elif scalar < 0:
+                        x, y = x / abs(scalar), y / abs(scalar)
+
+                    # Calculate trace quality metrics
+                    trace_quality = self._assess_trace_quality(trace_data)
+
+                    # NEW: Format output based on return_format
+                    if return_format == "summary":
+                        # Return only statistics, no arrays
+                        trace_outline = {
+                            'trace_number': trace_idx,
+                            'coordinates': {'x': float(x), 'y': float(y)},
+                            'cdp_number': header[segyio.TraceField.CDP],
+                            'quality_metrics': trace_quality,
+                            'rms_amplitude': float(np.sqrt(np.mean(trace_data ** 2))),
+                            'peak_amplitude': float(np.max(np.abs(trace_data))),
+                            'zero_percentage': float(np.sum(trace_data == 0) / len(trace_data) * 100)
+                            # NO amplitude_envelope or time_axis_ms arrays
+                        }
+
+                    elif return_format == "limited":
+                        # Return decimated arrays (smaller)
+                        envelope = self._generate_amplitude_envelope(trace_data)
+                        decimated_envelope = envelope[::outline_decimation * 5]  # More aggressive decimation
+                        time_samples = np.arange(0, len(decimated_envelope)) * sample_interval * outline_decimation * 5
+
+                        trace_outline = {
+                            'trace_number': trace_idx,
+                            'coordinates': {'x': float(x), 'y': float(y)},
+                            'cdp_number': header[segyio.TraceField.CDP],
+                            'amplitude_envelope': decimated_envelope[:50].tolist(),  # Limit to 50 points
+                            'time_axis_ms': time_samples[:50].tolist(),
+                            'quality_metrics': trace_quality,
+                            'rms_amplitude': float(np.sqrt(np.mean(trace_data ** 2))),
+                            'peak_amplitude': float(np.max(np.abs(trace_data))),
+                        }
+
+                    elif return_format == "full":
+                        # Original behavior - full arrays
+                        envelope = self._generate_amplitude_envelope(trace_data)
+                        decimated_envelope = envelope[::outline_decimation]
+                        time_samples = np.arange(0, len(decimated_envelope)) * sample_interval * outline_decimation
+
+                        trace_outline = {
+                            'trace_number': trace_idx,
+                            'coordinates': {'x': float(x), 'y': float(y)},
+                            'cdp_number': header[segyio.TraceField.CDP],
+                            'amplitude_envelope': decimated_envelope.tolist(),
+                            'time_axis_ms': time_samples.tolist(),
+                            'quality_metrics': trace_quality,
+                            'rms_amplitude': float(np.sqrt(np.mean(trace_data ** 2))),
+                            'peak_amplitude': float(np.max(np.abs(trace_data))),
+                            'zero_percentage': float(np.sum(trace_data == 0) / len(trace_data) * 100)
+                        }
+
+                    trace_outlines.append(trace_outline)
+
+                # Generate summary statistics
+                summary_stats = self._generate_outline_summary(trace_outlines)
+
+                result = {
+                    'trace_analysis_summary': summary_stats,  # NEW: Always include summary
+                    'extraction_parameters': {
+                        'trace_sample_rate': trace_sample_rate,
+                        'max_traces_processed': len(trace_outlines),
+                        'return_format': return_format,
+                        'total_traces_in_file': total_traces
+                    },
+                    'status': {
+                        'visualization_ready': return_format in ['limited', 'full'],
+                        'format_used': return_format,
+                        'processing_complete': True
+                    },
+                    'visualization_ready': return_format in ['limited', 'full']
+                }
+
+                # Only include trace_outlines for non-summary formats
+                if return_format != "summary":
+                    result['trace_outlines'] = trace_outlines
+
+                if return_format == "full":
+                    result[
+                        'rate_limit_warning'] = f"Full trace data may cause rate limits with {len(trace_outlines)} traces"
+
+                self.logger.info(
+                    f"Trace outlines extracted: {len(trace_outlines)} traces processed in {return_format} mode")
+                return result
+
+        except Exception as e:
+            self.logger.error(f"Trace outline extraction failed: {str(e)}")
+            return {'error': str(e), 'trace_outlines': [], 'visualization_ready': False}
+
+    def _generate_amplitude_envelope(self, trace_data: np.ndarray) -> np.ndarray:
+        """Generate amplitude envelope using Hilbert transform"""
+        try:
+            # Calculate analytic signal
+            analytic_signal = hilbert(trace_data)
+            # Extract amplitude envelope
+            envelope = np.abs(analytic_signal)
+            return envelope
+        except:
+            # Fallback: use absolute values
+            return np.abs(trace_data)
+
+    def _assess_trace_quality(self, trace_data: np.ndarray) -> Dict:
+        """Assess quality of individual trace"""
+        quality_metrics = {
+            'is_dead_trace': bool(np.all(trace_data == 0)),
+            'is_clipped': bool(self._detect_clipping(trace_data)),
+            'signal_to_noise_ratio': float(self._estimate_snr(trace_data)),
+            'quality_flag': 'unknown'
+        }
+
+        # Determine overall quality flag
+        if quality_metrics['is_dead_trace']:
+            quality_metrics['quality_flag'] = 'dead'
+        elif quality_metrics['is_clipped']:
+            quality_metrics['quality_flag'] = 'clipped'
+        elif quality_metrics['signal_to_noise_ratio'] < 2.0:
+            quality_metrics['quality_flag'] = 'noisy'
+        else:
+            quality_metrics['quality_flag'] = 'good'
+
+        return quality_metrics
+
+    def _detect_clipping(self, trace_data: np.ndarray) -> bool:
+        """Detect if trace is clipped (saturated)"""
+        max_val = np.max(np.abs(trace_data))
+        if max_val == 0:
+            return False
+
+        # Count samples at or near maximum value
+        threshold = 0.95 * max_val
+        clipped_samples = np.sum(np.abs(trace_data) >= threshold)
+
+        # If more than 1% of samples are at max, consider it clipped
+        return clipped_samples > len(trace_data) * 0.01
+
+    def _estimate_snr(self, trace_data: np.ndarray) -> float:
+        """Estimate signal-to-noise ratio"""
+        try:
+            # Simple SNR estimation
+            signal_power = np.mean(trace_data ** 2)
+            noise_estimate = np.std(trace_data) ** 2
+            if noise_estimate > 0:
+                return float(signal_power / noise_estimate)
+            else:
+                return 0.0
+        except:
+            return 0.0
+
+
+    def _generate_outline_summary(self, trace_outlines: List[Dict]) -> Dict:
+        """Generate summary statistics for trace outlines"""
+        if not trace_outlines:
+            return {
+                "total_traces": 0,
+                "quality_distribution": {},
+                "amplitude_range": {"min": 0, "max": 0},
+                "coordinate_range": {"min_x": 0, "max_x": 0, "min_y": 0, "max_y": 0}
+            }
+
+        try:
+            # Quality distribution
+            quality_flags = [t['quality_metrics']['quality_flag'] for t in trace_outlines]
+            quality_dist = {}
+            for flag in set(quality_flags):
+                quality_dist[flag] = quality_flags.count(flag)
+
+            # Amplitude statistics
+            peak_amps = [t['peak_amplitude'] for t in trace_outlines]
+            rms_amps = [t['rms_amplitude'] for t in trace_outlines]
+
+            # Coordinate range
+            x_coords = [t['coordinates']['x'] for t in trace_outlines]
+            y_coords = [t['coordinates']['y'] for t in trace_outlines]
+
+            return {
+                "total_traces": len(trace_outlines),
+                "quality_distribution": quality_dist,
+                "amplitude_range": {
+                    "peak_min": float(min(peak_amps)),
+                    "peak_max": float(max(peak_amps)),
+                    "rms_min": float(min(rms_amps)),
+                    "rms_max": float(max(rms_amps))
+                },
+                "coordinate_range": {
+                    "min_x": float(min(x_coords)) if x_coords else 0,
+                    "max_x": float(max(x_coords)) if x_coords else 0,
+                    "min_y": float(min(y_coords)) if y_coords else 0,
+                    "max_y": float(max(y_coords)) if y_coords else 0
+                },
+                "zero_percentage_avg": float(np.mean([t['zero_percentage'] for t in trace_outlines]))
+            }
+        except Exception as e:
+            return {
+                "total_traces": len(trace_outlines),
+                "error": f"Summary calculation failed: {str(e)}"
+            }
+
+# ===================================================================
+# ANALYSIS STORAGE SYSTEM
+# ===================================================================
+
+class SEGYAnalysisStorage:
+    """Store and retrieve SEG-Y analysis results"""
+
+    def __init__(self, storage_dir: str = "./segy_analysis_storage"):
+        self.storage_dir = storage_dir
+        self.ensure_storage_directory()
+        self.logger = logging.getLogger(__name__)
+
+    def ensure_storage_directory(self):
+        """Create storage directory if it doesn't exist"""
+        os.makedirs(self.storage_dir, exist_ok=True)
+        os.makedirs(os.path.join(self.storage_dir, "metadata"), exist_ok=True)
+        os.makedirs(os.path.join(self.storage_dir, "polygons"), exist_ok=True)
+        os.makedirs(os.path.join(self.storage_dir, "trace_outlines"), exist_ok=True)
+        os.makedirs(os.path.join(self.storage_dir, "catalog"), exist_ok=True)
+
+    def save_analysis_results(self, file_path: str, analysis_type: str,
+                              analysis_data: Dict) -> Dict:
+        """
+        Save analysis results to persistent storage
+
+        Args:
+            file_path: Original SEG-Y file path
+            analysis_type: Type of analysis ('metadata', 'polygon', 'traces', 'complete')
+            analysis_data: Analysis results to save
+
+        Returns:
+            Dict with storage information
+        """
+        try:
+            # Generate unique file identifier
+            file_id = self._generate_file_id(file_path)
+            timestamp = datetime.now().isoformat()
+
+            # Prepare storage record
+            storage_record = {
+                'file_id': file_id,
+                'original_file_path': file_path,
+                'analysis_type': analysis_type,
+                'timestamp': timestamp,
+                'analysis_data': analysis_data
+            }
+
+            # Save to appropriate directory
+            storage_path = self._get_storage_path(analysis_type, file_id)
+
+            with open(storage_path, 'w') as f:
+                json.dump(storage_record, f, indent=2)
+
+            # Update catalog
+            self._update_catalog(file_id, file_path, analysis_type, timestamp)
+
+            self.logger.info(f"Analysis saved: {analysis_type} for {file_id}")
+
+            return {
+                'success': True,
+                'file_id': file_id,
+                'storage_path': storage_path,
+                'timestamp': timestamp,
+                'analysis_type': analysis_type
+            }
+
+        except Exception as e:
+            self.logger.error(f"Failed to save analysis: {str(e)}")
+            return {
+                'success': False,
+                'error': str(e)
+            }
+
+    def load_analysis_results(self, file_id: str, analysis_type: str) -> Dict:
+        """Load previously saved analysis results"""
+        try:
+            storage_path = self._get_storage_path(analysis_type, file_id)
+
+            if not os.path.exists(storage_path):
+                return {
+                    'success': False,
+                    'error': f'No {analysis_type} analysis found for {file_id}'
+                }
+
+            with open(storage_path, 'r') as f:
+                storage_record = json.load(f)
+
+            return {
+                'success': True,
+                'analysis_data': storage_record['analysis_data'],
+                'timestamp': storage_record['timestamp'],
+                'file_path': storage_record['original_file_path']
+            }
+
+        except Exception as e:
+            return {
+                'success': False,
+                'error': str(e)
+            }
+
+    def get_analysis_catalog(self) -> Dict:
+        """Get catalog of all stored analyses"""
+        try:
+            catalog_path = os.path.join(self.storage_dir, "catalog", "analysis_catalog.json")
+
+            if not os.path.exists(catalog_path):
+                return {
+                    'total_files': 0,
+                    'analyses': []
+                }
+
+            with open(catalog_path, 'r') as f:
+                catalog = json.load(f)
+
+            return catalog
+
+        except Exception as e:
+            return {
+                'error': str(e),
+                'total_files': 0,
+                'analyses': []
+            }
+
+    def search_analyses(self, search_criteria: Dict) -> List[Dict]:
+        """Search stored analyses by criteria"""
+        catalog = self.get_analysis_catalog()
+
+        if 'error' in catalog:
+            return []
+
+        results = []
+        for analysis in catalog.get('analyses', []):
+            # Simple search implementation
+            if self._matches_criteria(analysis, search_criteria):
+                results.append(analysis)
+
+        return results
+
+    def _matches_criteria(self, analysis: Dict, search_criteria: Dict) -> bool:
+        """Check if analysis matches search criteria"""
+
+        # If no criteria, match all
+        if not search_criteria:
+            return True
+
+        # Check filename pattern
+        filename_pattern = search_criteria.get('filename_pattern')
+        if filename_pattern:
+            filename = analysis.get('filename', '')
+            if filename_pattern.lower() not in filename.lower():
+                return False
+
+        # Check analysis type
+        analysis_type = search_criteria.get('analysis_type')
+        if analysis_type:
+            if analysis.get('analysis_type') != analysis_type:
+                return False
+
+        # Check date range
+        date_from = search_criteria.get('date_from')
+        date_to = search_criteria.get('date_to')
+        if date_from or date_to:
+            timestamp_str = analysis.get('timestamp', '')
+            if timestamp_str:
+                try:
+                    from datetime import datetime
+                    analysis_date = datetime.fromisoformat(timestamp_str.replace('Z', '+00:00'))
+                    analysis_date_str = analysis_date.strftime('%Y-%m-%d')
+
+                    if date_from and analysis_date_str < date_from:
+                        return False
+                    if date_to and analysis_date_str > date_to:
+                        return False
+                except (ValueError, AttributeError):
+                    pass
+
+        return True
+
+    def _generate_file_id(self, file_path: str) -> str:
+        """Generate unique identifier for file"""
+        import hashlib
+        filename = os.path.basename(file_path)
+        # Use filename + file modification time for uniqueness
+        try:
+            mtime = str(os.path.getmtime(file_path))
+        except:
+            mtime = str(datetime.now().timestamp())
+
+        unique_string = f"{filename}_{mtime}"
+        return hashlib.md5(unique_string.encode()).hexdigest()[:12]
+
+    def _get_storage_path(self, analysis_type: str, file_id: str) -> str:
+        """Get storage file path for analysis type"""
+        subdir_map = {
+            'metadata': 'metadata',
+            'polygon': 'polygons',
+            'traces': 'trace_outlines',
+            'complete': 'metadata'
+        }
+
+        subdir = subdir_map.get(analysis_type, 'metadata')
+        filename = f"{file_id}_{analysis_type}.json"
+
+        return os.path.join(self.storage_dir, subdir, filename)
+
+    def _update_catalog(self, file_id: str, file_path: str, analysis_type: str, timestamp: str):
+        """Update the analysis catalog"""
+        catalog_path = os.path.join(self.storage_dir, "catalog", "analysis_catalog.json")
+
+        # Load existing catalog
+        try:
+            with open(catalog_path, 'r') as f:
+                catalog = json.load(f)
+        except:
+            catalog = {
+                'total_files': 0,
+                'analyses': []
+            }
+
+        # Update or add entry
+        entry = {
+            'file_id': file_id,
+            'file_path': file_path,
+            'filename': os.path.basename(file_path),
+            'analysis_type': analysis_type,
+            'timestamp': timestamp
+        }
+
+        # Check if entry exists and update, otherwise add
+        existing_index = None
+        for i, analysis in enumerate(catalog['analyses']):
+            if analysis['file_id'] == file_id and analysis['analysis_type'] == analysis_type:
+                existing_index = i
+                break
+
+        if existing_index is not None:
+            catalog['analyses'][existing_index] = entry
+        else:
+            catalog['analyses'].append(entry)
+            catalog['total_files'] = len(set(a['file_id'] for a in catalog['analyses']))
+
+        # Save updated catalog
+        with open(catalog_path, 'w') as f:
+            json.dump(catalog, f, indent=2)
+
+
+def mcp_extract_survey_polygon(file_path: str = None,
+                               coordinate_sample_rate: int = 10,
+                               max_coordinates: int = 100,  # NEW PARAMETER
+                               return_format: str = "summary",  # NEW PARAMETER
+                               **kwargs) -> Dict:
+    """
+    MCP Tool: Extract survey polygon from SEG-Y file - RATE-LIMIT SAFE VERSION
+
+    Args:
+        file_path: SEG-Y file path
+        coordinate_sample_rate: Sample every Nth trace (default: 10)
+        max_coordinates: Maximum coordinates to return (default: 100)
+        return_format: "summary", "simplified", or "full" (default: "summary")
+    """
+    if not file_path:
+        return {'error': 'file_path parameter required'}
+
+    resolved_file_path = find_segy_file(file_path, kwargs.get('data_dir', './data'))
+    if not os.path.isfile(resolved_file_path):
+        return {'error': f'File not found: {file_path}', 'resolved_path': resolved_file_path}
+
+    extractor = SurveyPolygonExtractor()
+
+    # NEW: Pass parameters to control output size
+    extractor.max_coordinates = max_coordinates
+    extractor.return_format = return_format
+
+    result = extractor.extract_survey_polygon(resolved_file_path, coordinate_sample_rate)
+
+    # Store results if extraction successful
+    if 'error' not in result:
+        storage = SEGYAnalysisStorage()
+        storage_result = storage.save_analysis_results(resolved_file_path, 'polygon', result)
+        result['storage_info'] = storage_result
+
+    return result
+
+# ===================================================================
+# MCP TOOL INTEGRATION FUNCTIONS
+# ===================================================================
+
+def mcp_extract_trace_outlines(file_path: str = None,
+                               trace_sample_rate: int = 100,
+                               max_traces: int = 10,  # NEW PARAMETER
+                               return_format: str = "summary",  # NEW PARAMETER
+                               **kwargs) -> Dict:
+    """
+    MCP Tool: Extract trace outlines from SEG-Y file - RATE-LIMIT SAFE VERSION
+
+    Args:
+        file_path: SEG-Y file path
+        trace_sample_rate: Extract every Nth trace (default: 100)
+        max_traces: Maximum traces to process (default: 10)
+        return_format: "summary", "limited", or "full" (default: "summary")
+    """
+    if not file_path:
+        return {'error': 'file_path parameter required'}
+
+    resolved_file_path = find_segy_file(file_path, kwargs.get('data_dir', './data'))
+    if not os.path.isfile(resolved_file_path):
+        return {'error': f'File not found: {file_path}', 'resolved_path': resolved_file_path}
+
+    generator = TraceOutlineGenerator()
+
+    # NEW: Configure output limits
+    generator.max_traces = max_traces
+    generator.return_format = return_format
+
+    result = generator.extract_trace_outlines(resolved_file_path, trace_sample_rate)
+
+    # Store results if extraction successful
+    if 'error' not in result:
+        storage = SEGYAnalysisStorage()
+        storage_result = storage.save_analysis_results(resolved_file_path, 'traces', result)
+        result['storage_info'] = storage_result
+
+    return result
+
+
+def mcp_save_analysis(file_path: str = None, analysis_type: str = None,
+                      analysis_data: Dict = None, **kwargs) -> Dict:
+    """
+    MCP Tool: Save analysis results to persistent storage
+
+    Args:
+        file_path: Original SEG-Y file path
+        analysis_type: Type of analysis
+        analysis_data: Analysis results to save
+
+    Returns:
+        Storage confirmation
+    """
+    if not all([file_path, analysis_type, analysis_data]):
+        return {'error': 'file_path, analysis_type, and analysis_data required'}
+
+    storage = SEGYAnalysisStorage()
+    return storage.save_analysis_results(file_path, analysis_type, analysis_data)
+
+
+def mcp_get_analysis_catalog(**kwargs) -> Dict:
+    """
+    MCP Tool: Get catalog of all stored analyses
+
+    Returns:
+        Catalog of stored analysis results
+    """
+    storage = SEGYAnalysisStorage()
+    return storage.get_analysis_catalog()
+
+
+def mcp_search_analyses(search_criteria: Dict = None, **kwargs) -> List[Dict]:
+    """
+    MCP Tool: Search stored analyses
+
+    Args:
+        search_criteria: Search parameters
+
+    Returns:
+        List of matching analyses
+    """
+    if not search_criteria:
+        search_criteria = {}
+
+    storage = SEGYAnalysisStorage()
+    return storage.search_analyses(search_criteria)
+
+
+# ===================================================================
+# HELPER FUNCTIONS FOR YOUR EXISTING SYSTEM
+# ===================================================================
+
+def integrate_with_existing_metadata(existing_metadata: Dict,
+                                     polygon_data: Dict,
+                                     trace_data: Dict) -> Dict:
+    """
+    Combine new additions with your existing metadata extraction
+
+    Args:
+        existing_metadata: Your current metadata results
+        polygon_data: Survey polygon data
+        trace_data: Trace outline data
+
+    Returns:
+        Combined comprehensive analysis
+    """
+    comprehensive_analysis = existing_metadata.copy()
+
+    # Add spatial information
+    comprehensive_analysis['spatial_analysis'] = polygon_data
+
+    # Add trace visualization data
+    comprehensive_analysis['trace_visualization'] = trace_data
+
+    # Add combined recommendations
+    combined_recommendations = existing_metadata.get('recommendations', [])
+    combined_recommendations.extend(polygon_data.get('recommendations', []))
+    comprehensive_analysis['recommendations'] = combined_recommendations
+
+    return comprehensive_analysis
+
+# ===================================================================
+# EXAMPLE USAGE WITH YOUR EXISTING SYSTEM
+# ===================================================================
+
+def complete_segy_analysis_workflow(segy_file_path: str) -> Dict:
+    """
+    Complete workflow combining your existing tools with new additions
+
+    This is how the 3 additions integrate with your current system
+    """
+    results = {}
+
+    # Step 1: Use your existing metadata extraction (already working perfectly)
+    # This would call your existing production_segy_tools functions
+    # existing_metadata = your_existing_metadata_extractor(segy_file_path)
+
+    # Step 2: Add survey polygon extraction (NEW)
+    polygon_data = mcp_extract_survey_polygon(segy_file_path)
+    results['survey_polygon'] = polygon_data
+
+    # Step 3: Add trace outline extraction (NEW)
+    trace_data = mcp_extract_trace_outlines(segy_file_path)
+    results['trace_outlines'] = trace_data
+
+    # Step 4: Save complete analysis (NEW)
+    storage_result = mcp_save_analysis(
+        file_path=segy_file_path,
+        analysis_type='complete',
+        analysis_data=results
+    )
+    results['storage_info'] = storage_result
+
+    return results

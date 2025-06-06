@@ -64,9 +64,14 @@ try:
         segy_complete_metadata_harvester,
         find_segy_file,
         NumpyJSONEncoder,
-        TemplateValidator,          # ADD THIS
-        SegyioValidator,           # ADD THIS
-        MemoryMonitor             # ADD THIS
+        TemplateValidator,
+        SegyioValidator,
+        MemoryMonitor,
+        mcp_extract_survey_polygon,
+        mcp_extract_trace_outlines,
+        mcp_save_analysis,
+        mcp_get_analysis_catalog,
+        mcp_search_analyses
     )
     from production_segy_analysis_qc import (
         production_segy_qc,
@@ -1278,59 +1283,78 @@ def main():
         # Enhanced system prompt that tells the agent to USE the tools
         system_prompt = """You are an expert subsurface data analyst with access to powerful analysis tools for both well logs and seismic data.
 
-    IMPORTANT: You have access to the following tools that you MUST use when users ask for analysis:
+        IMPORTANT: You have access to the following tools that you MUST use when users ask for analysis:
 
-    WELL LOG TOOLS (LAS Files):
-    - las_parser: Parse LAS files to extract metadata and basic information
-    - las_analysis: Analyze curves and perform statistical analysis  
-    - las_qc: Perform quality control checks on LAS files
-    - formation_evaluation: Perform comprehensive petrophysical analysis
-    - well_correlation: Correlate formations across multiple wells
-    - calculate_shale_volume: Calculate shale volume from gamma ray logs
+        WELL LOG TOOLS (LAS Files):
+        - las_parser: Parse LAS files to extract metadata and basic information
+        - las_analysis: Analyze curves and perform statistical analysis  
+        - las_qc: Perform quality control checks on LAS files
+        - formation_evaluation: Perform comprehensive petrophysical analysis
+        - well_correlation: Correlate formations across multiple wells
+        - calculate_shale_volume: Calculate shale volume from gamma ray logs
 
-    SEISMIC DATA TOOLS (SEG-Y Files):
-    - segy_parser: Parse SEG-Y files with segyio-powered processing
-    - segy_qc: Perform quality control on SEG-Y files with segyio validation
-    - segy_analysis: Analyze seismic survey geometry and data quality with segyio
-    - segy_classify: Automatically classify SEG-Y survey characteristics (handles both single and batch)
-    - segy_survey_analysis: Analyze multiple SEG-Y files as complete surveys
-    - segy_template_detect: Template detection using segyio native header reading
-    - segy_survey_compare: Compare SEG-Y files for processing compatibility
-    - quick_segy_summary: Get fast overview of SEG-Y files without full processing
-    - segy_complete_metadata_harvester: Extract comprehensive metadata from all header types (EBCDIC, Binary, Trace)
+        SEISMIC DATA TOOLS (SEG-Y Files):
+        - segy_parser: Parse SEG-Y files with segyio-powered processing
+        - segy_qc: Perform quality control on SEG-Y files with segyio validation
+        - segy_analysis: Analyze seismic survey geometry and data quality with segyio
+        - segy_classify: Automatically classify SEG-Y survey characteristics (handles both single and batch)
+        - segy_survey_analysis: Analyze multiple SEG-Y files as complete surveys
+        - segy_template_detect: Template detection using segyio native header reading
+        - segy_survey_compare: Compare SEG-Y files for processing compatibility
+        - quick_segy_summary: Get fast overview of SEG-Y files without full processing
+        - segy_complete_metadata_harvester: Extract comprehensive metadata from all header types (EBCDIC, Binary, Trace)
+        - segy_survey_polygon: Extract geographic survey boundary polygon from SEG-Y coordinates
+        - segy_trace_outlines: Extract trace amplitude outlines for visualization from SEG-Y data
+        - segy_save_analysis: Save SEG-Y analysis results to persistent storage
+        - segy_analysis_catalog: Get catalog of all stored SEG-Y analyses
+        - segy_search_analyses: Search stored SEG-Y analyses by criteria
 
-    GENERAL TOOLS:
-    - list_files: List available data files matching patterns
-    - system_status: Check system health and performance
+        GENERAL TOOLS:
+        - list_files: List available data files matching patterns
+        - system_status: Check system health and performance
 
-    WORKFLOWS:
+        WORKFLOWS:
 
-    For LAS file analysis ("analyze formation in well.las"):
-    1. Call las_parser with "well.las" to load the file
-    2. Call formation_evaluation with "well.las" for petrophysical analysis
-    3. Call las_qc with "well.las" to check data quality
-    4. Interpret results and provide expert analysis
+        For LAS file analysis ("analyze formation in well.las"):
+        1. Call las_parser with "well.las" to load the file
+        2. Call formation_evaluation with "well.las" for petrophysical analysis
+        3. Call las_qc with "well.las" to check data quality
+        4. Interpret results and provide expert analysis
 
-    For SEG-Y file analysis ("analyze seismic survey.sgy"):
-    1. Call segy_parser with "survey.sgy" to load the file
-    2. Call segy_classify with "survey.sgy" to determine survey characteristics  
-    3. Call segy_qc with "survey.sgy" to check data quality
-    4. Call segy_analysis with "survey.sgy" for detailed geometry analysis
-    5. For quick overview, use quick_segy_summary instead of full analysis
-    6. For comprehensive metadata extraction, use segy_complete_metadata_harvester for all header types
-    7. Interpret results and provide expert seismic analysis
-    
-    Alternative workflows:
-    - Complete file characterization: Use segy_complete_metadata_harvester for one-stop comprehensive analysis
-    - Quick assessment: Use quick_segy_summary for fast inventory and basic parameters
-    - Traditional detailed analysis: Use steps 1-4 above for specialized multi-tool analysis
+        For SEG-Y file analysis ("analyze seismic survey.sgy"):
+        1. Call segy_parser with "survey.sgy" to load the file
+        2. Call segy_classify with "survey.sgy" to determine survey characteristics  
+        3. Call segy_qc with "survey.sgy" to check data quality
+        4. Call segy_analysis with "survey.sgy" for detailed geometry analysis
+        5. For quick overview, use quick_segy_summary instead of full analysis
+        6. For comprehensive metadata extraction, use segy_complete_metadata_harvester for all header types
+        7. Interpret results and provide expert seismic analysis
 
-    For multi-file analysis ("correlate all wells" or "analyze seismic survey"):
-    1. Call list_files to see available files
-    2. Use appropriate batch tools (well_correlation, segy_survey_analysis, etc.)
-    3. Provide integrated interpretation
+        For spatial and visualization analysis ("extract survey boundaries" or "show trace outlines"):
+        1. Call segy_survey_polygon to extract geographic survey boundaries and spatial information
+        2. Call segy_trace_outlines to extract amplitude envelopes for trace visualization
+        3. Call segy_save_analysis to store results for later retrieval
+        4. Provide spatial context and visualization-ready data
 
-    DO NOT give generic advice - USE THE TOOLS to actually analyze the data and provide specific results from the actual files."""
+        For data management and retrieval:
+        1. Call segy_analysis_catalog to see all previously analyzed files
+        2. Call segy_search_analyses to find specific analyses by criteria
+        3. Reference stored analyses for comparison and portfolio management
+
+        Alternative workflows:
+        - Complete file characterization: Use segy_complete_metadata_harvester for one-stop comprehensive analysis
+        - Quick assessment: Use quick_segy_summary for fast inventory and basic parameters
+        - Traditional detailed analysis: Use steps 1-4 above for specialized multi-tool analysis
+        - Spatial analysis: Use segy_survey_polygon for geographic boundaries and survey footprints
+        - Visualization preparation: Use segy_trace_outlines for amplitude envelope extraction
+
+        For multi-file analysis ("correlate all wells" or "analyze seismic survey"):
+        1. Call list_files to see available files
+        2. Use appropriate batch tools (well_correlation, segy_survey_analysis, etc.)
+        3. Use segy_analysis_catalog to reference previously analyzed files
+        4. Provide integrated interpretation
+
+        DO NOT give generic advice - USE THE TOOLS to actually analyze the data and provide specific results from the actual files."""
 
         # Create memory
         memory = ConversationBufferMemory(memory_key="chat_history")
@@ -2334,6 +2358,10 @@ def main():
 
         def handle_input(self, file_path=None, **kwargs):
             """Standardized input handling for SEG-Y tools."""
+            # Map file_path to full_path for backward compatibility
+            if file_path:
+                kwargs['full_path'] = file_path
+
             return handle_json_input(
                 file_path,
                 {"data_dir": self.data_dir, "template_dir": self.template_dir},
@@ -2343,9 +2371,19 @@ def main():
         def find_file(self, file_path):
             """Find SEG-Y file with standard error handling."""
             full_path = find_segy_file(file_path, self.data_dir)
-            if not os.path.isfile(full_path):
-                raise FileNotFoundError(f"SEG-Y file not found: {file_path}")
-            return full_path
+
+            # Check if the file was actually found
+            if os.path.isfile(full_path):
+                return full_path
+            else:
+                # Debug: Show what path was attempted
+                print(f"DEBUG: find_file failed to locate: {full_path}")
+                print(f"DEBUG: Original file_path: {file_path}")
+                print(f"DEBUG: data_dir: {self.data_dir}")
+
+                # Let the calling function handle the error gracefully
+                # instead of raising an exception immediately
+                return full_path
 
         def check_intelligent_segy(self):
             """Check if intelligent SEG-Y processing is available."""
@@ -2460,6 +2498,56 @@ def main():
                     "Ensure file is valid SEG-Y format"
                 ]
             )
+
+    @mcp_server.tool(name="segy_survey_polygon",
+                     description="Extract geographic survey boundary polygon from SEG-Y coordinates")
+    def segy_survey_polygon(file_path=None, **kwargs):
+        """Extract survey polygon and spatial information from SEG-Y file."""
+        try:
+            params = segy_tools.handle_input(file_path, **kwargs)
+            return mcp_extract_survey_polygon(**params)
+        except Exception as e:
+            return create_error_response(f"Survey polygon extraction failed: {str(e)}")
+
+    @mcp_server.tool(name="segy_trace_outlines",
+                     description="Extract trace amplitude outlines for visualization from SEG-Y data")
+    def segy_trace_outlines(file_path=None, trace_sample_rate=100, **kwargs):
+        """Extract trace amplitude envelopes for visualization."""
+        try:
+            params = segy_tools.handle_input(file_path, **kwargs)
+            params['trace_sample_rate'] = trace_sample_rate
+            return mcp_extract_trace_outlines(**params)
+        except Exception as e:
+            return create_error_response(f"Trace outline extraction failed: {str(e)}")
+
+    @mcp_server.tool(name="segy_save_analysis", description="Save SEG-Y analysis results to persistent storage")
+    def segy_save_analysis(file_path=None, analysis_type=None, analysis_data=None, **kwargs):
+        """Save analysis results to persistent storage for later retrieval."""
+        try:
+            params = segy_tools.handle_input(file_path, **kwargs)
+            params['analysis_type'] = analysis_type
+            params['analysis_data'] = analysis_data
+            return mcp_save_analysis(**params)
+        except Exception as e:
+            return create_error_response(f"Analysis storage failed: {str(e)}")
+
+    @mcp_server.tool(name="segy_analysis_catalog", description="Get catalog of all stored SEG-Y analyses")
+    def segy_analysis_catalog(**kwargs):
+        """Retrieve catalog of all stored analysis results."""
+        try:
+            return mcp_get_analysis_catalog(**kwargs)
+        except Exception as e:
+            return create_error_response(f"Analysis catalog retrieval failed: {str(e)}")
+
+    @mcp_server.tool(name="segy_search_analyses", description="Search stored SEG-Y analyses by criteria")
+    def segy_search_analyses(search_criteria=None, **kwargs):
+        """Search stored analyses by various criteria."""
+        try:
+            params = {'search_criteria': search_criteria or {}}
+            params.update(kwargs)
+            return mcp_search_analyses(**params)
+        except Exception as e:
+            return create_error_response(f"Analysis search failed: {str(e)}")
     # ========================================
     # SYSTEM TOOLS
     # ========================================
@@ -2494,7 +2582,9 @@ def main():
                 "segy_survey_analysis", "segy_template_detect", "segy_batch_classify",
                 "segy_survey_compare", "intelligent_segy_analysis",
                 "intelligent_survey_analysis", "quick_segy_summary",
-                "intelligent_qc_analysis", "segy_complete_metadata_harvester","system_status"
+                "intelligent_qc_analysis", "segy_complete_metadata_harvester",
+                "segy_survey_polygon", "segy_trace_outlines", "segy_save_analysis",
+                "segy_analysis_catalog", "segy_search_analyses", "system_status"
             ]
 
             # Data directory info
@@ -2589,13 +2679,17 @@ def main():
             "well_correlation", "list_files", "calculate_shale_volume"
         ],
         "segy_tools": [
-            "segy_parser", "segy_analysis", "segy_qc", "segy_survey_analysis", "segy_complete_metadata_harvester"
+            "segy_parser", "segy_analysis", "segy_qc", "segy_survey_analysis",
+            "segy_complete_metadata_harvester", "segy_survey_polygon", "segy_trace_outlines"
         ],
         "intelligent_segy_tools": [
             "segy_classify", "segy_template_detect", "segy_survey_compare"
         ],
         "ai_analysis_tools": [
             "quick_segy_summary"
+        ],
+        "data_management_tools": [
+            "segy_save_analysis", "segy_analysis_catalog", "segy_search_analyses"
         ],
         "system_tools": [
             "system_status"
@@ -2795,7 +2889,7 @@ def main():
             "calculate_shale_volume": {"mcp_tool": "calculate_shale_volume",
                                        "description": "Calculate volume of shale from gamma ray log using the Larionov correction method."},
 
-            # SEG-Y Tools - Segyio Enhanced (8 total tools)
+            # SEG-Y Tools - Segyio Enhanced (14 total tools)
             "segy_parser": {"mcp_tool": "segy_parser",
                             "description": "Parse SEG-Y seismic files with segyio-powered processing and comprehensive metadata extraction."},
             "segy_qc": {"mcp_tool": "segy_qc",
@@ -2818,6 +2912,20 @@ def main():
                 "mcp_tool": "segy_complete_metadata_harvester",
                 "description": "Extract comprehensive metadata from all SEG-Y header types (EBCDIC, Binary, Trace) with intelligent parsing and quality assessment."
             },
+
+            # Spatial Analysis Tools - NEW
+            "segy_survey_polygon": {"mcp_tool": "segy_survey_polygon", "format_output": "json",
+                                    "description": "Extract geographic survey boundary polygon from SEG-Y coordinates with spatial quality assessment and area calculations."},
+            "segy_trace_outlines": {"mcp_tool": "segy_trace_outlines", "format_output": "json",
+                                    "description": "Extract trace amplitude outlines for visualization with Hilbert transform envelopes and quality flags."},
+
+            # Data Management Tools - NEW
+            "segy_save_analysis": {"mcp_tool": "segy_save_analysis",
+                                   "description": "Save SEG-Y analysis results to persistent storage with cataloging and retrieval capabilities."},
+            "segy_analysis_catalog": {"mcp_tool": "segy_analysis_catalog", "format_output": "json",
+                                      "description": "Get comprehensive catalog of all stored SEG-Y analyses with timestamps and file references."},
+            "segy_search_analyses": {"mcp_tool": "segy_search_analyses", "format_output": "json",
+                                     "description": "Search stored SEG-Y analyses by criteria including file names, dates, quality metrics, and spatial properties."},
 
             # System Tools
             "system_status": {"mcp_tool": "system_status",
@@ -2859,6 +2967,27 @@ def main():
              "comprehensive metadata"): "segy_complete_metadata_harvester",
             ("extract comprehensive", "harvest metadata", "all headers"): "segy_complete_metadata_harvester",
             ("metadata from all", "all header types"): "segy_complete_metadata_harvester",
+
+            # Add your new spatial analysis tools
+            ("extract survey polygon", "survey boundary", "geographic boundary"): "segy_survey_polygon",
+            ("survey area", "spatial extent", "coordinate polygon"): "segy_survey_polygon",
+            ("survey footprint", "geographic coverage", "boundary coordinates"): "segy_survey_polygon",
+
+            ("extract trace outlines", "trace envelopes", "amplitude outlines"): "segy_trace_outlines",
+            ("trace visualization", "amplitude envelopes", "trace shapes"): "segy_trace_outlines",
+            ("visualization data", "trace profiles", "outline extraction"): "segy_trace_outlines",
+
+            # Add your new data management tools
+            ("save analysis", "store results", "save to storage"): "segy_save_analysis",
+            ("persist analysis", "store analysis", "save extraction"): "segy_save_analysis",
+
+            ("analysis catalog", "stored analyses", "analysis inventory"): "segy_analysis_catalog",
+            ("list analyses", "show catalog", "analysis history"): "segy_analysis_catalog",
+            ("previous analyses", "analysis summary"): "segy_analysis_catalog",
+
+            ("search analyses", "find analyses", "search stored"): "segy_search_analyses",
+            ("find stored", "search catalog", "locate analysis"): "segy_search_analyses",
+            ("search by criteria", "filter analyses"): "segy_search_analyses",
 
             # LAS Commands (unchanged)
             ("parse all",): ("las_parser", {"selection_mode": "all"}),
@@ -3065,50 +3194,50 @@ def main():
             else:
                 return json.dumps(data, indent=2)
 
-        def extract_pattern(input_str):
-            """Extract file pattern from command - FIXED VERSION"""
-            pattern = input_str.strip()
-
-            # Remove common command words from the beginning
-            command_words = [
-                "classify", "parse", "analyze", "check", "qc", "detect", "template",
-                "compare", "intelligent", "quick", "summary", "list", "files",
-                "correlate", "evaluate", "all", "matching"
-            ]
-
-            # Split the input into words
-            words = pattern.split()
-
-            # Remove command words from the beginning
-            while words and words[0].lower() in command_words:
-                words.pop(0)
-
-            # Rejoin the remaining words
-            if words:
-                cleaned_pattern = " ".join(words)
-            else:
-                cleaned_pattern = pattern
-
-            # Clean up any remaining artifacts
-            for keyword in ["matching", "all", "files"]:
-                if keyword in cleaned_pattern:
-                    parts = cleaned_pattern.split(keyword, 1)
-                    if len(parts) > 1:
-                        cleaned_pattern = parts[1].strip()
-                        break
-
-            # Remove trailing periods
-            cleaned_pattern = cleaned_pattern.rstrip('.')
-
-            # If the result is empty or too short, return the original minus first word
-            if not cleaned_pattern or len(cleaned_pattern) < 3:
-                original_words = input_str.split()
-                if len(original_words) > 1:
-                    cleaned_pattern = " ".join(original_words[1:])
-                else:
-                    cleaned_pattern = input_str
-
-            return cleaned_pattern.strip()
+        # def extract_pattern(input_str):
+        #     """Extract file pattern from command - FIXED VERSION"""
+        #     pattern = input_str.strip()
+        #
+        #     # Remove common command words from the beginning
+        #     command_words = [
+        #         "classify", "parse", "analyze", "check", "qc", "detect", "template",
+        #         "compare", "intelligent", "quick", "summary", "list", "files",
+        #         "correlate", "evaluate", "all", "matching"
+        #     ]
+        #
+        #     # Split the input into words
+        #     words = pattern.split()
+        #
+        #     # Remove command words from the beginning
+        #     while words and words[0].lower() in command_words:
+        #         words.pop(0)
+        #
+        #     # Rejoin the remaining words
+        #     if words:
+        #         cleaned_pattern = " ".join(words)
+        #     else:
+        #         cleaned_pattern = pattern
+        #
+        #     # Clean up any remaining artifacts
+        #     for keyword in ["matching", "all", "files"]:
+        #         if keyword in cleaned_pattern:
+        #             parts = cleaned_pattern.split(keyword, 1)
+        #             if len(parts) > 1:
+        #                 cleaned_pattern = parts[1].strip()
+        #                 break
+        #
+        #     # Remove trailing periods
+        #     cleaned_pattern = cleaned_pattern.rstrip('.')
+        #
+        #     # If the result is empty or too short, return the original minus first word
+        #     if not cleaned_pattern or len(cleaned_pattern) < 3:
+        #         original_words = input_str.split()
+        #         if len(original_words) > 1:
+        #             cleaned_pattern = " ".join(original_words[1:])
+        #         else:
+        #             cleaned_pattern = input_str
+        #
+        #     return cleaned_pattern.strip()
 
         def _extract_and_process_file(query, file_extensions, handler_name):
             """Extract filename from query and process with specified handler."""
@@ -3175,43 +3304,57 @@ def main():
         print(f"Successfully created {len(tools)} LangChain tools")
 
         def enhanced_direct_command_processor(command_str: str) -> Optional[str]:
-            """Enhanced command processor with better pattern extraction"""
+            """Intent-based command processor"""
             try:
                 command_lower = command_str.lower()
 
-                # IMPROVED LIST COMMAND HANDLING
-                if command_lower.startswith("list"):
-                    # Extract everything after "list" and "files"
-                    pattern = command_str
-                    for word in ["list", "files", "matching"]:
-                        if word in pattern.lower():
-                            parts = pattern.lower().split(word, 1)
-                            if len(parts) > 1:
-                                pattern = parts[1].strip()
+                # INTENT: List files
+                if any(keyword in command_lower for keyword in ["list", "show", "display"]) and \
+                        any(keyword in command_lower for keyword in ["files", "data", "available"]):
 
-                    # If pattern is empty, default to all files
-                    if not pattern:
-                        pattern = "*"
+                    # Determine file type from context
+                    if any(keyword in command_lower for keyword in ["seismic", "segy", "sgy"]):
+                        pattern = "*.sgy"
+                    elif any(keyword in command_lower for keyword in ["well", "las", "log"]):
+                        pattern = "*.las"
+                    else:
+                        pattern = "*"  # All files
 
-                    print(f"List command - using pattern: '{pattern}'")
+                    print(f"List intent detected - using pattern: '{pattern}'")
                     result = mcp_client.call_tool("list_files", pattern)
                     return json.dumps(result) if isinstance(result, dict) else str(result)
 
-                # IMPROVED CLASSIFY COMMAND HANDLING
-                if command_lower.startswith("classify"):
-                    # Use regex to find the filename
+                # INTENT: Classify specific file
+                if any(keyword in command_lower for keyword in ["classify", "what kind", "what type"]):
                     import re
-                    segy_pattern = re.search(r'([a-zA-Z0-9_\-\.]+\.s[eg]y)', command_str, re.IGNORECASE)
+                    file_match = re.search(r'([a-zA-Z0-9_\-\.]+\.s[eg]y)', command_str, re.IGNORECASE)
 
-                    if segy_pattern:
-                        filename = segy_pattern.group(1)
-                        print(f"Classify command - extracted filename: '{filename}'")
+                    if file_match:
+                        filename = file_match.group(1)
+                        print(f"Classify intent detected - filename: '{filename}'")
                         result = mcp_client.call_tool("segy_classify", filename)
                         return json.dumps(result) if isinstance(result, dict) else str(result)
 
-                # Add other command patterns here...
+                # INTENT: Analyze specific file
+                if any(keyword in command_lower for keyword in ["analyze", "parse", "metadata", "what's in"]):
+                    import re
+                    file_match = re.search(r'([a-zA-Z0-9_\-\.]+\.s[eg]y)', command_str, re.IGNORECASE)
 
+                    if file_match:
+                        filename = file_match.group(1)
+                        print(f"Analyze intent detected - filename: '{filename}'")
+                        result = mcp_client.call_tool("segy_parser", filename)
+                        return json.dumps(result) if isinstance(result, dict) else str(result)
+
+                # INTENT: System status
+                if any(keyword in command_lower for keyword in ["status", "health", "system"]):
+                    print("System status intent detected")
+                    result = mcp_client.call_tool("system_status", "")
+                    return json.dumps(result) if isinstance(result, dict) else str(result)
+
+                # No direct intent recognized - let LangChain agent handle it
                 return None
+
             except Exception as e:
                 print(f"Error in command processor: {str(e)}")
                 return None
@@ -3296,6 +3439,7 @@ def main():
             tools=tools,
             memory=memory,
             return_intermediate_steps=False,
+            # handle_parsing_errors=True,
             **AGENT_CONFIG["agent_params"]
         )
 
