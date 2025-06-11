@@ -847,11 +847,11 @@ class SegyioSurveyClassifier:
             report.append("-" * 20)
 
             if confidence == "Very High":
-                report.append("✓ Very high confidence classification - proceed with automatic processing")
+                report.append("Very high confidence classification - proceed with automatic processing")
                 self._add_processing_recommendations(report, classification_result)
 
             elif confidence == "High":
-                report.append("✓ High confidence classification - proceed with automatic processing")
+                report.append("High confidence classification - proceed with automatic processing")
                 self._add_processing_recommendations(report, classification_result)
 
             elif confidence == "Medium":
@@ -865,19 +865,19 @@ class SegyioSurveyClassifier:
                 report.append("⚠ Consider analyzing more traces for better accuracy")
 
             else:
-                report.append("❌ Very low confidence - manual intervention required")
-                report.append("❌ Check file format compliance")
-                report.append("❌ Review header field completeness")
-                report.append("❌ Consider file-specific analysis")
+                report.append("Very low confidence - manual intervention required")
+                report.append("Check file format compliance")
+                report.append("Review header field completeness")
+                report.append("Consider file-specific analysis")
 
             # segyio-specific advantages
             report.append("")
             report.append("SEGYIO ADVANTAGES:")
             report.append("-" * 20)
-            report.append("✓ Industry-standard SEG-Y reading")
-            report.append("✓ No template file dependencies")
-            report.append("✓ Robust error handling")
-            report.append("✓ Memory-efficient processing")
+            report.append("Industry-standard SEG-Y reading")
+            report.append("No template file dependencies")
+            report.append("Robust error handling")
+            report.append("Memory-efficient processing")
 
             return "\n".join(report)
 
@@ -891,20 +891,20 @@ class SegyioSurveyClassifier:
         stack = result.get('stack_type', '')
 
         if survey_type == "3D":
-            report.append(f"✓ Use 3D processing parameters with {sorting} sorting")
-            report.append("✓ Consider 3D migration and attribute analysis")
+            report.append(f"Use 3D processing parameters with {sorting} sorting")
+            report.append("Consider 3D migration and attribute analysis")
         elif survey_type == "2D":
-            report.append(f"✓ Use 2D processing parameters with {sorting} sorting")
-            report.append("✓ Consider 2D migration and structural interpretation")
+            report.append(f"Use 2D processing parameters with {sorting} sorting")
+            report.append("Consider 2D migration and structural interpretation")
 
         if stack == "Prestack":
-            report.append("✓ Configure for prestack processing workflow")
-            report.append("✓ Consider gather analysis and velocity analysis")
-            report.append("✓ Plan for CMP stacking or prestack migration")
+            report.append("Configure for prestack processing workflow")
+            report.append("Consider gather analysis and velocity analysis")
+            report.append("Plan for CMP stacking or prestack migration")
         elif stack == "Poststack":
-            report.append("✓ Configure for poststack processing workflow")
-            report.append("✓ Ready for interpretation and attribute analysis")
-            report.append("✓ Consider poststack migration if not already migrated")
+            report.append("Configure for poststack processing workflow")
+            report.append("Ready for interpretation and attribute analysis")
+            report.append("Consider poststack migration if not already migrated")
 
     def get_classification_statistics(self) -> Dict[str, Any]:
         """Get statistics about classification capabilities and thresholds"""

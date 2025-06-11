@@ -865,7 +865,7 @@ def production_segy_parser(file_path=None, template_path=None, data_dir="./data"
 
         # Create intelligent template using segyio
         intelligent_template = create_intelligent_template(full_file_path)
-        logger.info("✓ Intelligent template created successfully")
+        logger.info("Intelligent template created successfully")
 
         # Basic file analysis using segyio
         progress.update(1, "Creating seismic file object...")
@@ -1087,7 +1087,7 @@ def production_segy_parser(file_path=None, template_path=None, data_dir="./data"
         progress.finish()
         logger.info(f"SEG-Y parsing completed successfully in {processing_time:.1f}s")
 
-        return {"text": json.dumps(result, cls=NumpyJSONEncoder)}
+        return json.dumps(result, cls=NumpyJSONEncoder)
 
     except Exception as e:
         processing_time = time.time() - operation_start
@@ -1725,7 +1725,7 @@ def validate_binfield_access(segy_file):
     for name, field in required_fields.items():
         try:
             value = safe_bin_read(segy_file, field)
-            print(f"✓ {name:25} = {value}")
+            print(f"{name:25} = {value}")
         except Exception as e:
             print(f"✗ {name:25} = ERROR: {e}")
     print("=" * 40)
@@ -2824,21 +2824,21 @@ class SurveyPolygonExtractor:
 
         # NEW: Linear survey specific recommendations
         if geometry['is_2d_line']:
-            recommendations.append(f"✅ Linear survey detected: {geometry['line_length_m']:.1f}m seismic line")
-            recommendations.append(f"✅ Polygon created with 100m buffer: {polygon_data['area_km2']:.3f} km²")
+            recommendations.append(f"Linear survey detected: {geometry['line_length_m']:.1f}m seismic line")
+            recommendations.append(f"Polygon created with 100m buffer: {polygon_data['area_km2']:.3f} km²")
             if geometry['y_range'] == 0:
-                recommendations.append("ℹ️  All Y coordinates are identical (typical for 2D seismic)")
-            recommendations.append("ℹ️  For better area representation, consider using actual survey width")
+                recommendations.append("  All Y coordinates are identical (typical for 2D seismic)")
+            recommendations.append("  For better area representation, consider using actual survey width")
         else:
             # Area-specific recommendations for 3D surveys
             if polygon_data['area_km2'] == 0.0:
-                recommendations.append("⚠️ Zero area calculated - check coordinate system")
+                recommendations.append("Zero area calculated - check coordinate system")
             elif polygon_data['area_km2'] < 0.001:
-                recommendations.append("⚠️ Very small area - verify coordinate units")
+                recommendations.append("Very small area - verify coordinate units")
             elif polygon_data['area_km2'] > 10000:
-                recommendations.append("⚠️ Very large area - verify coordinate system")
+                recommendations.append("Very large area - verify coordinate system")
             else:
-                recommendations.append(f"✅ Reasonable survey area: {polygon_data['area_km2']:.3f} km²")
+                recommendations.append(f"Reasonable survey area: {polygon_data['area_km2']:.3f} km²")
 
         recommendations.append(f"Coordinate system: {polygon_data.get('coordinate_system', 'unknown')}")
         recommendations.append(f"Total coordinates extracted: {coord_count}")

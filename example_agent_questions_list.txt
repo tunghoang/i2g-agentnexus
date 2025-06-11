@@ -56,12 +56,7 @@ Which well shows the thickest reservoir section based on porosity cutoff of 10%?
 > What's the system status?
 > Analyze 3X_75_PR.SGY for quality issues
 
-✅ analyze the formation in 1054310680.las (already working)
-✅ classify all seismic files matching *.sgy
-✅ detect template for survey_3d.sgy
-✅ get system status
-✅ intelligent analysis of seismic_data.sgy
-✅ compare seismic surveys for compatibility
+compare seismic surveys for compatibility
 
 > list files
 > Extract complete metadata from 3X_75_PR.SGY

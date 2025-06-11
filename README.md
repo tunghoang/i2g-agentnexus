@@ -8,8 +8,8 @@ Agentic framework integrating SEG-Y seismic analysis and LAS well log evaluation
 ## 🌟 Features
 
 ### Core Capabilities
-🔍 **Multi-Format Support** - SEG-Y seismic files and LAS well logs  
-📊 **Intelligent Analysis** - Survey classification, quality control, and formation evaluation  
+ **Multi-Format Support** - SEG-Y seismic files and LAS well logs  
+**Intelligent Analysis** - Survey classification, quality control, and formation evaluation  
 🛡️ **Quality Assurance** - Automated validation with industry-standard thresholds  
 🧠 **AI Expertise** - Natural language geological interpretation and workflow guidance  
 📈 **Advanced Analytics** - Dynamic range analysis, geometry mapping, and petrophysical calculations  
@@ -21,7 +21,7 @@ Agentic framework integrating SEG-Y seismic analysis and LAS well log evaluation
 
 ---
 
-## 🚀 Quick Start
+## Quick Start
 
 ```bash
 # Setup
@@ -125,7 +125,7 @@ python main.py
 
 ---
 
-## 🔧 Configuration
+## Configuration
 
 ### Environment Setup (.env)
 ```bash
@@ -344,14 +344,14 @@ mivaa-agentnexus/
 ├── 📄 .env                             # Environment variables
 ├── 📄 app.log                          # Application logs
 │
-├── 🔧 Core Framework Components
+├── Core Framework Components
 ├── 📄 enhanced_mcp_tools.py            # MCP tool implementations
 ├── 📄 robust_las_parser.py             # LAS file parsing with lasio
 ├── 📄 formation_evaluation.py          # Petrophysical calculations
 ├── 📄 well_correlation.py              # Multi-well analysis algorithms
 ├── 📄 result_classes.py                # Data structure definitions
 │
-├── 🌊 SEG-Y Processing Suite
+├── SEG-Y Processing Suite
 ├── 📄 production_segy_tools.py         # Core segyio-based parsing
 ├── 📄 production_segy_analysis.py      # Geometry and survey analysis
 ├── 📄 production_segy_analysis_qc.py   # Quality control assessment
@@ -359,7 +359,7 @@ mivaa-agentnexus/
 ├── 📄 production_segy_multifile.py     # Batch processing workflows
 ├── 📄 survey_classifier.py             # Survey type classification
 │
-├── 🧪 Testing & Validation
+├── Testing & Validation
 ├── 📄 comprehensive_test_script.py     # Framework testing suite
 ├── 📄 test_openai_api_key_validity.py  # API connectivity tests
 ├── 📄 example_agent_questions_list.txt # Query examples

@@ -985,7 +985,7 @@ def enhanced_formation_evaluation(file_path=None, data_dir="./data", llm_agent=N
             result["text_summary"] = summary
 
             # Return the full evaluation results as JSON
-            return {"text": json.dumps(result, cls=NumpyJSONEncoder)}
+            return json.dumps(result, cls=NumpyJSONEncoder)
 
         else:
             # Multiple files - create a summary of all evaluations
@@ -1365,7 +1365,7 @@ def enhanced_well_correlation(well_list=None, marker_curve="GR", data_dir="./dat
 
         # Check for errors in correlation result
         if "error" in result:
-            return {"text": json.dumps(result, cls=NumpyJSONEncoder)}
+            return json.dumps(result, cls=NumpyJSONEncoder)
 
         # Create human-readable summary
         summary = create_correlation_summary(result)
@@ -1435,7 +1435,7 @@ def enhanced_well_correlation(well_list=None, marker_curve="GR", data_dir="./dat
         result["text_summary"] = summary
 
         # Return the full correlation results as JSON
-        return {"text": json.dumps(result, cls=NumpyJSONEncoder)}
+        return json.dumps(result, cls=NumpyJSONEncoder)
 
     except Exception as e:
         error_details = traceback.format_exc()

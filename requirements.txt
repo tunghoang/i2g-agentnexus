@@ -1,33 +1,90 @@
-# Core Libraries
+# Subsurface Data Management Platform Requirements
+# ==============================================
+# Updated to include Google ADK for PoC testing alongside existing LangChain implementation
+
+# Core Libraries (Existing)
 python-dotenv>=1.0.0
 python-a2a>=0.1.0
+
+# EXISTING: LangChain Implementation (Keep for comparison during PoC)
 langchain>=0.1.0
 langchain_openai>=0.0.5
 langchain_community>=0.0.10
 langchain-core>=0.1.10
+langchain-openai>=0.2.8
+langchainhub>=0.1.21
+
+# NEW: Google ADK Implementation (PoC)
+google-adk>=1.2.1
+litellm
 
 # Agent Components
 openai>=1.0.0
 
-# LAS File Processing
+# LAS File Processing (Existing)
 lasio>=0.30.0
 numpy>=1.24.0
 pandas>=2.0.0
 matplotlib>=3.7.0
 scipy>=1.10.0
 
-# Web/API Components
+# Web/API Components (Existing)
 requests>=2.30.0
 beautifulsoup4>=4.12.0
 flask>=2.3.0
 fastapi>=0.100.0
 uvicorn>=0.22.0
 
-# Production SEG-Y Tools
+# Production SEG-Y Tools (Existing)
 psutil>=5.9.0          # Memory monitoring and system info
 scipy>=1.10.0          # Statistical analysis for QC
 
-# NEW: Intelligent SEG-Y Processing Dependencies
+# Intelligent SEG-Y Processing Dependencies (Existing)
 scikit-learn>=1.3.0    # For PCA analysis in pattern recognition
 joblib>=1.3.0          # For potential parallel processing and caching
-segyio
+segyio                 # Core SEG-Y processing library
+
+# MCP Integration (Enhanced for Google ADK)
+mcp>=0.9.0             # Model Context Protocol (explicit for ADK integration)
+
+# Additional Google ADK Dependencies (Auto-included but explicit for clarity)
+pydantic>=2.0.0        # Data validation and serialization
+sqlalchemy>=2.0.0      # Database support for sessions
+pyyaml>=6.0.0          # Configuration file support
+click>=8.0.0           # CLI interface support
+authlib>=1.2.0         # Authentication support
+
+# Development and Testing
+pytest>=7.0.0
+pytest-asyncio>=0.21.0
+httpx>=0.25.0          # For async HTTP requests
+structlog>=23.0.0      # Enhanced logging
+
+# Optional: Additional Model Support for PoC Testing
+anthropic>=0.25.0      # For Claude model comparison
+
+# Optional: Google Cloud Integration (if using Vertex AI)
+google-cloud-aiplatform>=1.40.0
+google-auth>=2.20.0
+
+# Terminal and CLI Enhancement
+rich>=13.0.0           # Rich terminal output
+typer>=0.9.0           # Modern CLI interface
+
+# Time and Data Handling
+tzlocal>=5.0.0         # Time zone handling
+pathlib2>=2.3.0       # Enhanced file path handling
+
+# Telemetry and Monitoring (for performance comparison)
+opentelemetry-api>=1.20.0
+opentelemetry-sdk>=1.20.0
+
+# Development Tools (Optional)
+mypy>=1.5.0           # Type checking
+black>=23.0.0         # Code formatting
+isort>=5.12.0         # Import sorting
+pylint>=2.17.0        # Code linting
+
+# JSON and XML Processing
+lxml>=4.9.0           # XML processing
+graphviz>=0.20.0      # For agent visualization in ADK

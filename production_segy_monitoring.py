@@ -695,16 +695,16 @@ class SEGYDeploymentManager:
         report_lines.append("-" * 40)
         
         if health_check["overall_health"] == "CRITICAL":
-            report_lines.append("❌ CRITICAL ISSUES DETECTED - IMMEDIATE ACTION REQUIRED")
+            report_lines.append("CRITICAL ISSUES DETECTED - IMMEDIATE ACTION REQUIRED")
             report_lines.append("   - Review failed components above")
             report_lines.append("   - Check system resources")
             report_lines.append("   - Verify file permissions and accessibility")
         elif health_check["overall_health"] == "WARNING":
-            report_lines.append("⚠️ WARNINGS DETECTED - REVIEW RECOMMENDED")
+            report_lines.append("WARNINGS DETECTED - REVIEW RECOMMENDED")
             report_lines.append("   - Address warning conditions when possible")
             report_lines.append("   - Monitor system performance")
         else:
-            report_lines.append("✅ SYSTEM HEALTHY - READY FOR PRODUCTION")
+            report_lines.append("SYSTEM HEALTHY - READY FOR PRODUCTION")
             report_lines.append("   - Start monitoring if not already active")
             report_lines.append("   - Begin regular maintenance schedule")
 

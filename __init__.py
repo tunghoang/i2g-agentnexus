@@ -67,7 +67,7 @@ if not _CORE_DEPENDENCIES_OK:
     if not _NUMPY_AVAILABLE:
         logger.error("Install numpy with: pip install numpy")
 else:
-    logger.info("✓ Core dependencies satisfied (segyio + numpy)")
+    logger.info("Core dependencies satisfied (segyio + numpy)")
 
 # Import core modules only if dependencies are satisfied
 if _CORE_DEPENDENCIES_OK:
@@ -143,7 +143,7 @@ if _CORE_DEPENDENCIES_OK:
             'get_system_info'
         ]
 
-        logger.info("✓ Intelligent SEG-Y processing enabled with segyio")
+        logger.info("Intelligent SEG-Y processing enabled with segyio")
 
     except ImportError as e:
         logger.error(f"Failed to import core modules: {e}")
@@ -297,19 +297,19 @@ def run_diagnostics() -> dict:
         try:
             # Test segyio import
             import segyio
-            diagnostics["tests"]["segyio_import"] = "✓ Success"
+            diagnostics["tests"]["segyio_import"] = "Success"
 
             # Test module imports
             from production_segy_tools import production_segy_parser
-            diagnostics["tests"]["parser_import"] = "✓ Success"
+            diagnostics["tests"]["parser_import"] = "Success"
 
             from survey_classifier import SurveyClassifier
-            diagnostics["tests"]["classifier_import"] = "✓ Success"
+            diagnostics["tests"]["classifier_import"] = "Success"
 
             from production_segy_analysis_qc import production_segy_qc
-            diagnostics["tests"]["qc_import"] = "✓ Success"
+            diagnostics["tests"]["qc_import"] = "Success"
 
-            diagnostics["tests"]["overall"] = "✓ All core modules available"
+            diagnostics["tests"]["overall"] = "All core modules available"
 
         except Exception as e:
             diagnostics["tests"]["overall"] = f"✗ Module import failed: {str(e)}"
@@ -337,11 +337,11 @@ if __name__ == "__main__":
     for name, status in diagnostics["dependencies"]["dependencies"].items():
         if status["available"]:
             version = status.get("version", "unknown")
-            print(f"  ✓ {name}: {version}")
+            print(f"  {name}: {version}")
         else:
             print(f"  ✗ {name}: {status['error']}")
 
-    print(f"\nCore Dependencies: {'✓ OK' if _CORE_DEPENDENCIES_OK else '✗ Missing'}")
+    print(f"\nCore Dependencies: {'OK' if _CORE_DEPENDENCIES_OK else '✗ Missing'}")
     print(f"Architecture: {diagnostics['dependencies']['architecture']}")
 
     if not _CORE_DEPENDENCIES_OK:

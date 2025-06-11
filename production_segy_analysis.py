@@ -20,7 +20,7 @@ def analyze_with_production_tools(file_path):
         data = json.loads(result["text"])
 
         if "error" not in data:
-            print("✅ SUCCESS!")
+            print("SUCCESS!")
             print(f"Survey Type: {data.get('survey_type', 'Unknown')}")
             print(f"Total Traces: {data.get('total_traces', 0):,}")
             print(f"File Size: {data.get('file_size_mb', 0)} MB")
@@ -32,7 +32,7 @@ def analyze_with_production_tools(file_path):
 
             return data
         else:
-            print(f"❌ Error: {data['error']}")
+            print(f"Error: {data['error']}")
             return None
 
     return None

@@ -697,7 +697,7 @@ def production_segy_analysis(file_path=None, template_path=None, analysis_type="
         progress.finish()
         logger.info(f"segyio-based SEG-Y analysis completed in {processing_time:.1f}s")
 
-        return {"text": json.dumps(result, cls=NumpyJSONEncoder)}
+        return json.dumps(result, cls=NumpyJSONEncoder)
 
     except Exception as e:
         processing_time = time.time() - operation_start
