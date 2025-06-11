@@ -1,6 +1,6 @@
 """
-System Tools Module - MCP COMPATIBLE VERSION
-Fixed to work with your specific MCP/LangChain setup
+System Tools Module - MCP COMPATIBLE VERSION - FIXED
+Fixed parameter extraction to match other tools (segy_tools.py, las_tools.py)
 """
 
 import os
@@ -25,6 +25,30 @@ def create_error_response(error_message: str, details: str = None) -> Dict[str, 
     if details:
         error_obj["details"] = details
     return {"text": json.dumps(error_obj)}
+
+
+def extract_file_path_from_params(file_path=None, *args, **kwargs):
+    """
+    FIXED: Universal parameter extraction for MCP tools
+    Same as segy_tools.py and las_tools.py - checks all possible parameter sources
+    """
+    # Check direct parameter first
+    if file_path and file_path not in ["", "None", "null"]:
+        return file_path
+
+    # Check kwargs['input'] (MCP framework standard)
+    if 'input' in kwargs and kwargs['input'] not in ["", "None", "null"]:
+        return kwargs['input']
+
+    # Check args (fallback)
+    if args and len(args) > 0 and args[0] not in ["", "None", "null"]:
+        return args[0]
+
+    # Check other possible kwargs
+    if 'file_path' in kwargs and kwargs['file_path'] not in ["", "None", "null"]:
+        return kwargs['file_path']
+
+    return None
 
 
 # File type configuration
@@ -146,27 +170,29 @@ def format_generic_files(file_paths: List[str], pattern: str) -> str:
 
 def create_system_tools(mcp_server, data_config: DataConfig) -> List[str]:
     """
-    Create and register system tools - MCP COMPATIBLE VERSION
+    Create and register system tools - MCP COMPATIBLE VERSION - FIXED
     """
 
-    # Tool 1: List Files - MCP COMPATIBLE
+    # Tool 1: List Files - FIXED
     @mcp_server.tool(
         name="list_files",
         description="List any type of data files matching a pattern in the data directory"
     )
     def list_files(pattern: Optional[str] = None, **kwargs):
-        """Universal file listing system - MCP COMPATIBLE"""
-        # Handle the 'input' parameter that MCP sometimes passes
-        if not pattern and 'input' in kwargs:
-            pattern = kwargs['input']
+        """Universal file listing system - FIXED"""
         try:
+            # FIXED: Use universal parameter extraction (same as other tools)
+            pattern = extract_file_path_from_params(pattern, **kwargs)
+
+            print(f"DEBUG: list_files called with extracted pattern='{pattern}'")
+
             # Handle missing or None pattern
             if not pattern or pattern in [".", "", "list", "files", "{}"]:
                 pattern = "*"
 
-            print(f"DEBUG: list_files called with pattern='{pattern}'")
+            print(f"DEBUG: Using final pattern='{pattern}'")
 
-            # Handle JSON-encoded parameters from MCP/LangChain
+            # Handle JSON-encoded parameters from MCP/LangChain (legacy support)
             if isinstance(pattern, str) and pattern.startswith('{') and pattern.endswith('}'):
                 try:
                     parsed = json.loads(pattern)
@@ -191,36 +217,48 @@ def create_system_tools(mcp_server, data_config: DataConfig) -> List[str]:
             matching_files = []
 
             if detected_type and detected_type in FILE_TYPE_CONFIG:
+                # Handle patterns with specific file type detected (e.g., *.las, *_shots_*.segy)
                 config = FILE_TYPE_CONFIG[detected_type]
-                print(f"DEBUG: Using config for type '{detected_type}'")
+                print(f"DEBUG: Using config for type '{detected_type}' with original pattern '{pattern}'")
 
-                # Handle wildcard patterns specifically
-                if "*" in pattern:
-                    # Extract the base pattern (everything before the wildcard)
-                    if pattern.startswith("F3_"):
-                        # Special handling for F3_*.sgy patterns
-                        base_pattern = "F3_*"
-                        for ext in config["extensions"]:
-                            search_pattern = os.path.join(data_config.data_dir, f"F3_*{ext}")
-                            print(f"DEBUG: Searching with pattern: {search_pattern}")
-                            matching_files.extend(glob.glob(search_pattern))
-                    else:
-                        # General wildcard handling
-                        base_pattern = pattern.split('.')[0] if '.' in pattern else pattern.rstrip('*')
-                        for ext in config["extensions"]:
-                            search_pattern = os.path.join(data_config.data_dir, f"{base_pattern}*{ext}")
-                            print(f"DEBUG: Searching with pattern: {search_pattern}")
-                            matching_files.extend(glob.glob(search_pattern))
-                else:
-                    # No wildcard - exact file search
-                    for ext in config["extensions"]:
-                        search_pattern = os.path.join(data_config.data_dir, f"{pattern}{ext}")
-                        matching_files.extend(glob.glob(search_pattern))
-            else:
-                # Fallback: direct pattern search
+                # For patterns that already include the extension, use them directly
                 search_pattern = os.path.join(data_config.data_dir, pattern)
-                print(f"DEBUG: Fallback search with pattern: {search_pattern}")
-                matching_files = glob.glob(search_pattern)
+                print(f"DEBUG: Direct search with pattern: {search_pattern}")
+                matching_files.extend(glob.glob(search_pattern))
+
+                # Also try with different case extensions for the same type
+                if '.' in pattern:
+                    base_pattern, ext = pattern.rsplit('.', 1)
+                    for alt_ext in config["extensions"]:
+                        if alt_ext.lower() != f".{ext.lower()}":
+                            alt_pattern = f"{base_pattern}{alt_ext}"
+                            search_pattern = os.path.join(data_config.data_dir, alt_pattern)
+                            print(f"DEBUG: Alternative extension search: {search_pattern}")
+                            matching_files.extend(glob.glob(search_pattern))
+
+            else:
+                # No specific file type detected - search across ALL file types
+                print(f"DEBUG: No specific file type detected, searching across all types")
+
+                # Search across all configured file types
+                for file_type, config in FILE_TYPE_CONFIG.items():
+                    print(f"DEBUG: Searching {file_type} files with pattern '{pattern}'")
+
+                    for ext in config["extensions"]:
+                        # Construct pattern with extension
+                        if pattern.endswith('*'):
+                            search_pattern = os.path.join(data_config.data_dir, f"{pattern}{ext}")
+                        else:
+                            search_pattern = os.path.join(data_config.data_dir, f"{pattern}{ext}")
+
+                        print(f"DEBUG: Searching with pattern: {search_pattern}")
+                        matching_files.extend(glob.glob(search_pattern))
+
+                # If no files found with extensions, try direct pattern search as final fallback
+                if not matching_files:
+                    search_pattern = os.path.join(data_config.data_dir, pattern)
+                    print(f"DEBUG: Final fallback search with pattern: {search_pattern}")
+                    matching_files = glob.glob(search_pattern)
 
             # Remove duplicates and sort
             matching_files = sorted(list(set(matching_files)))
@@ -242,14 +280,17 @@ def create_system_tools(mcp_server, data_config: DataConfig) -> List[str]:
             print(f"ERROR in list_files: {str(e)}")
             return create_error_response(f"Error listing files: {str(e)}")
 
-    # Tool 2: System Status - MCP COMPATIBLE
+    # Tool 2: System Status - FIXED
     @mcp_server.tool(
         name="system_status",
         description="Get comprehensive system health, performance metrics, and processing status"
     )
     def system_status(query: str = "", *args, **kwargs):
-        """Get comprehensive system health and performance metrics - MCP COMPATIBLE"""
+        """Get comprehensive system health and performance metrics - FIXED"""
         try:
+            # FIXED: Use universal parameter extraction
+            query = extract_file_path_from_params(query, *args, **kwargs) or ""
+
             print("DEBUG: system_status called")
 
             # System metrics (if psutil available)
@@ -337,17 +378,17 @@ def create_system_tools(mcp_server, data_config: DataConfig) -> List[str]:
             print(f"ERROR in system_status: {str(e)}")
             return create_error_response(f"System status check failed: {str(e)}")
 
-    # Tool 3: Directory Info - MCP COMPATIBLE
+    # Tool 3: Directory Info - FIXED
     @mcp_server.tool(
         name="directory_info",
         description="Get detailed information about data directories and file organization"
     )
     def directory_info(directory_path: Optional[str] = None, **kwargs):
-        """Get detailed directory information - MCP COMPATIBLE"""
-        # Handle the 'input' parameter that MCP sometimes passes
-        if not directory_path and 'input' in kwargs:
-            directory_path = kwargs['input']
+        """Get detailed directory information - FIXED"""
         try:
+            # FIXED: Use universal parameter extraction
+            directory_path = extract_file_path_from_params(directory_path, **kwargs)
+
             # Use data directory if none specified
             target_dir = directory_path or data_config.data_dir
 
@@ -405,14 +446,17 @@ def create_system_tools(mcp_server, data_config: DataConfig) -> List[str]:
         except Exception as e:
             return create_error_response(f"Directory info failed: {str(e)}")
 
-    # Tool 4: Health Check - MCP COMPATIBLE
+    # Tool 4: Health Check - FIXED
     @mcp_server.tool(
         name="health_check",
         description="Perform comprehensive health check of the platform and its components"
     )
     def health_check(query: str = "", *args, **kwargs):
-        """Perform comprehensive platform health check - MCP COMPATIBLE"""
+        """Perform comprehensive platform health check - FIXED"""
         try:
+            # FIXED: Use universal parameter extraction
+            query = extract_file_path_from_params(query, *args, **kwargs) or ""
+
             health_status = {
                 "platform": "Subsurface Data Management Platform v2.0",
                 "timestamp": datetime.datetime.now().isoformat(),
