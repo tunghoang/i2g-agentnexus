@@ -21,7 +21,7 @@ class Cleaner:
     def __main_loop(self):
         while not self.stopped:
             time.sleep(1)
-            if uniform(0.0, 1.0) < 0.05:
+            if uniform(0.0, 1.0) < 0.01:
                 print("Cleaner running")
             to_be_killed = []
             for a in self.agents:

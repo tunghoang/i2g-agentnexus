@@ -1,6 +1,6 @@
 import time, signal
 import traceback
-
+QA_PORT=8990
 is_running = True
 def mcp_sig_handler(sig, frame):
     global is_running
@@ -82,7 +82,7 @@ def run_agent_server():
     if app_server is not None:
         cleaner = cleaner_create(app_server)
         cleaner.run()
-        uvicorn.run(app_server, port=8990)
+        uvicorn.run(app_server, port=QA_PORT)
 
 if __name__ == "__main__":
     from argparse import ArgumentParser

@@ -86,6 +86,16 @@ FILE_TYPE_CONFIG = {
             "production": lambda f: "prod" in f.lower(),
             "analysis": lambda f: "analysis" in f.lower()
         }
+    },
+    "xlsx": {
+        "extensions": [".xlsx", ".XLSX"],
+        "description": "Excel sheets",
+        "icon": "💹 Excel sheets",
+        "default_pattern": "*.xlsx",
+        "categories": {
+            "production": lambda f: "prod" in f.lower(),
+            "analysis": lambda f: "analysis" in f.lower()
+        }
     }
 }
 
@@ -125,12 +135,12 @@ def format_files_by_type(file_paths: List[str], config: Dict[str, Any]) -> str:
                 if category_func(filename):
                     if category_name not in categorized:
                         categorized[category_name] = []
-                    categorized[category_name].append(filename)
+                    categorized[category_name].append(f"{filename} ({file_path})")
                     categorized_flag = True
                     break
 
             if not categorized_flag:
-                uncategorized.append(filename)
+                uncategorized.append(f"{filename} ({file_path})")
 
         # Output categorized files
         for category_name, files in categorized.items():
@@ -224,7 +234,7 @@ def create_system_tools(mcp_server, data_config: DataConfig) -> List[str]:
                 # For patterns that already include the extension, use them directly
                 search_pattern = os.path.join(data_config.data_dir, pattern)
                 print(f"DEBUG: Direct search with pattern: {search_pattern}")
-                matching_files.extend(glob.glob(search_pattern))
+                matching_files.extend(glob.glob(search_pattern, recursive=True, include_hidden=True))
 
                 # Also try with different case extensions for the same type
                 if '.' in pattern:
@@ -234,7 +244,7 @@ def create_system_tools(mcp_server, data_config: DataConfig) -> List[str]:
                             alt_pattern = f"{base_pattern}{alt_ext}"
                             search_pattern = os.path.join(data_config.data_dir, alt_pattern)
                             print(f"DEBUG: Alternative extension search: {search_pattern}")
-                            matching_files.extend(glob.glob(search_pattern))
+                            matching_files.extend(glob.glob(search_pattern, recursive=True, include_hidden=True))
 
             else:
                 # No specific file type detected - search across ALL file types
@@ -252,17 +262,18 @@ def create_system_tools(mcp_server, data_config: DataConfig) -> List[str]:
                             search_pattern = os.path.join(data_config.data_dir, f"{pattern}{ext}")
 
                         print(f"DEBUG: Searching with pattern: {search_pattern}")
-                        matching_files.extend(glob.glob(search_pattern))
+                        matching_files.extend(glob.glob(search_pattern, recursive=True, include_hidden=True))
 
                 # If no files found with extensions, try direct pattern search as final fallback
                 if not matching_files:
                     search_pattern = os.path.join(data_config.data_dir, pattern)
                     print(f"DEBUG: Final fallback search with pattern: {search_pattern}")
-                    matching_files = glob.glob(search_pattern)
+                    matching_files = glob.glob(search_pattern, recursive=True, include_hidden=True)
 
             # Remove duplicates and sort
             matching_files = sorted(list(set(matching_files)))
             print(f"DEBUG: Found {len(matching_files)} files")
+            print(f"DEBUG: Found {matching_files}")
 
             if not matching_files:
                 return {"text": f"No files found matching pattern: {pattern}"}
@@ -556,12 +567,48 @@ def create_system_tools(mcp_server, data_config: DataConfig) -> List[str]:
         except Exception as e:
             return create_error_response(f"Health check failed: {str(e)}")
 
+    # Tool 5: Dump content as plain text
+    @mcp_server.tool(
+        name="dump_content",
+        description="Dump content of a file as plain text"
+    )
+    def dump_content(file_path: str = "", line_num: int = None, *args, **kwargs):
+        print(f"DEBUG::dump_content for {file_path}, {line_num} lines, {args}, {kwargs}")
+        input_data = json.loads(kwargs['input'])
+        file_path = input_data['file_path']
+        line_num = int(input_data['line_num'])
+        if not os.path.isabs(file_path):
+            file_path = os.path.join(data_config.data_dir, file_path)
+
+        if not os.path.exists(file_path):
+            return create_error_response(f"File not found: {file_path}")
+
+        if not line_num:
+            if "line_num" in kwargs:
+                line_num = int(kwargs['line_num'])
+            elif len(args) > 1:
+                line_num = int(args[1])
+            else: 
+                line_num = 5
+        print(f"DEBUG::dump_content for {file_path}, {line_num} lines, {args}, {kwargs}")
+
+        content = []
+        with open(file_path) as f:
+            i = 0
+            for line in f:
+                content.append(line.strip())
+                i = i + 1
+                if i >= line_num:
+                    break
+        return { "text": "\n".join(content) }
+
     # Return list of registered tool names
     tool_names = [
         "list_files",
         "system_status",
         "directory_info",
-        "health_check"
+        "health_check",
+        "dump_content"
     ]
 
     return tool_names

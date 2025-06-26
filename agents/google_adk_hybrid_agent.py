@@ -8,7 +8,7 @@ import json
 import time
 import logging
 import asyncio
-from typing import Optional, Dict, Any, List
+from typing import Optional, Dict, Any, List, Union
 
 # Google ADK imports
 try:
@@ -302,6 +302,85 @@ class ToolExecutingAgentExecutor:
 
         tools.append(quick_segy_summary)
 
+        def dump_content(file_path: str, line_num: int) -> dict:
+            """Dump content in plain text
+
+            Args:
+                file_path: Path to any file
+                line_num: number of lines to read
+
+            Returns:
+                dict: content of file
+            """
+            try: 
+                executor_instance.logger.info(f"Executing dump_content with file: {file_path} and {line_num}")
+                result = executor_instance._execute_mcp_tool("dump_content", json.dumps(dict(file_path=file_path, line_num=line_num)))
+                return {"status": "success", "result": result}
+            except Exception as e:
+                executor_instance.logger.error(f"Error in dump_content: {e}")
+                return {"status": "error", "message": str(e)}
+        tools.append(dump_content)
+
+        def plot_las(file_path: str) -> dict:
+            """Plot a las file
+
+            Args:
+                file_path: Path to las file
+
+            Returns:
+                dict: las log plot
+            """
+            try: 
+                executor_instance.logger.info(f"Executing plot_las with file: {file_path}")
+                result = executor_instance._execute_mcp_tool("plot_las", file_path)
+                print(type(result), len(result))
+                return {"status": "success", 
+                        "result": "output is created, information about resulting plot is in attachment field",
+                        "attachment": result}
+            except Exception as e:
+                executor_instance.logger.error(f"Error in plot_las: {e}")
+                return {"status": "error", "message": str(e)}
+
+        tools.append(plot_las)
+        
+        def show_sheets(file_path: str) -> dict:
+            """Show sheets in an excel file
+
+            Args:
+                file_path: path to excel file
+
+            Returns:
+                dict: results
+            """
+            try: 
+                executor_instance.logger.info(f"Executing show_sheets with file: {file_path}")
+                result = executor_instance._execute_mcp_tool("show_sheets", file_path)
+                return {"status": "success", 
+                        "result": result}
+            except Exception as e:
+                executor_instance.logger.error(f"Error in show_sheets: {e}")
+                return {"status": "error", "message": str(e)}
+        tools.append(show_sheets)
+
+        def show_columns(file_path: str, sheet: int = 0) -> dict:
+            """Show columns in sheet of an excel file
+
+            Args:
+                file_path: path to excel file
+                sheet: sheet index or name
+
+            Returns:
+                dict: results
+            """
+            try: 
+                executor_instance.logger.info(f"Executing show_columns with file: {file_path} and sheet { sheet}")
+                result = executor_instance._execute_mcp_tool("show_columns", json.dumps(dict(file_path=file_path, sheet=sheet)))
+                return {"status": "success", 
+                        "result": result}
+            except Exception as e:
+                executor_instance.logger.error(f"Error in show_sheets: {e}")
+                return {"status": "error", "message": str(e)}
+        tools.append(show_columns)
         self.logger.info(f"Created {len(tools)} tool functions (no default parameters)")
         return tools
 
@@ -361,6 +440,9 @@ class ToolExecutingAgentExecutor:
 ## For File Analysis:
 - User asks "analyze well.las" → IMMEDIATELY call las_parser with file_path="well.las"
 - User asks "classify survey.sgy" → IMMEDIATELY call segy_classify with file_path="survey.sgy"
+- User asks "plot well.las" → IMMEDIATELY call plot_las with file_path="well.las"
+- User asks "show columns in file.xlsx sheet 0" → IMMEDIATELY call show_columns with file_path="well.las" and sheet=0
+ 
 
 # IMPORTANT PARAMETER RULES:
 - ALL functions require parameters (no defaults)
@@ -375,6 +457,9 @@ class ToolExecutingAgentExecutor:
 3. **EXECUTE the tool immediately with required parameters**
 4. Present the results clearly
 
+# FORMAT OUTPUT FILE:
+Format any file in output (e.g.: /path/to/file.html) with the following template: http://localhost:9999/path/to/file.html
+
 # EXAMPLES OF CORRECT BEHAVIOR:
 User: "list files *.las"
 You: [CALLS list_files(pattern="*.las")]
@@ -384,9 +469,13 @@ User: "system status"
 You: [CALLS system_status(query="")]
 Then: Present the status information
 
+User: "dump content of somefile.csv for 10 lines"
+You: [CALLS dump_content(file_path="somefile.csv", line_num=10)]
+Then: Present the results
+
 **REMEMBER: Always provide ALL required parameters when calling tools!**
 
-Available tools: list_files, system_status, health_check, directory_info, las_parser, las_analysis, formation_evaluation, well_correlation, segy_parser, segy_classify, segy_qc, quick_segy_summary."""
+Available tools: list_files, system_status, health_check, directory_info, las_parser, las_analysis, formation_evaluation, well_correlation, segy_parser, segy_classify, segy_qc, quick_segy_summary, dump_content, plot_las, show_sheets, show_columns."""
 
     async def _execute_with_google_adk(self, query: str) -> str:
         """Execute query using Google ADK with tool execution"""
@@ -591,6 +680,8 @@ class ToolExecutingHybridAgent:
 
             if isinstance(result, dict):
                 output = result.get("output", str(result))
+                params = result.get("attachment", None)
+                print(output, params)
             else:
                 output = str(result)
 
@@ -677,6 +768,10 @@ class ToolExecutingAgentFactory:
                 return json.dumps(result) if isinstance(result, dict) else str(result)
             elif command_lower == "health check":
                 result = mcp_client.call_tool("health_check", "")
+                return json.dumps(result) if isinstance(result, dict) else str(result)
+            elif command_lower.startswith("plot "):
+                file_path = command.split(" ")[1]
+                result = mcp_client.call_tool("plot_las", file_path)
                 return json.dumps(result) if isinstance(result, dict) else str(result)
 
             return None

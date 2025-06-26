@@ -5,6 +5,7 @@ from fastapi import FastAPI, Depends, HTTPException
 from pydantic import BaseModel
 from datetime import datetime
 from typing import Optional
+import htmlutils
 __APP_VERSION__="1.0.0"
 # Define request model
 class Question(BaseModel):
@@ -14,6 +15,7 @@ class Question(BaseModel):
 # Define response model
 class Answer(BaseModel):
     answer: str
+    mimetype: str = 'text/markdown'
 
 class QAServer(FastAPI):
     def __init__(self, create_agent_fn):
@@ -47,6 +49,18 @@ def clean_response(response: str) -> str:
                 return response
     return response
 
+def format_agents_info(agentRecords):
+    agents = []
+    now = datetime.now()
+    for r in agentRecords:
+        agents.append(dict(agentid=r, t0 = str(agentRecords[r]['t0']), age = str(now - agentRecords[r]['t0'])))
+    return json.dumps(agents)
+
+def generate_plot():
+    import plotly.graph_objects as go
+    fig = go.Figure(data=[go.Scatter(x=[1, 2, 3], y=[4, 1, 2])])
+    return f'<div>{fig.to_html(full_html=False, include_plotlyjs=True)}</div>'
+
 def qa_server_create(create_agent_fn):
     app = QAServer(create_agent_fn)
 
@@ -76,6 +90,19 @@ def qa_server_create(create_agent_fn):
 
         if command in [ 'version', 'ver' ]:
             return Answer(answer=__APP_VERSION__)
+        elif command in ["show agents", "show agent", "show existing agents", "list agents", "list agent"]:
+            return Answer(answer=format_agents_info(qa_server.agents))
+        elif command in ["show leaves"]:
+            answer = """
+## This is an sample image
+My image goes here
+![image of leaves](leaves.png)
+"""
+            return Answer(answer=answer)
+        elif command in ["sample plot"]:
+            html_code = generate_plot()
+            answer = htmlutils.stack(children=['<h3>This a sample plot</h3>', html_code])
+            return Answer(answer=answer, mimetype='text/html')
         try:
             response = agent.run(user_input)
             response = clean_response(response)

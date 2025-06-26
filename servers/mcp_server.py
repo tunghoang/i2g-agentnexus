@@ -15,6 +15,8 @@ from config.settings import MCPConfig, DataConfig
 from tools.las_tools import create_las_tools
 from tools.segy_tools import create_segy_tools
 from tools.system_tools import create_system_tools
+from tools.plot_tools import create_plot_tools
+from tools.excel_tools import create_excel_tools
 
 
 class MCPServerManager(BaseServer, HealthCheckMixin):
@@ -49,6 +51,8 @@ class MCPServerManager(BaseServer, HealthCheckMixin):
         self._register_las_tools()
         self._register_segy_tools()
         self._register_system_tools()
+        self._register_plot_tools()
+        self._register_excel_tools()
 
         self.logger.info(f"MCP server created with {self.tools_registered} tools")
 
@@ -81,6 +85,23 @@ class MCPServerManager(BaseServer, HealthCheckMixin):
         self.tools_registered += tool_count
 
         self.logger.info(f"Registered {tool_count} system tools")
+
+    def _register_plot_tools(self):
+        """Register plot tools"""
+        self.logger.info("Registering plot tools...")
+
+        plot_tools = create_plot_tools(self.mcp_server, self.data_config)
+        tool_count = len(plot_tools)
+        self.tools_registered += tool_count
+
+        self.logger.info(f"Registered {tool_count} plot tools")
+    def _register_excel_tools(self):
+        """Register excel tools"""
+        self.logger.info("Registering excel tools...")
+        excel_tools = create_excel_tools(self.mcp_server, self.data_config)
+        tool_count = len(excel_tools)
+        self.tools_registered += tool_count
+        self.logger.info(f"Registered {tool_count} excel tools")
 
     def _start_server(self):
         """Start the MCP server in background thread"""
