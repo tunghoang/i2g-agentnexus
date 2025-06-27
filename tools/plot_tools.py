@@ -2,6 +2,7 @@ import os
 import json
 import lasio
 import traceback
+import hashlib
 from pathlib import Path
 from datetime import datetime
 from typing import List, Dict, Any
@@ -9,9 +10,17 @@ from config.settings import DataConfig
 
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
-__COLOR_PALETTE = ('#e6194b', '#3cb44b', '#ffe119', '#4363d8', '#f58231', '#911eb4', '#46f0f0', '#f032e6', '#bcf60c', '#fabebe', '#008080', '#e6beff', '#9a6324', '#fffac8', '#800000', '#aaffc3', '#808000', '#ffd8b1', '#000075', '#808080', '#ffffff', '#000000')
+__COLOR_PALETTE = ('#e6194b', '#3cb44b', '#4363d8', '#f58231', '#911eb4', '#46f0f0', '#f032e6', '#bcd60c', '#008080', '#9a6324', '#800000', '#808000', '#000075', '#808080', '#000000')
+
+def getHashColor(curveName):
+    encoded_string = curveName.encode('utf-8')
+    hash_object = hashlib.sha256(encoded_string)
+    hashed_integer = int(hash_object.hexdigest(), 16)
+    idx = hashed_integer % len(__COLOR_PALETTE)
+    return __COLOR_PALETTE[idx]
 
 def getLineConfig(curveName):
+    return dict(color=getHashColor(curveName), dash='solid')
     if curveName in ['VCLAV']:
         return dict(color=__COLOR_PALETTE[0], dash='solid')
     elif curveName in ['PHIE']:
@@ -23,8 +32,19 @@ def getLineConfig(curveName):
     else:
         return dict(color='black', dash='solid')
 
+def getColor(curveName):
+    return getLineConfig(curveName)['color']
+
+def borderColor():
+    return '#444'
+
+def headerFillColor():
+    return '#eee'
+
 def create_plot_tools(mcp_server, data_config: DataConfig) -> List[str]:
     CHART_DIR = '/tmp'
+    HEADER_HEIGHT = 90
+    columnWidth = 150
     @mcp_server.tool(
         name="plot_las",
         description="Plot a las file in a plotly chart"
@@ -55,8 +75,11 @@ def create_plot_tools(mcp_server, data_config: DataConfig) -> List[str]:
             for idx, c in enumerate(curveNames):
                 trace = go.Scatter(x=df[c], y = df[refCurveName], name=c, line=getLineConfig(c))
                 fig.append_trace(trace, 1, idx + 1)
+                fig.update_xaxes(nticks=4, tickfont_color=getColor(c), row=1, col=idx + 1)
+                fig.add_shape(type='rect', x0=0, x1=1, xref='x domain', y0=2, y1=HEADER_HEIGHT * 2. / 3., yref='y domain', ysizemode='pixel', yanchor=1, layer='below', visible=True, line_width=1, line_color=borderColor(), fillcolor=headerFillColor(), row=1, col=idx + 1)
+                fig.add_hline(y=HEADER_HEIGHT / 3, yref='y domain', ysizemode='pixel', yanchor=1, layer='below', visible=True, line_width=1, line_color=getColor(c), row=1, col=idx + 1)
+                fig.add_annotation(text=f"{c}({las.curves[c].unit})", font=dict(color='white', size=10), bgcolor=getColor(c), showarrow=False, x=0.5, y=1, xanchor='center', yanchor='middle', xref='x domain', yref='y domain', yshift=HEADER_HEIGHT / 2, align='center', visible=True, row=1, col=idx + 1)
 
-            columnWidth = 90
             fig.update_xaxes(
                 showline=True,
                 linewidth=0.5,
@@ -72,7 +95,7 @@ def create_plot_tools(mcp_server, data_config: DataConfig) -> List[str]:
                 plot_bgcolor='#fff',
                 overwrite=True,
                 showlegend=False,
-                margin=dict(l=0, r=0, t=0, b=0),
+                margin=dict(l=0, r=0, t=HEADER_HEIGHT, b=0),
                 width=columnWidth * len(curveNames),
                 height= 500,
                 autosize=False)

@@ -46,6 +46,7 @@ def create_excel_tools(mcp_server, data_config: DataConfig) -> List[str]:
             input_data = json.loads(kwargs['input'])
             ori_file_path = input_data['file_path']
             sheet = input_data.get('sheet', 0)
+            header_rows = input_data.get('header', 0)
             file_path = os.path.join(data_config.data_dir, ori_file_path)
             print(f"file_path = {file_path}, sheet={sheet}");
             if not file_path:
@@ -61,7 +62,7 @@ def create_excel_tools(mcp_server, data_config: DataConfig) -> List[str]:
             else:
                 excel_file = pd.ExcelFile(file_path, engine='openpyxl')
 
-            sheetDF = excel_file.parse(sheet, header=1)
+            sheetDF = excel_file.parse(sheet, header=header_rows)
             print(sheetDF.columns)
 
             return {"text": json.dumps(list(sheetDF.columns))}

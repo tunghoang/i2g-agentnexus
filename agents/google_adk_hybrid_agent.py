@@ -362,7 +362,7 @@ class ToolExecutingAgentExecutor:
                 return {"status": "error", "message": str(e)}
         tools.append(show_sheets)
 
-        def show_columns(file_path: str, sheet: int = 0) -> dict:
+        def show_columns(file_path: str, sheet: int = 0, header: int = 0) -> dict:
             """Show columns in sheet of an excel file
 
             Args:
@@ -374,7 +374,7 @@ class ToolExecutingAgentExecutor:
             """
             try: 
                 executor_instance.logger.info(f"Executing show_columns with file: {file_path} and sheet { sheet}")
-                result = executor_instance._execute_mcp_tool("show_columns", json.dumps(dict(file_path=file_path, sheet=sheet)))
+                result = executor_instance._execute_mcp_tool("show_columns", json.dumps(dict(file_path=file_path, sheet=sheet, header_rows=header)))
                 return {"status": "success", 
                         "result": result}
             except Exception as e:
