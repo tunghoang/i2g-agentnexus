@@ -2,20 +2,26 @@ import uuid
 import traceback
 import json
 from fastapi import FastAPI, Depends, HTTPException
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from datetime import datetime
 from typing import Optional
 import htmlutils
-__APP_VERSION__="1.0.0"
+
+__APP_VERSION__ = "1.0.0"
+
+
 # Define request model
 class Question(BaseModel):
     agentid: Optional[str]
     question: str
 
+
 # Define response model
 class Answer(BaseModel):
     answer: str
-    mimetype: str = 'text/markdown'
+    mimetype: str = "text/markdown"
+
 
 class QAServer(FastAPI):
     def __init__(self, create_agent_fn):
@@ -40,7 +46,11 @@ def clean_response(response: str) -> str:
                             inner_parsed = json.loads(inner_text)
                             if "text" in inner_parsed:
                                 # Decode unicode escapes
-                                clean_text = inner_parsed["text"].encode().decode('unicode_escape')
+                                clean_text = (
+                                    inner_parsed["text"]
+                                    .encode()
+                                    .decode("unicode_escape")
+                                )
                                 return clean_text
 
                         return inner_text
@@ -49,17 +59,27 @@ def clean_response(response: str) -> str:
                 return response
     return response
 
+
 def format_agents_info(agentRecords):
     agents = []
     now = datetime.now()
     for r in agentRecords:
-        agents.append(dict(agentid=r, t0 = str(agentRecords[r]['t0']), age = str(now - agentRecords[r]['t0'])))
+        agents.append(
+            dict(
+                agentid=r,
+                t0=str(agentRecords[r]["t0"]),
+                age=str(now - agentRecords[r]["t0"]),
+            )
+        )
     return json.dumps(agents)
+
 
 def generate_plot():
     import plotly.graph_objects as go
+
     fig = go.Figure(data=[go.Scatter(x=[1, 2, 3], y=[4, 1, 2])])
-    return f'<div>{fig.to_html(full_html=False, include_plotlyjs=True)}</div>'
+    return f"<div>{fig.to_html(full_html=False, include_plotlyjs=True)}</div>"
+
 
 def qa_server_create(create_agent_fn):
     app = QAServer(create_agent_fn)
@@ -69,17 +89,19 @@ def qa_server_create(create_agent_fn):
 
     @app.post("/ask", response_model=Answer)
     def ask_question(question: Question, qa_server: QAServer = Depends(get_app)):
-        agentids = list([k for k in qa_server.agents if qa_server.agents[k]['killed'] == 0])
+        agentids = list(
+            [k for k in qa_server.agents if qa_server.agents[k]["killed"] == 0]
+        )
         if len(agentids) == 0:
             raise HTTPException(status_code=404, detail="No agents exist")
         agentid = question.agentid or agentids[0]
         agentData = qa_server.agents.get(f"{agentid}", None)
         if agentData is None:
             raise HTTPException(status_code=404, detail=f"agent {agentid} not found")
-        if agentData['killed'] == 1:
+        if agentData["killed"] == 1:
             raise HTTPException(status_code=404, detail=f"agent {agentid} was killed")
-        agentData['tl'] = datetime.now()
-        agent = agentData['agent']
+        agentData["tl"] = datetime.now()
+        agent = agentData["agent"]
 
         # process query
         user_input = question.question
@@ -88,9 +110,15 @@ def qa_server_create(create_agent_fn):
 
         command = user_input.lower().strip()
 
-        if command in [ 'version', 'ver' ]:
+        if command in ["version", "ver"]:
             return Answer(answer=__APP_VERSION__)
-        elif command in ["show agents", "show agent", "show existing agents", "list agents", "list agent"]:
+        elif command in [
+            "show agents",
+            "show agent",
+            "show existing agents",
+            "list agents",
+            "list agent",
+        ]:
             return Answer(answer=format_agents_info(qa_server.agents))
         elif command in ["show leaves"]:
             answer = """
@@ -101,8 +129,10 @@ My image goes here
             return Answer(answer=answer)
         elif command in ["sample plot"]:
             html_code = generate_plot()
-            answer = htmlutils.stack(children=['<h3>This a sample plot</h3>', html_code])
-            return Answer(answer=answer, mimetype='text/html')
+            answer = htmlutils.stack(
+                children=["<h3>This a sample plot</h3>", html_code]
+            )
+            return Answer(answer=answer, mimetype="text/html")
         try:
             response = agent.run(user_input)
             response = clean_response(response)
@@ -113,7 +143,7 @@ My image goes here
 
     @app.get("/agents")
     def list_agents(qa_server: QAServer = Depends(get_app)):
-        agentlist = [k for k in qa_server.agents if qa_server.agents[k]['killed'] == 0]
+        agentlist = [k for k in qa_server.agents if qa_server.agents[k]["killed"] == 0]
         return list(agentlist)
 
     @app.get("/new")
@@ -123,5 +153,7 @@ My image goes here
         now = datetime.now()
         qa_server.agents[agentid] = dict(t0=now, tl=now, agent=new_agent, killed=0)
         return dict(agentid=agentid)
-    return app
 
+    app.mount("/", StaticFiles(directory="public", html=True), name="public")
+
+    return app

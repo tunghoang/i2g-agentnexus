@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+  <meta charset='utf-8'>
+  <meta http-equiv='X-UA-Compatible' content='IE=edge'>
+  <title>VSP Chat</title>
+  <meta name='viewport' content='width=device-width, initial-scale=1'>
+  <style>
+    [v-cloak] {
+      display: none;
+    }
+  </style>
+</head>
+
+<body>
+  <div v-scope v-cloak>
+    <header @vue:mounted="getAgents">
+      <button type="button" @click="showAgent=!showAgent">{{showAgent ? 'Hide' : 'Show'}} agents</button>
+      <div v-if="showAgent">
+        <hr>
+        <button type="button" @click="getAgents">Get agents</button>
+        <button type="button" @click="newAgent">Create agent</button>
+        <ul v-if="agents.length">
+          <li v-for="agent in agents">
+            {{ agent }}
+          </li>
+        </ul>
+        <div v-else>
+          No agents
+        </div>
+      </div>
+    </header>
+    <main style="margin-top: 1rem;">
+      <form @submit.prevent="ask">
+        <textarea :disabled="asking" rows="2" style="width: 100%;" v-model="question"
+          @keydown.enter.prevent="onQuestionEnter"></textarea>
+        <button type="submit">{{asking ? '...' : 'Ask'}}</button>
+      </form>
+      <div>
+        <ul>
+          <li v-for="item in history">
+            <div style="white-space: pre;">{{ item.question }}</div>
+            <div v-html="item.answer"></div>
+          </li>
+        </ul>
+      </div>
+    </main>
+  </div>
+
+  <script type="module">
+    import { createApp } from 'https://unpkg.com/petite-vue?module'
+    import md from 'https://unpkg.com/md?module'
+
+    createApp({
+      showAgent: false,
+      agents: [],
+      getAgents() {
+        return fetch('/agents')
+          .then(response => response.json())
+          .then(data => {
+            this.agents = data
+          })
+      },
+      newAgent() {
+        return fetch('/new')
+          .then(response => response.json())
+          .then(data => {
+            this.getAgents();
+          })
+      },
+
+      question: '',
+      history: [],
+      onQuestionEnter(event) {
+        if (event.ctrlKey || event.shiftKey) return;
+        this.ask();
+      },
+      asking: false,
+      ask() {
+        if (!this.question) return;
+        this.asking = true
+        return fetch('/ask', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            question: this.question,
+            agentid: null,
+          })
+        })
+          .then(response => response.json())
+          .then(data => {
+            if (!data.answer) {
+              if (data.detail === 'No agents exist') {
+                return this.newAgent().then(() => this.ask())
+              }
+            }
+            console.log(data);
+            const answer = md(data.answer)
+            console.log(answer);
+            this.history.push({
+              question: this.question,
+              answer,
+            })
+            this.question = '';
+          })
+          .finally(() => {
+            this.asking = false;
+          })
+      },
+    })
+      .mount()
+  </script>
+</body>
+
+</html>

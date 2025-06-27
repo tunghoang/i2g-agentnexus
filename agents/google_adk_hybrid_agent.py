@@ -312,7 +312,7 @@ class ToolExecutingAgentExecutor:
             Returns:
                 dict: content of file
             """
-            try: 
+            try:
                 executor_instance.logger.info(f"Executing dump_content with file: {file_path} and {line_num}")
                 result = executor_instance._execute_mcp_tool("dump_content", json.dumps(dict(file_path=file_path, line_num=line_num)))
                 return {"status": "success", "result": result}
@@ -330,11 +330,11 @@ class ToolExecutingAgentExecutor:
             Returns:
                 dict: las log plot
             """
-            try: 
+            try:
                 executor_instance.logger.info(f"Executing plot_las with file: {file_path}")
                 result = executor_instance._execute_mcp_tool("plot_las", file_path)
                 print(type(result), len(result))
-                return {"status": "success", 
+                return {"status": "success",
                         "result": "output is created, information about resulting plot is in attachment field",
                         "attachment": result}
             except Exception as e:
@@ -342,7 +342,7 @@ class ToolExecutingAgentExecutor:
                 return {"status": "error", "message": str(e)}
 
         tools.append(plot_las)
-        
+
         def show_sheets(file_path: str) -> dict:
             """Show sheets in an excel file
 
@@ -352,10 +352,10 @@ class ToolExecutingAgentExecutor:
             Returns:
                 dict: results
             """
-            try: 
+            try:
                 executor_instance.logger.info(f"Executing show_sheets with file: {file_path}")
                 result = executor_instance._execute_mcp_tool("show_sheets", file_path)
-                return {"status": "success", 
+                return {"status": "success",
                         "result": result}
             except Exception as e:
                 executor_instance.logger.error(f"Error in show_sheets: {e}")
@@ -372,10 +372,10 @@ class ToolExecutingAgentExecutor:
             Returns:
                 dict: results
             """
-            try: 
+            try:
                 executor_instance.logger.info(f"Executing show_columns with file: {file_path} and sheet { sheet}")
                 result = executor_instance._execute_mcp_tool("show_columns", json.dumps(dict(file_path=file_path, sheet=sheet, header_rows=header)))
-                return {"status": "success", 
+                return {"status": "success",
                         "result": result}
             except Exception as e:
                 executor_instance.logger.error(f"Error in show_sheets: {e}")
@@ -430,7 +430,7 @@ class ToolExecutingAgentExecutor:
 
 ## For File Listing Requests:
 - User asks "list files *.las" → IMMEDIATELY call list_files with pattern="*.las"
-- User asks "list files F3_*" → IMMEDIATELY call list_files with pattern="F3_*"  
+- User asks "list files F3_*" → IMMEDIATELY call list_files with pattern="F3_*"
 - User asks "show available data" → IMMEDIATELY call list_files with pattern="*"
 
 ## For System Status Requests:
@@ -441,8 +441,7 @@ class ToolExecutingAgentExecutor:
 - User asks "analyze well.las" → IMMEDIATELY call las_parser with file_path="well.las"
 - User asks "classify survey.sgy" → IMMEDIATELY call segy_classify with file_path="survey.sgy"
 - User asks "plot well.las" → IMMEDIATELY call plot_las with file_path="well.las"
-- User asks "show columns in file.xlsx sheet 0" → IMMEDIATELY call show_columns with file_path="well.las" and sheet=0
- 
+- User asks "show columns in file.xlsx sheet 0" → IMMEDIATELY call show_columns with file_path="file.xlsx" and sheet=0
 
 # IMPORTANT PARAMETER RULES:
 - ALL functions require parameters (no defaults)
@@ -465,7 +464,7 @@ User: "list files *.las"
 You: [CALLS list_files(pattern="*.las")]
 Then: Present the results
 
-User: "system status"  
+User: "system status"
 You: [CALLS system_status(query="")]
 Then: Present the status information
 
