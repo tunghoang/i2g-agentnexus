@@ -340,8 +340,34 @@ class ToolExecutingAgentExecutor:
             except Exception as e:
                 executor_instance.logger.error(f"Error in plot_las: {e}")
                 return {"status": "error", "message": str(e)}
-
         tools.append(plot_las)
+
+        def plot_histogram_las(file_path: str, curve_names: list[str], num_bins: int) -> dict:
+            """Plot a histogram of a las file
+
+            Args:
+                file_path: Path to las file
+
+            Returns:
+                dict: las histogram
+            """
+            try:
+                executor_instance.logger.info(f"Executing plot_histogram_las with file: {file_path}")
+                result = executor_instance._execute_mcp_tool(
+                    "plot_histogram_las",
+                    {
+                        "file_path": file_path,
+                        "curve_names": curve_names,
+                        "num_bins": num_bins,
+                    },
+                )
+                return {"status": "success",
+                        "result": "output is created, information about resulting plot is in attachment field",
+                        "attachment": result}
+            except Exception as e:
+                executor_instance.logger.error(f"Error in plot_histogram_las: {e}")
+                return {"status": "error", "message": str(e)}
+        tools.append(plot_histogram_las)
 
         def show_sheets(file_path: str) -> dict:
             """Show sheets in an excel file
@@ -381,6 +407,7 @@ class ToolExecutingAgentExecutor:
                 executor_instance.logger.error(f"Error in show_sheets: {e}")
                 return {"status": "error", "message": str(e)}
         tools.append(show_columns)
+
         self.logger.info(f"Created {len(tools)} tool functions (no default parameters)")
         return tools
 
@@ -442,6 +469,7 @@ class ToolExecutingAgentExecutor:
 - User asks "classify survey.sgy" → IMMEDIATELY call segy_classify with file_path="survey.sgy"
 - User asks "plot well.las" → IMMEDIATELY call plot_las with file_path="well.las"
 - User asks "show columns in file.xlsx sheet 0" → IMMEDIATELY call show_columns with file_path="file.xlsx" and sheet=0
+- User asks "plot histogram for CURVE1 and CURVE2 from file.las with 9 bins" → IMMEDIATELY call plot_histogram_las with file_path="file.las" and curveNames=["CURVE1", "CURVE2"] and numBins=9
 
 # IMPORTANT PARAMETER RULES:
 - ALL functions require parameters (no defaults)
@@ -457,7 +485,7 @@ class ToolExecutingAgentExecutor:
 4. Present the results clearly
 
 # FORMAT OUTPUT FILE:
-Format any file in output (e.g.: /path/to/file.html) with the following template: http://localhost:9999/path/to/file.html
+Format any file in output (e.g.: /path/to/file.html) with the following template: http://localhost:9999/path/to/file.html and put in an <iframe>
 
 # EXAMPLES OF CORRECT BEHAVIOR:
 User: "list files *.las"
@@ -474,7 +502,7 @@ Then: Present the results
 
 **REMEMBER: Always provide ALL required parameters when calling tools!**
 
-Available tools: list_files, system_status, health_check, directory_info, las_parser, las_analysis, formation_evaluation, well_correlation, segy_parser, segy_classify, segy_qc, quick_segy_summary, dump_content, plot_las, show_sheets, show_columns."""
+Available tools: list_files, system_status, health_check, directory_info, las_parser, las_analysis, formation_evaluation, well_correlation, segy_parser, segy_classify, segy_qc, quick_segy_summary, dump_content, plot_las, plot_histogram_las, show_sheets, show_columns."""
 
     async def _execute_with_google_adk(self, query: str) -> str:
         """Execute query using Google ADK with tool execution"""
@@ -608,12 +636,12 @@ Available tools: list_files, system_status, health_check, directory_info, las_pa
             self.stats["tool_executions"] += 1
 
             # Simple parameter preparation
-            if isinstance(params, str):
-                input_data = params
-            else:
-                input_data = str(params) if params is not None else ""
+            # if isinstance(params, str):
+            #     input_data = params
+            # else:
+            #     input_data = str(params) if params is not None else ""
 
-            result = self.mcp_client.call_tool(tool_name, input_data)
+            result = self.mcp_client.call_tool(tool_name, params)
             return self._extract_result_content(result)
 
         except Exception as e:
