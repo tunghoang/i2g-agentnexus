@@ -17,6 +17,7 @@ from tools.segy_tools import create_segy_tools
 from tools.system_tools import create_system_tools
 from tools.plot_tools import create_plot_tools
 from tools.excel_tools import create_excel_tools
+from tools.vsp_tools import create_vsp_tools
 
 
 class MCPServerManager(BaseServer, HealthCheckMixin):
@@ -53,6 +54,7 @@ class MCPServerManager(BaseServer, HealthCheckMixin):
         self._register_system_tools()
         self._register_plot_tools()
         self._register_excel_tools()
+        self._register_vsp_tools()
 
         self.logger.info(f"MCP server created with {self.tools_registered} tools")
 
@@ -102,6 +104,14 @@ class MCPServerManager(BaseServer, HealthCheckMixin):
         tool_count = len(excel_tools)
         self.tools_registered += tool_count
         self.logger.info(f"Registered {tool_count} excel tools")
+    def _register_vsp_tools(self):
+        """Register VSP tools"""
+        self.logger.info("Registering vsp tools...")
+        vsp_tools = create_vsp_tools(self.mcp_server, self.data_config)
+        tool_count = len(vsp_tools)
+        self.tools_registered += tool_count
+        self.logger.info(f"Registered {tool_count} vsp tools")
+
 
     def _start_server(self):
         """Start the MCP server in background thread"""

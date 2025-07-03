@@ -93,7 +93,7 @@ def qa_server_create(create_agent_fn):
             [k for k in qa_server.agents if qa_server.agents[k]["killed"] == 0]
         )
         if len(agentids) == 0:
-            raise HTTPException(status_code=404, detail="No agents exist")
+            raise HTTPException(status_code=411, detail="No agents exist")
         agentid = question.agentid or agentids[0]
         agentData = qa_server.agents.get(f"{agentid}", None)
         if agentData is None:

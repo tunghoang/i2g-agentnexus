@@ -11,6 +11,9 @@ from typing import List, Dict, Any, TypedDict
 from python_a2a import FastMCP
 from config.settings import DataConfig
 
+from utils.plot_utils import logplot, histogram
+from naming import Naming
+
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 
@@ -101,95 +104,7 @@ def create_plot_tools(mcp_server: FastMCP, data_config: DataConfig) -> List[str]
                 else _LAS_CACHE[file_path]
             )
             df = las.df().reset_index()
-            curveNames = df.columns[1:]
-            refCurveName = df.columns[0]
-            fig = make_subplots(
-                rows=1, cols=len(curveNames), shared_yaxes=True, horizontal_spacing=0
-            )
-            for idx, c in enumerate(curveNames):
-                trace = go.Scatter(
-                    x=df[c], y=df[refCurveName], name=c, line=getLineConfig(c)
-                )
-                fig.append_trace(trace, 1, idx + 1)
-                fig.update_xaxes(
-                    nticks=4, tickfont_color=getColor(c), row=1, col=idx + 1
-                )
-                fig.add_shape(
-                    type="rect",
-                    x0=0,
-                    x1=1,
-                    xref="x domain",
-                    y0=2,
-                    y1=HEADER_HEIGHT * 2.0 / 3.0,
-                    yref="y domain",
-                    ysizemode="pixel",
-                    yanchor=1,
-                    layer="below",
-                    visible=True,
-                    line_width=1,
-                    line_color=borderColor(),
-                    fillcolor=headerFillColor(),
-                    row=1,
-                    col=idx + 1,
-                )
-                fig.add_hline(
-                    y=HEADER_HEIGHT / 3,
-                    yref="y domain",
-                    ysizemode="pixel",
-                    yanchor=1,
-                    layer="below",
-                    visible=True,
-                    line_width=1,
-                    line_color=getColor(c),
-                    row=1,
-                    col=idx + 1,
-                )
-                fig.add_annotation(
-                    text=f"{c}({las.curves[c].unit})",
-                    font=dict(color="white", size=10),
-                    bgcolor=getColor(c),
-                    showarrow=False,
-                    x=0.5,
-                    y=1,
-                    xanchor="center",
-                    yanchor="middle",
-                    xref="x domain",
-                    yref="y domain",
-                    yshift=HEADER_HEIGHT / 2,
-                    align="center",
-                    visible=True,
-                    row=1,
-                    col=idx + 1,
-                )
-
-            fig.update_xaxes(
-                showline=True,
-                linewidth=0.5,
-                linecolor="#444",
-                mirror=True,
-                showticklabels=True,
-                side="top",
-                # rangeslider=dict(visible=True, borderwidth=1, thickness=0.05),
-                gridcolor="#eee",
-                position=1,
-            )
-            fig.update_yaxes(
-                showline=True,
-                linewidth=0.5,
-                linecolor="#444",
-                mirror=True,
-                autorange="reversed",
-                gridcolor="#eee",
-            )
-            fig.update_layout(
-                plot_bgcolor="#fff",
-                overwrite=True,
-                showlegend=False,
-                margin=dict(l=0, r=0, t=HEADER_HEIGHT, b=0),
-                width=columnWidth * len(curveNames),
-                height=500,
-                autosize=False,
-            )
+            fig = logplot(df, las.curves)
             html_code = fig.write_html(dest_path)
             return {"text": f"{ori_file_path}.html"}
         except Exception as e:
@@ -229,25 +144,10 @@ def create_plot_tools(mcp_server: FastMCP, data_config: DataConfig) -> List[str]
             )
             df = las.df().reset_index()
             curve_names = input_data["curve_names"]
-            num_bins = input_data["num_bins"]
-            fig = go.Figure(
-                data=[],
-                layout=go.Layout(
-                    title=go.layout.Title(
-                        text=f"Histogram of {', '.join(curve_names)} from {os.path.basename(file_path)}",
-                        xref="paper",
-                        x=0,
-                    ),
-                    barmode="stack",
-                    width=1000,
-                    height=500,
-                ),
-            )
-            for c in curve_names:
-                trace = go.Histogram(x=df[c], nbinsx=num_bins, name=c)
-                fig.add_trace(trace)
+            num_bins = input_data.get("num_bins", 10)
+            fig = histogram(df, curve_names, num_bins, file_path=file_path)
             fig.write_html(dest_path)
-            return {"text": f"{out_file_path}.html?{time.time()}"}
+            return {"text": f"{out_file_path}.html"}
         except Exception as e:
             traceback.print_exc()
             return {"text": "Ploting histogram las failed: {str(e)}"}

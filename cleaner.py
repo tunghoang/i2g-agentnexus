@@ -6,7 +6,7 @@ from datetime import datetime
 def _is_killed(agent):
     return agent['killed'] == 1
 
-_EXPIRE_TIME = 3 * 60
+_EXPIRE_TIME = 1 * 60
 def _is_expired(agent):
     now = datetime.now()
     tl = agent['tl']

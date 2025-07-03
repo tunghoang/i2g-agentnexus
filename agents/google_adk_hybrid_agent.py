@@ -57,6 +57,10 @@ class ToolExecutingAgentExecutor:
             "system_type": "Google ADK Agent with Tool Execution"
         }
 
+        self.agent_data = {
+            "store": None
+        }
+
         self.logger.info("Google ADK Tool Executing Agent created")
 
     def _create_tool_functions(self) -> List:
@@ -408,6 +412,103 @@ class ToolExecutingAgentExecutor:
                 return {"status": "error", "message": str(e)}
         tools.append(show_columns)
 
+        def unique_from_column(file_path: str, sheet: int = 0, header: int = 0, column: int = 0) -> dict:
+            """Extract unique values from a column of a excel sheet
+
+            Args:
+                file_path: path to excel file
+                sheet: sheet index or name
+                column: column to get values
+
+            Returns:
+                dict: results
+            """
+            try: 
+                executor_instance.logger.info(f"Executing unique_from_column with file: {file_path} and sheet { sheet} and column {column}")
+                result = executor_instance._execute_mcp_tool("unique_from_column", json.dumps(dict(file_path=file_path, sheet=sheet, header_rows=header, column=column)))
+                return {"status": "success", 
+                        "result": result}
+            except Exception as e:
+                executor_instance.logger.error(f"Error in show_sheets: {e}")
+                return {"status": "error", "message": str(e)}
+        tools.append(unique_from_column)
+
+        def marker4well(well: str, marker_file: str = '', store: str = 'default') -> dict:
+            """Get marker for a file from a marker_file
+
+            Args:
+                well: well
+                marker_file: marker file
+
+            Returns:
+                dict: results
+            """
+            try:
+                executor_instance.logger.info(f"Executing marker4well with well: {well}, marker_file: {marker_file}")
+                result = executor_instance._execute_mcp_tool('marker4well', json.dumps(dict(well=well,marker_file=marker_file, store=store)))
+                return {"status": "success", "result": result}
+            except Exception as e:
+                executor_instance.logger.error(f"Error in marker4well {e}")
+                return dict(status="error", message=str(e))
+        tools.append(marker4well)
+
+        def productiondata4well(well: str, file_path: str='', store: str='default') -> dict:
+            """Get production data for well from a production file
+
+            Args:
+                well: well
+                file_path: production file
+
+            Returns:
+                dict: results
+            """
+            try:
+                executor_instance.logger.info(f"Executing productiondata4well with well: {well}, file_path")
+                result = executor_instance._execute_mcp_tool('productiondata4well', json.dumps(dict(well=well,file_path=file_path, store=store)))
+                return {"status": "success", "result": result}
+            except Exception as e:
+                executor_instance.logger.error(f"Error in productiondata4well {e}")
+                return {"status": "error", "message": str(e)}
+        tools.append(productiondata4well)
+
+        def buildCRMInput(production_wells:str, injection_wells:str, store: str = 'default'):
+            """Build CRM input file from production wells and injection wells
+
+            Args:
+                production_wells: str, List of production wells
+                injection_wells: str, List of injection wells
+
+            Returns:
+                dict: results
+            """
+            try:
+                executor_instance.logger.info("Executing buildCRMInput with {production_wells} and {injection_wells}")
+                result = executor_instance._execute_mcp_tool('buildCRMInput', json.dumps(dict(production_wells=production_wells.split(','), injection_wells=injection_wells.split(','))))
+                return {"status": "success", "result": result}
+            except Exception as e:
+                executor_instance.logger.error(f"Error in buildCRMInput {e}")
+                return {"status": "error", "result": result}
+        tools.append(buildCRMInput)
+
+        def trainCRMModel(filepath:str):
+            """Train CRM Model from a CRM input file
+
+            Args:
+                filepath: CRM input file
+
+            Returns:
+                dict: results
+            """
+            try:
+                executor_instance.logger.info("Executing trainCRMModel from {filepath}")
+                result = executor_instance._execute_mcp_tool('trainCRMModel', json.dumps(dict(filepath=filepath)))
+                return {"status": "success", 
+                        "result": "result is created. Output is in attachment field", 
+                        "attachment": result}
+            except Exception as e:
+                executor_instance.logger.error(f"Error in trainCRMModel {e}")
+                return {"status": "error", "result": result}
+        tools.append(trainCRMModel)
         self.logger.info(f"Created {len(tools)} tool functions (no default parameters)")
         return tools
 
@@ -468,8 +569,12 @@ class ToolExecutingAgentExecutor:
 - User asks "analyze well.las" → IMMEDIATELY call las_parser with file_path="well.las"
 - User asks "classify survey.sgy" → IMMEDIATELY call segy_classify with file_path="survey.sgy"
 - User asks "plot well.las" → IMMEDIATELY call plot_las with file_path="well.las"
-- User asks "show columns in file.xlsx sheet 0" → IMMEDIATELY call show_columns with file_path="file.xlsx" and sheet=0
 - User asks "plot histogram for CURVE1 and CURVE2 from file.las with 9 bins" → IMMEDIATELY call plot_histogram_las with file_path="file.las" and curveNames=["CURVE1", "CURVE2"] and numBins=9
+- User asks "show columns in file.xlsx sheet 0" → IMMEDIATELY call show_columns with file_path="well.las" and sheet=0
+- User asks "get unique values from column 0 in file.xlsx sheet 0" → IMMEDIATELY call unique_from_column with column=0 file_path="file.xlsx" and sheet=0
+
+## For CRM analysis:
+- User asks "build CRM input using production wells and injection wells" → IMMEDIATELY call buildCRMInput with corresponding production_wells and injection_wells
 
 # IMPORTANT PARAMETER RULES:
 - ALL functions require parameters (no defaults)
@@ -485,7 +590,7 @@ class ToolExecutingAgentExecutor:
 4. Present the results clearly
 
 # FORMAT OUTPUT FILE:
-Format any file in output (e.g.: /path/to/file.html) with the following template: http://localhost:9999/path/to/file.html and put in an <iframe>
+Format any html file in output (e.g.: /path/to/file.html) with the following template: http://localhost:9999/path/to/file.html and put in an <iframe>
 
 # EXAMPLES OF CORRECT BEHAVIOR:
 User: "list files *.las"
@@ -502,7 +607,7 @@ Then: Present the results
 
 **REMEMBER: Always provide ALL required parameters when calling tools!**
 
-Available tools: list_files, system_status, health_check, directory_info, las_parser, las_analysis, formation_evaluation, well_correlation, segy_parser, segy_classify, segy_qc, quick_segy_summary, dump_content, plot_las, plot_histogram_las, show_sheets, show_columns."""
+Available tools: list_files, system_status, health_check, directory_info, las_parser, las_analysis, formation_evaluation, well_correlation, segy_parser, segy_classify, segy_qc, quick_segy_summary, dump_content, plot_las, plot_histogram_las, show_sheets, show_columns, unique_from_column, marker4well, productiondata4well, buildCRMInput, trainCRMModel."""
 
     async def _execute_with_google_adk(self, query: str) -> str:
         """Execute query using Google ADK with tool execution"""
