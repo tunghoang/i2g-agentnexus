@@ -42,7 +42,7 @@ def create_missingpay_tools(mcp_server, data_config: DataConfig) -> List[str]:
 
         except Exception as e:
             traceback.print_exc()
-            return {"text": str(e), "isError": true}
+            return {"text": str(e), "isError": True}
             
     tool_names = [
         "build_logplot"

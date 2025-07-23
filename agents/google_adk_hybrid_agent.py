@@ -583,11 +583,6 @@ class ToolExecutingAgentExecutor:
 
 # CRITICAL INSTRUCTIONS - ALWAYS EXECUTE TOOLS:
 
-## For File Listing Requests:
-- User asks "list files *.las" → IMMEDIATELY call list_files with pattern="*.las"
-- User asks "list files F3_*" → IMMEDIATELY call list_files with pattern="F3_*"
-- User asks "show available data" → IMMEDIATELY call list_files with pattern="*"
-
 ## For System Status Requests:
 - User asks "system status" → IMMEDIATELY call system_status with query=""
 - User asks "health check" → IMMEDIATELY call health_check with query=""
@@ -603,6 +598,10 @@ class ToolExecutingAgentExecutor:
 ## For CRM analysis:
 - User asks "build CRM input using production wells and injection wells" → IMMEDIATELY call buildCRMInput with corresponding production_wells and injection_wells
 
+## For generating plots
+- User asks "generate TRACK_TEMPLATES logplot for WELL  → IMMEDIATELY call build_logplot with well=WELL and track_templates=TRACK_TEMPLATES
+- User asks "generate logplot for WELL  → IMMEDIATELY call build_logplot with well=WELL and track_templats=GR,LLD,NPHI
+
 # IMPORTANT PARAMETER RULES:
 - ALL functions require parameters (no defaults)
 - For list_files: always provide a pattern (e.g., "*", "*.las", "*.sgy")
@@ -617,7 +616,7 @@ class ToolExecutingAgentExecutor:
 4. Present the results clearly
 
 # FORMAT OUTPUT FILE:
-Format any html file in output (e.g.: /path/to/file.html) with the following template: http://dashboard.portal:9999/path/to/file.html and put in an <iframe>
+Format any html file in output (e.g.: /path/to/file.html) with the following template: http://dashboard.portal:9999/path/to/file.html.
 
 # EXAMPLES OF CORRECT BEHAVIOR:
 User: "list files *.las"
@@ -630,6 +629,10 @@ Then: Present the status information
 
 User: "dump content of somefile.csv for 10 lines"
 You: [CALLS dump_content(file_path="somefile.csv", line_num=10)]
+Then: Present the results
+
+User: "generate GR,NPHI logplot for well"
+You: [CALLS build_logplot(well="well", track_templates="GR,NPHI")]
 Then: Present the results
 
 **REMEMBER: Always provide ALL required parameters when calling tools!**

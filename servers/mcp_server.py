@@ -56,6 +56,7 @@ class MCPServerManager(BaseServer, HealthCheckMixin):
         self._register_plot_tools()
         self._register_excel_tools()
         self._register_vsp_tools()
+        self._register_vsp_missingpay_tools()
 
         self.logger.info(f"MCP server created with {self.tools_registered} tools")
 
