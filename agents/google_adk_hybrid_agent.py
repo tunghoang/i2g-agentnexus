@@ -373,7 +373,7 @@ class ToolExecutingAgentExecutor:
                 return {"status": "error", "message": str(e)}
         tools.append(plot_histogram_las)
 
-        def build_logplot(well: str, track_templates:str): -> dict
+        def build_logplot(well: str, track_templates:str) -> dict:
             """Plot a logplot for well
 
             Args:
