@@ -11,7 +11,7 @@ from typing import List, Dict, Any, TypedDict
 from python_a2a import FastMCP
 from config.settings import DataConfig
 
-from utils.plot_utils import logplot, histogram
+from utils.plot_utils import logplot, advLogplot, histogram
 from naming import Naming
 
 import plotly.graph_objects as go
@@ -77,12 +77,21 @@ def create_plot_tools(mcp_server: FastMCP, data_config: DataConfig) -> List[str]
     _LAS_CACHE = dict()
 
     @mcp_server.tool(name="plot_las", description="Plot a las file in a plotly chart")
-    def plot_las(file_path: str = "", **kwargs):
+    def plot_las(**kwargs):
         try:
-            ori_file_path = kwargs["input"]
+            input_data = json.loads(kwargs['input'])
+            #ori_file_path = kwargs["input"]
+            ori_file_path = input_data['file_path']
+            track_templates = input_data.get('templates', None)
+            if track_templates:
+                track_templates = track_templates.split(',')
+                track_templates = [tpl.strip() for tpl in track_templates]
+
+            print(track_templates)
             dest_path = f"{CHART_DIR}/{ori_file_path}.html"
             containing_dir = os.path.join(CHART_DIR, os.path.dirname(ori_file_path))
             file_path = os.path.join(data_config.data_dir, ori_file_path)
+            print(ori_file_path, file_path)
             if not file_path:
                 return {"text": "file to plot is empty or None"}
             elif not os.path.exists(file_path):
@@ -104,12 +113,50 @@ def create_plot_tools(mcp_server: FastMCP, data_config: DataConfig) -> List[str]
                 else _LAS_CACHE[file_path]
             )
             df = las.df().reset_index()
-            fig = logplot(df, las.curves)
+            if track_templates:
+                fig = advLogplot(df, las.curves, track_styles=track_templates)
+            else:
+                fig = logplot(df, las.curves)
             html_code = fig.write_html(dest_path)
             return {"text": f"{ori_file_path}.html"}
         except Exception as e:
             traceback.print_exc()
-            return {"text": "Ploting las failed: {str(e)}"}
+            return {"text": f"Ploting las failed: {str(e)}", "isError": True}
+    @mcp_server.tool(name="plot_logplot", description="Plot a las file in a plotly chart with spec")
+    def plot_logplot(**kwargs):
+        try:
+            ori_file_path = kwargs["input"]
+            dest_path = f"{CHART_DIR}/{ori_file_path}.html"
+            containing_dir = os.path.join(CHART_DIR, os.path.dirname(ori_file_path))
+            file_path = os.path.join(data_config.data_dir, ori_file_path)
+            print(ori_file_path, file_path)
+            if not file_path:
+                return {"text": "file to plot is empty or None"}
+            elif not os.path.exists(file_path):
+                return {"text": f"{file_path} does not exist"}
+            elif not os.path.isfile(file_path):
+                return {"text": f"{file_path} is not a regular file"}
+
+            if (
+                os.path.exists(dest_path)
+                and (datetime.now().timestamp() - os.path.getmtime(dest_path)) < 3 * 60
+            ):
+                return {"text": f"{ori_file_path}.html"}
+
+            print(containing_dir, dest_path)
+            Path(containing_dir).mkdir(parents=True, exist_ok=True)
+            las = (
+                lasio.read(file_path)
+                if not file_path in _LAS_CACHE
+                else _LAS_CACHE[file_path]
+            )
+            df = las.df().reset_index()
+            fig = advLogplot(df, las.curves, track_styles=["INTERP", "FLAGS"], title="My Log plot")
+            html_code = fig.write_html(dest_path)
+            return {"text": f"{ori_file_path}.html"}
+        except Exception as e:
+            traceback.print_exc()
+            return {"text": f"Ploting las failed: {str(e)}", "isError": True}
 
     @mcp_server.tool(
         name="plot_histogram_las",

@@ -325,7 +325,7 @@ class ToolExecutingAgentExecutor:
                 return {"status": "error", "message": str(e)}
         tools.append(dump_content)
 
-        def plot_las(file_path: str) -> dict:
+        def plot_las(file_path: str, templates:str) -> dict:
             """Plot a las file
 
             Args:
@@ -335,8 +335,8 @@ class ToolExecutingAgentExecutor:
                 dict: las log plot
             """
             try:
-                executor_instance.logger.info(f"Executing plot_las with file: {file_path}")
-                result = executor_instance._execute_mcp_tool("plot_las", file_path)
+                executor_instance.logger.info(f"Executing plot_las with file: {file_path} and templates")
+                result = executor_instance._execute_mcp_tool( "plot_las", json.dumps(dict(file_path=file_path, templates=templates)) )
                 print(type(result), len(result))
                 return {"status": "success",
                         "result": "output is created, information about resulting plot is in attachment field",
@@ -372,6 +372,33 @@ class ToolExecutingAgentExecutor:
                 executor_instance.logger.error(f"Error in plot_histogram_las: {e}")
                 return {"status": "error", "message": str(e)}
         tools.append(plot_histogram_las)
+
+        def build_logplot(well: str, track_templates:str): -> dict
+            """Plot a logplot for well
+
+            Args:
+                well: well to build logplot
+                track_templates: templates for tracks
+
+            Returns:
+                dict: results
+            """
+            try:
+                executor_instance.logger.info(f"Executing build_logplot with well: {well} and track_templates {track_templates}")
+                result = executor_instance._execute_mcp_tool(
+                    "build_logplot",
+                    {
+                        "well": well,
+                        "track_templates": track_templates or ''
+                    },
+                )
+                return {"status": "success",
+                        "result": result }
+            except Exception as e:
+                executor_instance.logger.error(f"Error in build_logplot: {e}")
+                return {"status": "error", "message": str(e)}
+        tools.append(build_logplot)
+
 
         def show_sheets(file_path: str) -> dict:
             """Show sheets in an excel file
@@ -590,7 +617,7 @@ class ToolExecutingAgentExecutor:
 4. Present the results clearly
 
 # FORMAT OUTPUT FILE:
-Format any html file in output (e.g.: /path/to/file.html) with the following template: http://localhost:9999/path/to/file.html and put in an <iframe>
+Format any html file in output (e.g.: /path/to/file.html) with the following template: http://dashboard.portal:9999/path/to/file.html and put in an <iframe>
 
 # EXAMPLES OF CORRECT BEHAVIOR:
 User: "list files *.las"
@@ -607,7 +634,7 @@ Then: Present the results
 
 **REMEMBER: Always provide ALL required parameters when calling tools!**
 
-Available tools: list_files, system_status, health_check, directory_info, las_parser, las_analysis, formation_evaluation, well_correlation, segy_parser, segy_classify, segy_qc, quick_segy_summary, dump_content, plot_las, plot_histogram_las, show_sheets, show_columns, unique_from_column, marker4well, productiondata4well, buildCRMInput, trainCRMModel."""
+Available tools: list_files, system_status, health_check, directory_info, las_parser, las_analysis, formation_evaluation, well_correlation, segy_parser, segy_classify, segy_qc, quick_segy_summary, dump_content, plot_las, build_logplot, plot_histogram_las, show_sheets, show_columns, unique_from_column, marker4well, productiondata4well, buildCRMInput, trainCRMModel."""
 
     async def _execute_with_google_adk(self, query: str) -> str:
         """Execute query using Google ADK with tool execution"""

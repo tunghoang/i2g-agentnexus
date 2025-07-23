@@ -1,0 +1,68 @@
+GR:
+  curves:
+    - name: GR
+      mode: lines
+      line_color: green
+      xaxis: 
+        range: [0., 150.]
+    - name: SP
+      mode: lines
+      line_color: blue
+      xaxis: 
+        range: [-100., 100.]
+    - name: PERF
+      mode: markers
+      marker_size: 6
+      marker_symbol: square
+      marker_color: red
+      xaxis: 
+        range: [0., 1.]
+LLD:
+  curves:
+    - name: LLD
+      mode: lines
+      line_color: red
+      xaxis:
+        scale: log
+        range: [0.2, 20.]
+NPHI:
+  curves:
+    - name: NPHI
+      mode: lines
+      line_color: blue
+      xaxis:
+        range: [0.6, 0]
+    - name: DT
+      mode: lines
+      line_color: '#ff00ff'
+      xaxis:
+        range: [140., 40.]
+INTERP:
+  curves:
+    - name: VCLAV
+      mode: lines
+      line_color: red
+      xaxis:
+        range: [0, 1.]
+    - name: PHIE
+      mode: lines
+      line_color: blue
+      xaxis:
+        range: [0, 1.]
+    - name: SW
+      mode: lines
+      line_color: green
+      xaxis:
+        range: [1, 0.]
+FLAGS:
+  curves:
+    - name: RESFLAG
+      mode: markers
+      marker_color: red
+      marker_size: 6
+      marker_symbol: square
+    - name: PAYFLAG
+      mode: markers
+      marker_color: green
+      marker_size: 6
+      marker_symbol: diamond

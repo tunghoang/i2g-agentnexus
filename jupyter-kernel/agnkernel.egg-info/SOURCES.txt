@@ -1,0 +1,8 @@
+setup.py
+agnkernel/__init__.py
+agnkernel/__main__.py
+agnkernel/agentnexus.py
+agnkernel.egg-info/PKG-INFO
+agnkernel.egg-info/SOURCES.txt
+agnkernel.egg-info/dependency_links.txt
+agnkernel.egg-info/top_level.txt

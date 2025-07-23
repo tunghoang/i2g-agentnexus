@@ -1,0 +1,10 @@
+{
+	"argv":[
+		"python",
+		"-m",
+		"agnkernel", 
+		"-f", 
+		"{connection_file}"
+	],
+	"display_name": "VSP AI/ML Agent"
+}

@@ -18,6 +18,7 @@ from tools.system_tools import create_system_tools
 from tools.plot_tools import create_plot_tools
 from tools.excel_tools import create_excel_tools
 from tools.vsp_tools import create_vsp_tools
+from tools.vsp_missingpay_tools import create_missingpay_tools
 
 
 class MCPServerManager(BaseServer, HealthCheckMixin):
@@ -111,6 +112,13 @@ class MCPServerManager(BaseServer, HealthCheckMixin):
         tool_count = len(vsp_tools)
         self.tools_registered += tool_count
         self.logger.info(f"Registered {tool_count} vsp tools")
+    def _register_vsp_missingpay_tools(self):
+        """Register VSP MissingPay tools"""
+        self.logger.info("Registering vsp missingpay tools...")
+        vsp_missingpay_tools = create_missingpay_tools(self.mcp_server, self.data_config)
+        tool_count = len(vsp_missingpay_tools)
+        self.tools_registered += tool_count
+        self.logger.info(f"Registered {tool_count} vsp missingpay tools")
 
 
     def _start_server(self):

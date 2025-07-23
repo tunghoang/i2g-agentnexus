@@ -1,7 +1,10 @@
 import os
 import hashlib
+import yaml
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
+
+_allTrackConfigs = None
 
 __COLOR_PALETTE = (
     "#e6194b",
@@ -55,99 +58,330 @@ def borderColor():
 def headerFillColor():
     return "#eee"
 
-def logplot(df, curves):
-    HEADER_HEIGHT = 90
-    columnWidth = 150
+def getTrackConfig(trackstyle):
+    global _allTrackConfigs
+    if _allTrackConfigs is None:
+        with open('utils/track_template.yaml') as file:
+            _allTrackConfigs = yaml.safe_load(file)
+    return _allTrackConfigs.get(trackstyle)
 
-    curveNames = df.columns[1:]
-    refCurveName = df.columns[0]
-    fig = make_subplots(
-        rows=1, cols=len(curveNames), shared_yaxes=True, horizontal_spacing=0
-    )
-    for idx, c in enumerate(curveNames):
-        trace = go.Scatter(
-            x=df[c], y=df[refCurveName], name=c, line=getLineConfig(c)
+def __depth_track():
+    pass
+
+def __track_header(fig, TRACK_HEADER, yanchor=1, TRACK_TITLE=20, xdomain='', colIdx = None):
+    if xdomain:
+        fig.add_shape(
+            type="rect",
+            x0=0,
+            x1=1,
+            xref=f"x{xdomain} domain",
+            y0=2,
+            y1=TRACK_HEADER,
+            yref="y domain",
+            ysizemode="pixel",
+            yanchor=yanchor,
+            layer="below",
+            visible=True,
+            line_width=0.5,
+            line_color=borderColor(),
+            fillcolor=headerFillColor(),
+            #row=1,
+            #col=colIdx + 1,
         )
-        fig.append_trace(trace, 1, idx + 1)
-        fig.update_xaxes(
-            nticks=4, tickfont_color=getColor(c), row=1, col=idx + 1
+        fig.add_shape(
+            type="rect",
+            xref=f'x{xdomain} domain', x0=0, x1=1,
+            yref='y domain', ysizemode='pixel', yanchor=yanchor,y0=TRACK_HEADER,y1=TRACK_HEADER - TRACK_TITLE,
+            visible=True, fillcolor='#f5deb3',
+            line_width=0.5,
+            line_color=borderColor(),
+            #row=1,
+            #col=colIdx + 1,
         )
+        fig.add_annotation(
+            text=f"({colIdx + 1})",
+            font=dict(color="black", size=10),
+            showarrow=False,
+            align="center",
+            visible=True,
+            xref=f"x{xdomain} domain", xanchor="center", x = 0.5, 
+            yref="y domain", yanchor="middle", y = 1,
+            yshift=TRACK_HEADER - TRACK_TITLE/2,
+            #row=1,
+            #col=colIdx + 1,
+        )
+    else:
         fig.add_shape(
             type="rect",
             x0=0,
             x1=1,
             xref="x domain",
             y0=2,
-            y1=HEADER_HEIGHT * 2.0 / 3.0,
+            y1=TRACK_HEADER,
             yref="y domain",
             ysizemode="pixel",
-            yanchor=1,
+            yanchor=yanchor,
             layer="below",
             visible=True,
-            line_width=1,
+            line_width=0.5,
             line_color=borderColor(),
             fillcolor=headerFillColor(),
             row=1,
-            col=idx + 1,
+            col=colIdx + 1,
         )
-        fig.add_hline(
-            y=HEADER_HEIGHT / 3,
-            yref="y domain",
-            ysizemode="pixel",
-            yanchor=1,
-            layer="below",
-            visible=True,
-            line_width=1,
-            line_color=getColor(c),
+        fig.add_shape(
+            type="rect",
+            xref='x domain', x0=0, x1=1,
+            yref='y domain', ysizemode='pixel', yanchor=yanchor,y0=TRACK_HEADER,y1=TRACK_HEADER - TRACK_TITLE,
+            visible=True, fillcolor='#f5deb3',
+            line_width=0.5,
+            line_color=borderColor(),
             row=1,
-            col=idx + 1,
+            col=colIdx + 1,
+        )
+        fig.add_annotation(
+            text=f"({colIdx + 1})",
+            font=dict(color="black", size=10),
+            showarrow=False,
+            align="center",
+            visible=True,
+            xref="x domain", xanchor="center", x = 0.5, 
+            yref="y domain", yanchor="middle", y = 1,
+            yshift=TRACK_HEADER - TRACK_TITLE/2,
+            row=1,
+            col=colIdx + 1,
+        )
+    return fig
+
+def __track_body(fig, TRACK_HEADER, trackbodyheight, xdomain='', colIdx=None ):
+    if xdomain:
+        fig.add_shape(
+            type="rect",
+            x0=0,
+            x1=1,
+            xref=f"x{xdomain} domain",
+            y0=0,
+            y1=1,
+            yref="y domain",
+            #layer="below",
+            visible=True,
+            line_width=0.5,
+            line_color=borderColor(),
+            #row=1,
+            #col=colIdx + 1,
+        )
+    else:
+        fig.add_shape(
+            type="rect",
+            x0=0,
+            x1=1,
+            xref="x domain",
+            y0=0,
+            y1=1,
+            yref="y domain",
+            #layer="below",
+            visible=True,
+            line_width=0.5,
+            line_color=borderColor(),
+            row=1,
+            col=colIdx + 1,
+        )
+    return fig
+
+def logplot(df, curves, title=None):
+    PLOT_HEADER = 60
+    TRACK_HEADER = 180
+    PLOT_HEIGHT = 1000
+    columnWidth = 150
+    CURVE_HEADER = 30
+    TRACK_TITLE = 20
+    Y_DOMAIN = [0, (PLOT_HEIGHT - TRACK_HEADER) / PLOT_HEIGHT]
+
+    curveXAxisPositionProps = lambda inTrackPos: dict(side="bottom", 
+                                                      position=1 - (TRACK_TITLE + (inTrackPos + 1) * CURVE_HEADER)/PLOT_HEIGHT, 
+                                                      anchor='free')
+
+    curveLabelPositionProps = lambda inTrackPos: dict(xref="x domain", xanchor="center", x=0.5,
+                                                      yref="y domain", yanchor="bottom", y=1,
+                                                      yshift=(TRACK_HEADER - TRACK_TITLE - (inTrackPos + 1)*CURVE_HEADER + 2))
+
+
+    curveNames = df.columns[1:]
+    refCurveName = df.columns[0]
+    fig = make_subplots(
+            rows=1, 
+            cols=len(curveNames) + 1, 
+            shared_yaxes=True, 
+            horizontal_spacing=0 
+    )
+
+    fig.append_trace(go.Scattergl(x=[0,0], y = df[refCurveName], name="depth"), 1, 1)
+    __track_header(fig, TRACK_HEADER, colIdx=0)
+    __track_body(fig, TRACK_HEADER, PLOT_HEIGHT - TRACK_HEADER - PLOT_HEADER, colIdx=0)
+    for idx, c in enumerate(curveNames):
+        __track_header(fig, TRACK_HEADER, colIdx=idx + 1)
+        fig.update_xaxes(
+            title = None,
+            showline=True,
+            nticks=4, tickfont_color=getColor(c), linecolor=getColor(c), 
+            mirror=False,
+            showticklabels=True,
+            gridcolor="#eee",
+            linewidth=1,
+            **curveXAxisPositionProps(0), 
+            row=1, col=idx + 2
         )
         fig.add_annotation(
             text=f"{c}({curves[c].unit})",
             font=dict(color="white", size=10),
             bgcolor=getColor(c),
             showarrow=False,
-            x=0.5,
-            y=1,
-            xanchor="center",
-            yanchor="middle",
-            xref="x domain",
-            yref="y domain",
-            yshift=HEADER_HEIGHT / 2,
             align="center",
             visible=True,
-            row=1,
-            col=idx + 1,
+            **curveLabelPositionProps(0),
+            row=1, col=idx + 2,
         )
+        trace = go.Scatter(
+            x=df[c], y=df[refCurveName], name=c, line=getLineConfig(c)
+        )
+        fig.append_trace(trace, 1, idx + 2)
+        __track_body(fig, TRACK_HEADER, PLOT_HEIGHT - TRACK_HEADER - PLOT_HEADER, colIdx=idx + 1)
 
-    fig.update_xaxes(
-        showline=True,
-        linewidth=0.5,
-        linecolor="#444",
-        mirror=True,
-        showticklabels=True,
-        side="top",
-        # rangeslider=dict(visible=True, borderwidth=1, thickness=0.05),
-        gridcolor="#eee",
-        position=1,
-    )
     fig.update_yaxes(
-        showline=True,
+        showline=False,
         linewidth=0.5,
         linecolor="#444",
         mirror=True,
         autorange="reversed",
         gridcolor="#eee",
+        domain=Y_DOMAIN
     )
+    fig.update_yaxes(position=0.65/(1 + len(curveNames)), showline=False, anchor='free', row=1, col=1)
+
+    plot_title=title or f"Logplot for {','.join(curveNames)}"
     fig.update_layout(
+        title=dict(text=plot_title, xanchor='center', yanchor='bottom', x=0.5, y=(PLOT_HEIGHT - PLOT_HEADER + 20)/PLOT_HEIGHT),
         plot_bgcolor="#fff",
         overwrite=True,
         showlegend=False,
-        margin=dict(l=0, r=0, t=HEADER_HEIGHT, b=0),
-        width=columnWidth * len(curveNames),
-        height=500,
+        margin=dict(l=0, r=0, t=PLOT_HEADER, b=0),
+        width=columnWidth * (len(curveNames) + 1),
+        height=PLOT_HEIGHT,
         autosize=False,
     )
+    return fig
+
+def advLogplot(df, curves, track_styles, title = None):
+    curveNames = df.columns[1:]
+    refCurveName = df.columns[0]
+
+    PLOT_HEADER = 60
+    TRACK_HEADER = 180
+    PLOT_HEIGHT = 1000
+    columnWidth = 150
+    CURVE_HEADER = 47
+    TRACK_TITLE = 20
+    Y_DOMAIN = [0, (PLOT_HEIGHT - TRACK_HEADER) / PLOT_HEIGHT]
+    TRACK_NUM = len(track_styles) + 1
+    X_DOMAIN_SIZE = 1/TRACK_NUM
+    X_DOMAIN = lambda trackIdx: [trackIdx*X_DOMAIN_SIZE, (trackIdx+1)*X_DOMAIN_SIZE]
+
+    YAXIS_PROPS = dict(showline=False,
+                       linewidth=0.5,
+                       linecolor="#444",
+                       mirror=True,
+                       #autorange="reversed",
+                       gridcolor="#eee",
+                       domain=Y_DOMAIN)
+
+    YAXIS_LIMIT_PROPS = lambda df: dict(range=[
+            float(df[refCurveName].iloc[0] + (df[refCurveName].iloc[-1] - df[refCurveName].iloc[0])/4),
+            float(df[refCurveName].iloc[0])
+        ])
+    XAXIS_DEFAULT_PROPS = dict(title = None, showline=True, 
+                               nticks=4, 
+                               mirror=True, 
+                               showticklabels=True, gridcolor="#eee", linewidth=1)
+
+    curveXAxisPositionProps = lambda inTrackPos: dict(side="bottom", 
+                                                      #position=1 - (TRACK_TITLE + (inTrackPos + 1) * CURVE_HEADER)/(PLOT_HEIGHT - PLOT_HEADER), 
+                                                      position=1 - (TRACK_TITLE + 15 + inTrackPos * CURVE_HEADER)/(PLOT_HEIGHT - PLOT_HEADER), 
+                                                      anchor='free')
+
+    curveLabelPositionProps = lambda inTrackPos, overlaying_idx: dict(xref=f"x{overlaying_idx} domain", xanchor="center", x=0.5,
+                                                      yref="y domain", yanchor="top", y=1,
+                                                      yshift=TRACK_HEADER - TRACK_TITLE - inTrackPos*CURVE_HEADER - 6)
+
+    def curveProps(curveSpec):
+        curveProperties = { **curveSpec }
+        if 'xaxis' in curveProperties:
+            del curveProperties['xaxis']
+        return curveProperties
+
+    fig = make_subplots( rows=1, 
+            cols=len(track_styles) + 1, 
+            shared_yaxes=True, 
+            horizontal_spacing=0 
+    )
+    # Prepare axes
+    yaxes = { 'yaxis': { **YAXIS_PROPS, **YAXIS_LIMIT_PROPS(df) } }
+    xaxes = { 'xaxis': dict(domain=X_DOMAIN(0)) }
+
+    print(yaxes)
+    fig.append_trace(go.Scattergl(x=[0,0], y = df[refCurveName].head(), name="depth"), 1, 1)
+    __track_header(fig, TRACK_HEADER, colIdx = 0)
+    xaxis_index = 1
+    for idx,track_style in enumerate(track_styles):
+        trackConfig = getTrackConfig(track_style)
+        overlaying_idx = 1
+        for jdx, curveSpec in enumerate(trackConfig['curves']):
+            xaxis_index += 1
+            xaxes[f'xaxis{xaxis_index}'] = dict(domain=X_DOMAIN(idx + 1), 
+                                                tickfont_color=curveSpec.get('line_color', curveSpec.get('marker_color')), 
+                                                linecolor=curveSpec.get('line_color', curveSpec.get('marker_color')),
+                                                range=curveSpec.get('xaxis', {}).get('range', None),
+                                                **curveXAxisPositionProps(jdx),
+                                                **XAXIS_DEFAULT_PROPS )
+            if jdx == 0:
+                overlaying_idx = xaxis_index
+            else:
+                xaxes[f'xaxis{xaxis_index}']['overlaying'] = f'x{overlaying_idx}'
+
+            c = curveSpec['name']
+            trace = go.Scattergl(
+                x=df[c], y=df[refCurveName], xaxis=f'x{xaxis_index}', **curveProps(curveSpec)
+            )
+            fig.add_trace(trace)
+            fig.add_annotation(
+                text=f"{c}({curves[c].unit})",
+                font=dict(color="white", size=10),
+                bgcolor=curveSpec.get('line_color', curveSpec.get('marker_color')),
+                showarrow=False,
+                align="center",
+                visible=True,
+                **curveLabelPositionProps(jdx, overlaying_idx),
+                #row=1, col=idx + 2,
+            )
+        __track_header(fig, TRACK_HEADER, xdomain=overlaying_idx, colIdx=idx+1)
+        __track_body(fig, TRACK_HEADER, PLOT_HEIGHT - TRACK_HEADER - PLOT_HEADER, xdomain=overlaying_idx)
+
+    plot_title=title or f"Logplot for {','.join(curveNames)}"
+    fig.update_layout(
+        **yaxes,
+        **xaxes,
+        title=dict(text=plot_title, xanchor='center', yanchor='bottom', x=0.5, y=(PLOT_HEIGHT - PLOT_HEADER + 20)/PLOT_HEIGHT),
+        plot_bgcolor="#fff",
+        overwrite=True,
+        showlegend=False,
+        margin=dict(l=0, r=0, t=PLOT_HEADER, b=0),
+        width=columnWidth * (len(track_styles) + 1),
+        height=PLOT_HEIGHT,
+        autosize=False,
+    )
+    fig.update_xaxes(showticklabels=False, showgrid=False, row=1, col=1)
+    fig.update_yaxes(**YAXIS_PROPS)
+    fig.update_yaxes(position=0.65/(1 + len(track_styles)), side='left', showline=False, anchor='free', row=1, col=1)
+    __track_body(fig, TRACK_HEADER, PLOT_HEIGHT - TRACK_HEADER - PLOT_HEADER, colIdx=0)
     return fig
 
 def histogram(df, curve_names, num_bins, file_path: str=""):
