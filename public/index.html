@@ -100,6 +100,8 @@
             if (!data.answer) {
               if (data.detail === 'No agents exist') {
                 return this.newAgent().then(() => this.ask())
+              } else {
+                throw new Error(data.detail)
               }
             }
             console.log(data);

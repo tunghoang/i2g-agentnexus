@@ -102,6 +102,9 @@ def qa_server_create(create_agent_fn):
             raise HTTPException(status_code=404, detail=f"agent {agentid} was killed")
         agentData["tl"] = datetime.now()
         agent = agentData["agent"]
+        if agent is None:
+            qa_server.agents[agentid]["killed"] = 1
+            raise HTTPException(status_code=404, detail=f"agent {agentid} not found")
 
         # process query
         user_input = question.question

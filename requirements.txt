@@ -92,3 +92,5 @@ graphviz>=0.20.0      # For agent visualization in ADK
 plotly>=6.1.2
 openpyxl>=3.1.5
 ipykernel==6.29.5
+pywaterflood==0.3.4
+mlflow==3.1.4

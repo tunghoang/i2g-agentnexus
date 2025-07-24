@@ -450,10 +450,10 @@ class ToolExecutingAgentExecutor:
             Returns:
                 dict: results
             """
-            try: 
+            try:
                 executor_instance.logger.info(f"Executing unique_from_column with file: {file_path} and sheet { sheet} and column {column}")
                 result = executor_instance._execute_mcp_tool("unique_from_column", json.dumps(dict(file_path=file_path, sheet=sheet, header_rows=header, column=column)))
-                return {"status": "success", 
+                return {"status": "success",
                         "result": result}
             except Exception as e:
                 executor_instance.logger.error(f"Error in show_sheets: {e}")
@@ -529,13 +529,33 @@ class ToolExecutingAgentExecutor:
             try:
                 executor_instance.logger.info("Executing trainCRMModel from {filepath}")
                 result = executor_instance._execute_mcp_tool('trainCRMModel', json.dumps(dict(filepath=filepath)))
-                return {"status": "success", 
-                        "result": "result is created. Output is in attachment field", 
+                return {"status": "success",
+                        "result": "result is created. Output is in attachment field",
                         "attachment": result}
             except Exception as e:
                 executor_instance.logger.error(f"Error in trainCRMModel {e}")
                 return {"status": "error", "result": result}
         tools.append(trainCRMModel)
+
+        def well_checklist_table(wells: str = ''):
+            """Get well checklist table for a list of wells
+
+            Args:
+                wells: list of wells splitted by commas
+
+            Returns:
+                dict: results
+            """
+            try:
+                executor_instance.logger.info("Executing well_checklist_table with {wells}")
+                result = executor_instance._execute_mcp_tool('well_checklist_table', json.dumps(dict(wells=wells.split(',') if len(wells) > 0 else [])))
+                return {"status": "success",
+                        "result": result}
+            except Exception as e:
+                executor_instance.logger.error(f"Error in well_checklist_table {e}")
+                return {"status": "error", "message": str(e)}
+        tools.append(well_checklist_table)
+
         self.logger.info(f"Created {len(tools)} tool functions (no default parameters)")
         return tools
 
@@ -602,6 +622,9 @@ class ToolExecutingAgentExecutor:
 - User asks "generate TRACK_TEMPLATES logplot for WELL  → IMMEDIATELY call build_logplot with well=WELL and track_templates=TRACK_TEMPLATES
 - User asks "generate logplot for WELL  → IMMEDIATELY call build_logplot with well=WELL and track_templats=GR,LLD,NPHI
 
+## For missing pay:
+- User asks "View checklist table of well logs data" → IMMEDIATELY call well_checklist_table with wells if user provided or else wells=''
+
 # IMPORTANT PARAMETER RULES:
 - ALL functions require parameters (no defaults)
 - For list_files: always provide a pattern (e.g., "*", "*.las", "*.sgy")
@@ -637,7 +660,8 @@ Then: Present the results
 
 **REMEMBER: Always provide ALL required parameters when calling tools!**
 
-Available tools: list_files, system_status, health_check, directory_info, las_parser, las_analysis, formation_evaluation, well_correlation, segy_parser, segy_classify, segy_qc, quick_segy_summary, dump_content, plot_las, build_logplot, plot_histogram_las, show_sheets, show_columns, unique_from_column, marker4well, productiondata4well, buildCRMInput, trainCRMModel."""
+Available tools: list_files, system_status, health_check, directory_info, las_parser, las_analysis, formation_evaluation, well_correlation, segy_parser, segy_classify, segy_qc, quick_segy_summary, dump_content, plot_las, build_logplot, plot_histogram_las, show_sheets, show_columns, unique_from_column, marker4well, productiondata4well, buildCRMInput, trainCRMModel, well_checklist_table.
+"""
 
     async def _execute_with_google_adk(self, query: str) -> str:
         """Execute query using Google ADK with tool execution"""
