@@ -87,6 +87,7 @@ def create_missingpay_tools(mcp_server, data_config: DataConfig) -> List[str]:
                 thu_via_result,
                 plt_result,
                 kqdvl_result,
+                log_details,
             ) = well_checklist(wells=well_names_input)
             count = len(well_names)
             out_file_relative_path = os.path.join(

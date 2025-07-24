@@ -7,22 +7,29 @@
   <title>Well Checklist</title>
   <meta name='viewport' content='width=device-width, initial-scale=1'>
   <style>
+    body {
+      font-family: Arial, Helvetica, sans-serif;
+      margin: 0;
+      padding: 1rem;
+    }
+    h1 {
+      font-size: 2rem;
+      text-align: center;
+      margin-top: 0;
+    }
     table.dataframe {
       border-collapse: collapse;
+      width: 100%;
 
       th,
       td {
         border: 1px solid #000;
         padding: 0.5rem;
+        text-align: center;
       }
 
       th {
         background-color: #d9e0f1;
-      }
-
-      th:first-child,
-      td:first-child {
-        text-align: center;
       }
 
       td:empty {
@@ -33,7 +40,17 @@
 </head>
 
 <body>
-  {{TABLE}}
+  <div>
+    <h1>Well Logs Checklist</h1>
+    {{TABLE}}
+  </div>
+  <script>
+    document.querySelectorAll("td").forEach(td => {
+      if (td.textContent.trim() === "yes") {
+        td.style.backgroundColor = "#ccffcc";
+      }
+    });
+  </script>
 </body>
 
 </html>

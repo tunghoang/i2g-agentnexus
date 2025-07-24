@@ -1,6 +1,6 @@
+import json
 import os
-
-from pytest import mark
+from enhanced_mcp_tools import enhanced_las_parser
 import utils.excel_utils as excel_utils
 
 
@@ -43,6 +43,7 @@ def well_checklist(
     water_inj_rate = prod_df[prod_cols[WATER_INJ_COL]]
     gians = prod_df[prod_cols[RIG_COL]]
     marker_df = excel_utils.parse_marker(marker_dir)
+    log_details = []
 
     for wIdx, well in enumerate(well_names):
         loai = "N/A"
@@ -59,9 +60,19 @@ def well_checklist(
         loai_gieng_result[wIdx] = loai
         ten_gian_result[wIdx] = gian
         las_dir = os.path.join(wells_dir, well, "GIS", "Las")
-        log_result[wIdx] = (
-            "yes" if os.path.exists(las_dir) and os.scandir(las_dir) else ""
-        )
+        las_file_paths = [
+            f.path
+            for f in os.scandir(las_dir)
+            if f.is_file() and f.name.lower().endswith(".las")
+        ]
+        log_result[wIdx] = "yes" if len(las_file_paths) > 0 else ""
+        for las_file_path in las_file_paths:
+            try:
+                res = json.loads(enhanced_las_parser(las_file_path)["text"])
+                if res.get('error') is None:
+                    log_details.append(res)
+            except Exception as e:
+                raise Exception(f"Error parsing las file {las_file_path}: {e}")
         devi_dir = os.path.join(wells_dir, well, "GIS", "Devi")
         devi_result[wIdx] = (
             "yes" if os.path.exists(devi_dir) and os.scandir(devi_dir) else ""
@@ -95,4 +106,5 @@ def well_checklist(
         thu_via_result,
         plt_result,
         kqdvl_result,
+        log_details,
     )
