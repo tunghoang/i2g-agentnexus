@@ -1,4 +1,5 @@
 import os
+import numpy as np
 import hashlib
 import yaml
 import plotly.graph_objects as go
@@ -299,7 +300,6 @@ def advLogplot(df, curves, track_styles, title = None):
             float(df[refCurveName].iloc[0])
         ])
     XAXIS_DEFAULT_PROPS = dict(title = None, showline=True, 
-                               nticks=4, 
                                mirror=True, 
                                showticklabels=True, gridcolor="#eee", linewidth=1)
 
@@ -311,6 +311,15 @@ def advLogplot(df, curves, track_styles, title = None):
     curveLabelPositionProps = lambda inTrackPos, overlaying_idx: dict(xref=f"x{overlaying_idx} domain", xanchor="center", x=0.5,
                                                       yref="y domain", yanchor="top", y=1,
                                                       yshift=TRACK_HEADER - TRACK_TITLE - inTrackPos*CURVE_HEADER - 6)
+
+    def curveXAxisLimitProps(curveSpec):
+        logType = curveSpec.get('xaxis', {}).get('scale', 'linear')
+        limits = curveSpec.get('xaxis', {}).get('range', None)
+        if limits:
+            limits = np.array(limits)
+            limits = np.log10(limits) if logType == 'log' else limits
+            return dict(type=logType, range=list(limits))
+        return dict(type=logType)
 
     def curveProps(curveSpec):
         curveProperties = { **curveSpec }
@@ -331,15 +340,22 @@ def advLogplot(df, curves, track_styles, title = None):
     fig.append_trace(go.Scattergl(x=[0,0], y = df[refCurveName].head(), name="depth"), 1, 1)
     __track_header(fig, TRACK_HEADER, colIdx = 0)
     xaxis_index = 1
-    for idx,track_style in enumerate(track_styles):
+    track_idx = 1
+    for _,track_style in enumerate(track_styles):
         trackConfig = getTrackConfig(track_style)
         overlaying_idx = 1
+        have_track = False
         for jdx, curveSpec in enumerate(trackConfig['curves']):
+            c = curveSpec['name']
+            if c not in curveNames:
+                print(f"Curve {c} is absent in log file")
+                continue
+            have_track = True
             xaxis_index += 1
-            xaxes[f'xaxis{xaxis_index}'] = dict(domain=X_DOMAIN(idx + 1), 
+            xaxes[f'xaxis{xaxis_index}'] = dict(domain=X_DOMAIN(track_idx), 
                                                 tickfont_color=curveSpec.get('line_color', curveSpec.get('marker_color')), 
                                                 linecolor=curveSpec.get('line_color', curveSpec.get('marker_color')),
-                                                range=curveSpec.get('xaxis', {}).get('range', None),
+                                                **curveXAxisLimitProps(curveSpec),
                                                 **curveXAxisPositionProps(jdx),
                                                 **XAXIS_DEFAULT_PROPS )
             if jdx == 0:
@@ -347,7 +363,6 @@ def advLogplot(df, curves, track_styles, title = None):
             else:
                 xaxes[f'xaxis{xaxis_index}']['overlaying'] = f'x{overlaying_idx}'
 
-            c = curveSpec['name']
             trace = go.Scattergl(
                 x=df[c], y=df[refCurveName], xaxis=f'x{xaxis_index}', **curveProps(curveSpec)
             )
@@ -360,10 +375,11 @@ def advLogplot(df, curves, track_styles, title = None):
                 align="center",
                 visible=True,
                 **curveLabelPositionProps(jdx, overlaying_idx),
-                #row=1, col=idx + 2,
             )
-        __track_header(fig, TRACK_HEADER, xdomain=overlaying_idx, colIdx=idx+1)
-        __track_body(fig, TRACK_HEADER, PLOT_HEIGHT - TRACK_HEADER - PLOT_HEADER, xdomain=overlaying_idx)
+        if have_track:
+            __track_header(fig, TRACK_HEADER, xdomain=overlaying_idx, colIdx=track_idx)
+            __track_body(fig, TRACK_HEADER, PLOT_HEIGHT - TRACK_HEADER - PLOT_HEADER, xdomain=overlaying_idx)
+            track_idx += 1
 
     plot_title=title or f"Logplot for {','.join(curveNames)}"
     fig.update_layout(

@@ -1,3 +1,11 @@
+from pathlib import Path
+import os
+def ensure_path(inpath):
+    path_to_ensure = inpath
+    if inpath.endswith('.html'):
+        path_to_ensure = os.path.dirname(inpath)
+    Path(path_to_ensure).mkdir(parents=True, exist_ok=True)
+
 class Naming:
     @classmethod
     def markername(cls, well):
@@ -10,3 +18,19 @@ class Naming:
     @classmethod
     def histogramName(cls, lasname):
         return f"{lasname}.histogram.html"
+
+    @classmethod
+    def dest_path(cls, inpath, category=""):
+        CHART_DIR = "/tmp"
+        outpath = f"{CHART_DIR}/{category}/{inpath}.html" if category else f"{CHART_DIR}/{category}/{inpath}.html"
+        ensure_path(outpath)
+        return outpath
+
+    @classmethod
+    def publish_path(cls, inpath, category=""):
+        outpath = f"{category}/{inpath}.html" if category else f"{inpath}.html"
+        return outpath
+
+    @classmethod
+    def data_path(cls, inpath, prefix='./data'):
+        return f'{prefix}/{inpath}'

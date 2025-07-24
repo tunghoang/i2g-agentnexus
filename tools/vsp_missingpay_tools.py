@@ -3,7 +3,6 @@ import numpy as np
 import json
 from glob import glob, iglob
 import traceback
-from pathlib import Path
 from datetime import datetime
 from typing import List, Dict, Any
 from config.settings import DataConfig
@@ -11,7 +10,7 @@ from store import Store
 from naming import Naming
 from cache import MemoryCache
 import pandas as pd
-import mlflow
+import lasio
 from calendar import monthrange
 from pywaterflood import CRM
 from utils.excel_utils import PROD_WELL_COL, parse_well_production
@@ -35,18 +34,39 @@ def create_missingpay_tools(mcp_server, data_config: DataConfig) -> List[str]:
             if track_templates is None:
                 raise Exception("Track templates should be specified")
 
-            well_data_dir = "wells/{well}"
-            if not os.path.isdir(well_data_dir):
+            well_data_dir = f'wells/{well}'
+            if not os.path.isdir(f"{data_config.data_dir}/{well_data_dir}"):
                 raise Exception(f"Well {well} not found")
             composite_logs = f"{well_data_dir}/GIS/Las/*.las"
-            files = glob(composite_logs)
+            files = glob(f"{data_config.data_dir}/{composite_logs}")
             if len(files) == 0:
-                raise Exception(f"No composite logs found for well {well}")
-            return {"text": "Build success"}
+                raise Exception(f'No composite logs found for well {well}')
 
+            track_templates = input_data.get('track_templates', 'GR,LLD,NPHI')
+            track_templates = track_templates.split(',')
+            track_templates = [ tpl.strip() for tpl in track_templates ]
+
+            logDF_path = files[0]
+            
+            las = MemoryCache.get_instance().get(logDF_path)
+            if las is None: 
+                las = lasio.read(logDF_path)
+                MemoryCache.get_instance().put(logDF_path, las)
+
+            df = las.df().reset_index()
+
+            
+            if track_templates:
+                fig = advLogplot(df, las.curves, track_styles=track_templates)
+            else:
+                fig = logplot(df, las.curves)
+            
+            dest_path = Naming.dest_path(logDF_path.removeprefix(f"{data_config.data_dir}/"), category='logplot')
+            fig.write_html(dest_path)
+            return {"text": Naming.publish_path(logDF_path.removeprefix(f"{data_config.data_dir}/"), category='logplot')}
         except Exception as e:
             traceback.print_exc()
-            return {"text": str(e), "isError": True}
+            return {"text": str(e)}
 
     @mcp_server.tool(
         name="well_checklist_table", description="get checklist table of well logs data"
