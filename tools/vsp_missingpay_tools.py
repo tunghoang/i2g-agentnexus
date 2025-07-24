@@ -57,7 +57,7 @@ def create_missingpay_tools(mcp_server, data_config: DataConfig) -> List[str]:
 
             
             if track_templates:
-                fig = advLogplot(df, las.curves, track_styles=track_templates)
+                fig = advLogplot(df, las.curves, track_styles=track_templates, title=f"Well {well} Logplot")
             else:
                 fig = logplot(df, las.curves)
             

@@ -620,10 +620,10 @@ class ToolExecutingAgentExecutor:
 
 ## For generating plots
 - User asks "generate TRACK_TEMPLATES logplot for WELL  → IMMEDIATELY call build_logplot with well=WELL and track_templates=TRACK_TEMPLATES
-- User asks "generate logplot for WELL  → IMMEDIATELY call build_logplot with well=WELL and track_templats=GR,LLD,NPHI
 
 ## For missing pay:
 - User asks "View checklist table of well logs data" → IMMEDIATELY call well_checklist_table with wells if user provided or else wells=''
+- User asks "Generate logplot for WELL, then IMMEDIATELY call build_logplot with well=WELL and track_templates if user provided or track_templates=GR,LLD,NPHI
 
 # IMPORTANT PARAMETER RULES:
 - ALL functions require parameters (no defaults)
