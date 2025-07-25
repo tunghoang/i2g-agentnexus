@@ -14,7 +14,7 @@ import lasio
 from calendar import monthrange
 from pywaterflood import CRM
 from utils.excel_utils import PROD_WELL_COL, parse_well_production
-from utils.missing_pay_utils import well_checklist
+from utils.missing_pay_utils import get_well_checklist, get_well_checklist_curves
 from utils.plot_utils import multi_chart, advLogplot, logplot
 
 
@@ -47,20 +47,20 @@ def create_missingpay_tools(mcp_server, data_config: DataConfig) -> List[str]:
             track_templates = [ tpl.strip() for tpl in track_templates ]
 
             logDF_path = files[0]
-            
+
             las = MemoryCache.get_instance().get(logDF_path)
-            if las is None: 
+            if las is None:
                 las = lasio.read(logDF_path)
                 MemoryCache.get_instance().put(logDF_path, las)
 
             df = las.df().reset_index()
 
-            
+
             if track_templates:
                 fig = advLogplot(df, las.curves, track_styles=track_templates, title=f"Well {well} Logplot")
             else:
                 fig = logplot(df, las.curves)
-            
+
             dest_path = Naming.dest_path(logDF_path.removeprefix(f"{data_config.data_dir}/"), category='logplot')
             fig.write_html(dest_path)
             return {"text": Naming.publish_path(logDF_path.removeprefix(f"{data_config.data_dir}/"), category='logplot')}
@@ -88,8 +88,7 @@ def create_missingpay_tools(mcp_server, data_config: DataConfig) -> List[str]:
                 thu_via_result,
                 plt_result,
                 kqdvl_result,
-                log_details,
-            ) = well_checklist(wells=well_names_input)
+            ) = get_well_checklist(wells=well_names_input)
             count = len(well_names)
             out_file_relative_path = os.path.join(
                 f"well_checklist_table{"_".join(well_names)}.html"
@@ -118,8 +117,73 @@ def create_missingpay_tools(mcp_server, data_config: DataConfig) -> List[str]:
                 }
             )
 
-            table = df.to_html(index=False, justify="center")
+            table = df.to_html(index=False)
             template = open("templates/well_checklist_tpl.html", "r").read()
+            result = template.replace("{{TABLE}}", table)
+            with open(out_file_path, "w") as f:
+                f.write(result)
+
+            return {"text": out_file_relative_path}
+        except Exception as e:
+            traceback.print_exc()
+            return {"text": f"Tool failed: {str(e)}"}
+
+    @mcp_server.tool(
+        name="well_checklist_curves",
+        description="get checklist curves of well logs data",
+    )
+    def well_checklist_curves(**kwargs):
+        try:
+            input_data = json.loads(kwargs["input"])
+            well_names_input: list[str] = input_data.get("wells")
+            (
+                well_names,
+                gr_result,
+                sp_result,
+                cal_result,
+                lld_result,
+                bl_result,
+                resdt_result,
+                ild_result,
+                rt_result,
+                llm_result,
+                lls_result,
+                msfl_result,
+                rxo_result,
+                rhob_result,
+                nphi_result,
+                dt_result,
+                pe_result,
+            ) = get_well_checklist_curves(wells=well_names_input)
+            count = len(well_names)
+            out_file_relative_path = os.path.join(
+                f"well_checklist_curves{"_".join(well_names)}.html"
+            )
+            out_file_path = os.path.join("/tmp", out_file_relative_path)
+            df = pd.DataFrame(
+                data={
+                    "Tên giếng": well_names,
+                    "GR": gr_result,
+                    "SP": sp_result,
+                    "Caliper/CALI/CAL": cal_result,
+                    "LLD": lld_result,
+                    "BL": bl_result,
+                    "RESDT": resdt_result,
+                    "ILD": ild_result,
+                    "Rt": rt_result,
+                    "LLM": llm_result,
+                    "LLS": lls_result,
+                    "MSFL": msfl_result,
+                    "RXO": rxo_result,
+                    "RHOB/RBOB": rhob_result,
+                    "NPHI": nphi_result,
+                    "DT": dt_result,
+                    "PE": pe_result,
+                }
+            )
+
+            table = df.to_html(index=False)
+            template = open("templates/well_checklist_curves_tpl.html", "r").read()
             result = template.replace("{{TABLE}}", table)
             with open(out_file_path, "w") as f:
                 f.write(result)
@@ -132,5 +196,6 @@ def create_missingpay_tools(mcp_server, data_config: DataConfig) -> List[str]:
     tool_names = [
         "build_logplot",
         "well_checklist_table",
+        "well_checklist_curves",
     ]
     return tool_names
