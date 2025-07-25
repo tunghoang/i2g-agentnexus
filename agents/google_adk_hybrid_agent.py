@@ -373,7 +373,29 @@ class ToolExecutingAgentExecutor:
                 return {"status": "error", "message": str(e)}
         tools.append(plot_histogram_las)
 
-        def build_logplot(well: str, track_templates:str) -> dict:
+        def plot_histogram_well(well: str, curves: str, num_bins: int) -> dict:
+            """Plot a histogram of a well
+
+            Args:
+                well: well to plot
+                curves: curves to plot
+
+            Returns:
+                dict: las histogram
+            """
+            try:
+                executor_instance.logger.info(f"Executing plot_histogram_well with well {well} and curves {curves}")
+                result = executor_instance._execute_mcp_tool('plot_histogram_well', { "well": well, 
+                                                                                     "curves": curves, 
+                                                                                     "num_bins": num_bins })
+                print(result)
+                return {"status": "success", "result": result}
+            except Exception as e:
+                traceback.print_exc()
+                return {"status": "error", "message": str(e) }
+        tools.append(plot_histogram_well)
+
+        def build_logplot(well: str, track_templates: str) -> dict:
             """Plot a logplot for well
 
             Args:
@@ -478,6 +500,22 @@ class ToolExecutingAgentExecutor:
                 executor_instance.logger.error(f"Error in marker4well {e}")
                 return dict(status="error", message=str(e))
         tools.append(marker4well)
+
+        def discover_wells_in_prodmonthly():
+            """Discover wells in production monthy file
+            Args:
+                None
+            Returns:
+                dict: results
+            """
+            try:
+                executor_instance.logger.info("Executing discover_wells_in_prodmonthly")
+                result = executor_instance._execute_mcp_tool('discover_wells_in_prodmonthly', None)
+                return {"status": "success", "result": result}
+            except Exception as e:
+                executor_instance.logger.error("Error in discover_wells_in_prodmonth")
+                return dic(status="error", message=str(e))
+        tools.append(discover_wells_in_prodmonthly)
 
         def productiondata4well(well: str, file_path: str='', store: str='default') -> dict:
             """Get production data for well from a production file
@@ -611,12 +649,13 @@ class ToolExecutingAgentExecutor:
 - User asks "analyze well.las" → IMMEDIATELY call las_parser with file_path="well.las"
 - User asks "classify survey.sgy" → IMMEDIATELY call segy_classify with file_path="survey.sgy"
 - User asks "plot well.las" → IMMEDIATELY call plot_las with file_path="well.las"
-- User asks "plot histogram for CURVE1 and CURVE2 from file.las with 9 bins" → IMMEDIATELY call plot_histogram_las with file_path="file.las" and curveNames=["CURVE1", "CURVE2"] and numBins=9
 - User asks "show columns in file.xlsx sheet 0" → IMMEDIATELY call show_columns with file_path="well.las" and sheet=0
 - User asks "get unique values from column 0 in file.xlsx sheet 0" → IMMEDIATELY call unique_from_column with column=0 file_path="file.xlsx" and sheet=0
 
 ## For CRM analysis:
 - User asks "build CRM input using production wells and injection wells" → IMMEDIATELY call buildCRMInput with corresponding production_wells and injection_wells
+- User asks "show wells in marker file", then IMMEDIATELY call unique_from_column with column=0 file_path="misc/Marker.xlsx" and sheet=0
+- User asks "show wells in production monthly file", then IMMEDIATELY call unique_from_column with column=1 file_path="production/PVT_WellTest_Perforation_WaterAnalysis.xlsx" and sheet=4
 
 ## For generating plots
 - User asks "generate TRACK_TEMPLATES logplot for WELL  → IMMEDIATELY call build_logplot with well=WELL and track_templates=TRACK_TEMPLATES
@@ -624,6 +663,8 @@ class ToolExecutingAgentExecutor:
 ## For missing pay:
 - User asks "View checklist table of well logs data" → IMMEDIATELY call well_checklist_table with wells if user provided or else wells=''
 - User asks "Generate logplot for WELL, then IMMEDIATELY call build_logplot with well=WELL and track_templates if user provided or track_templates=GR,LLD,NPHI
+- User asks "plot histogram for CURVES from well WELL", then IMMEDIATELY call plot_histogram_well with WELL and CURVES and num_bins=10 if it is not provided
+- User asks "plot histogram for CURVE1 and CURVE2 from file.las with 9 bins" → IMMEDIATELY call plot_histogram_las with file_path="file.las" and curveNames=["CURVE1", "CURVE2"] and numBins=9
 
 # IMPORTANT PARAMETER RULES:
 - ALL functions require parameters (no defaults)
@@ -639,7 +680,7 @@ class ToolExecutingAgentExecutor:
 4. Present the results clearly
 
 # FORMAT OUTPUT FILE:
-Format any html file in output (e.g.: /path/to/file.html) with the following template: http://dashboard.portal:9999/path/to/file.html.
+Format any html file in output (e.g.: /path/to/file.html) with the following template: http://dashboard.portal:9999/path/to/file.html. Also embed it into an <iframe>
 
 # EXAMPLES OF CORRECT BEHAVIOR:
 User: "list files *.las"

@@ -4,6 +4,8 @@ import time
 import lasio
 import traceback
 import hashlib
+from glob import glob
+from cache import MemoryCache
 from pathlib import Path
 from datetime import datetime
 from typing import List, Dict, Any, TypedDict
@@ -199,6 +201,53 @@ def create_plot_tools(mcp_server: FastMCP, data_config: DataConfig) -> List[str]
             traceback.print_exc()
             return {"text": "Ploting histogram las failed: {str(e)}"}
 
-    tool_names = ["plot_las", "plot_histogram_las"]
+    @mcp_server.tool(
+        name="plot_histogram_well",
+        description="Plot histogram of a well in a plotly chart",
+    )
+    def plot_histogram_well(input: str):
+        try:
+            input_data = json.loads(input)
+            well = input_data["well"]
+            if well is None:
+                raise Exception("Please specify well to plot")
+
+            well_data_dir = f'wells/{well}'
+            if not os.path.isdir(f"{data_config.data_dir}/{well_data_dir}"):
+                raise Exception(f"Well {well} not found")
+            composite_logs = f"{well_data_dir}/GIS/Las/*.las"
+            files = glob(f"{data_config.data_dir}/{composite_logs}")
+            if len(files) == 0:
+                raise Exception(f'No composite logs found for well {well}')
+
+            curves = input_data.get("curves", None)
+            if curves is None:
+                raise Exception("Track curves should be specified")
+
+            curves = curves.split(',')
+            curves = [ c.strip() for c in curves ]
+
+            logDF_path = files[0]
+            
+            las = MemoryCache.get_instance().get(logDF_path)
+            if las is None: 
+                las = lasio.read(logDF_path)
+                MemoryCache.get_instance().put(logDF_path, las)
+
+            df = las.df().reset_index()
+
+            num_bins = input_data.get("num_bins", 10)
+            if len(set(curves).intersection(set(list(df.columns))) ) == 0:
+                raise Exception(f"{curves} not found")
+
+            fig = histogram(df, curves, num_bins, file_path=well)
+            dest_path = Naming.dest_path(logDF_path.removeprefix(f"{data_config.data_dir}/"), category='histogram')
+            fig.write_html(dest_path)
+            return {"text": Naming.publish_path(logDF_path.removeprefix(f"{data_config.data_dir}/"), category='histogram')}
+        except Exception as e:
+            traceback.print_exc()
+            return {"text": "Ploting histogram las failed: {str(e)}"}
+
+    tool_names = ["plot_las", "plot_histogram_las", "plot_histogram_well"]
 
     return tool_names

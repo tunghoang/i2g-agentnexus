@@ -75,6 +75,7 @@ def create_missingpay_tools(mcp_server, data_config: DataConfig) -> List[str]:
         try:
             input_data = json.loads(kwargs["input"])
             well_names_input: list[str] = input_data.get("wells")
+            well_names_input = [w.strip() for w in well_names_input]
             wells_dir = os.path.join(data_config.data_dir, WELLS_DIR_PATH)
             (
                 well_names,

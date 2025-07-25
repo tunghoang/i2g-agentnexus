@@ -125,6 +125,7 @@ def create_vsp_tools(mcp_server, data_config: DataConfig) -> List[str]:
             df[columns[well_column]] = df[columns[well_column]].astype(str)
             df = df[df[columns[well_column]] == well]
             df = df[[ columns[i] for i in data_columns ]]
+            #df['Date'] = df['Date'].astype(int)
             df['Date'] = pd.to_datetime(df['Date'], unit='D', origin='1899-12-30').astype(str)
             storage.save(df, Naming.productionRecordName(well))
             df.sort_values(by='Date', ascending=True, inplace=True)
@@ -132,6 +133,45 @@ def create_vsp_tools(mcp_server, data_config: DataConfig) -> List[str]:
         except Exception as e:
             traceback.print_exc()
             return {"text": "Tool failed: {str(e)}"}
+    @mcp_server.tool(name="discover_wells_in_prodmonthly", description="Discover wells in production monthly file")
+    def discover_wells_in_prodmonthly(input):
+        try:
+            well_column = 1
+            data_columns = [
+                    0, # Date
+                    1, # Master.Wellnumber
+                    7, # Monthlyprod.Qoil/1000
+                    10,# Monthlyprod.Qwater/1000
+                    12,# Monthlyprod.Qgas/1000 
+                    15,# Monthlyinj.Qwater/1000 
+            ]
+            #input_data = json.loads(input)
+            production_file = PRODUCTION_FILEPATH
+            sheet = 4
+            excel_file = MemoryCache.get_instance().get(production_file)
+            if excel_file is None:
+                file_path = Naming.data_path(production_file)
+                excel_file = pd.ExcelFile(file_path, engine="openpyxl")
+                MemoryCache.get_instance().put(production_file, excel_file)
+
+            df = excel_file.parse(sheet, header=0)
+            columns = list(df.columns)
+            df[columns[well_column]] = df[columns[well_column]].astype(str)
+            df = df[[ columns[i] for i in data_columns ]]
+            #df['Date'] = pd.to_datetime(df['Date'], unit='D', origin='1899-12-30').astype(str)
+            idx = df.groupby(columns[well_column])[columns[data_columns[0]]].idxmax()
+            resultDF = df.iloc[idx]
+            print(resultDF)
+            def conclude_well(row):
+                print(row)
+                return 'injection' if row[columns[15]] > 0 else 'production'
+            resultDF['type'] = resultDF.apply(conclude_well, axis=1)
+            resultDF = resultDF.drop('Date', axis=1)
+            print(resultDF)
+            return {"text": json.dumps(resultDF.to_dict("records"))}
+        except Exception as e:
+            traceback.print_exc()
+            return {"text": str(e), "isError": True}
     @mcp_server.tool(
         name="buildCRMInput",
         description="Build CRM input from a monthly production file and list of wells"
