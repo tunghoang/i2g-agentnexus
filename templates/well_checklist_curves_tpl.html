@@ -4,7 +4,7 @@
 <head>
   <meta charset='utf-8'>
   <meta http-equiv='X-UA-Compatible' content='IE=edge'>
-  <title>Well Logs Checklist</title>
+  <title>Well Logs Checklist Curves</title>
   <meta name='viewport' content='width=device-width, initial-scale=1'>
   <style>
     body {
@@ -12,11 +12,13 @@
       margin: 0;
       padding: 1rem;
     }
+
     h1 {
       font-size: 2rem;
       text-align: center;
       margin-top: 0;
     }
+
     table.dataframe {
       border-collapse: collapse;
       width: 100%;
@@ -28,10 +30,6 @@
         text-align: center;
       }
 
-      th {
-        background-color: #d9e0f1;
-      }
-
       td:empty {
         background-color: #f4af84;
       }
@@ -41,7 +39,7 @@
 
 <body>
   <div>
-    <h1>Well Logs Checklist</h1>
+    <h1>Well Logs Checklist Curves</h1>
     {{TABLE}}
   </div>
   <script>
@@ -49,6 +47,13 @@
       if (td.textContent.trim() === "yes") {
         td.style.backgroundColor = "#ccffcc";
       }
+    });
+    document.querySelectorAll("th").forEach((td, idx) => {
+      if (idx === 0) return;
+      if (idx < 4) {
+        td.style.color = "red";
+      } else if (idx < 13)
+        td.style.color = "green";
     });
   </script>
 </body>

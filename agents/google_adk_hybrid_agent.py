@@ -556,6 +556,25 @@ class ToolExecutingAgentExecutor:
                 return {"status": "error", "message": str(e)}
         tools.append(well_checklist_table)
 
+        def well_checklist_curves(wells: str = ''):
+            """Get well checklist curves for a list of wells
+
+            Args:
+                wells: list of wells splitted by commas
+
+            Returns:
+                dict: results
+            """
+            try:
+                executor_instance.logger.info("Executing well_checklist_curves with {wells}")
+                result = executor_instance._execute_mcp_tool('well_checklist_curves', json.dumps(dict(wells=wells.split(',') if len(wells) > 0 else [])))
+                return {"status": "success",
+                        "result": result}
+            except Exception as e:
+                executor_instance.logger.error(f"Error in well_checklist_curves {e}")
+                return {"status": "error", "message": str(e)}
+        tools.append(well_checklist_curves)
+
         self.logger.info(f"Created {len(tools)} tool functions (no default parameters)")
         return tools
 
@@ -660,7 +679,7 @@ Then: Present the results
 
 **REMEMBER: Always provide ALL required parameters when calling tools!**
 
-Available tools: list_files, system_status, health_check, directory_info, las_parser, las_analysis, formation_evaluation, well_correlation, segy_parser, segy_classify, segy_qc, quick_segy_summary, dump_content, plot_las, build_logplot, plot_histogram_las, show_sheets, show_columns, unique_from_column, marker4well, productiondata4well, buildCRMInput, trainCRMModel, well_checklist_table.
+Available tools: list_files, system_status, health_check, directory_info, las_parser, las_analysis, formation_evaluation, well_correlation, segy_parser, segy_classify, segy_qc, quick_segy_summary, dump_content, plot_las, build_logplot, plot_histogram_las, show_sheets, show_columns, unique_from_column, marker4well, productiondata4well, buildCRMInput, trainCRMModel, well_checklist_table, well_checklist_curves.
 """
 
     async def _execute_with_google_adk(self, query: str) -> str:

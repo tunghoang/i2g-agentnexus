@@ -1,11 +1,10 @@
-import json
 import os
-from enhanced_mcp_tools import enhanced_las_parser
+from robust_las_parser import load_las_file
 import utils.excel_utils as excel_utils
 
 
-def well_checklist(
-    wells: list[str],
+def get_well_checklist(
+    wells: list[str] = [],
     wells_dir: str = "data/wells",
     marker_dir: str = "data/misc/Marker.xlsx",
 ):
@@ -43,7 +42,6 @@ def well_checklist(
     water_inj_rate = prod_df[prod_cols[WATER_INJ_COL]]
     gians = prod_df[prod_cols[RIG_COL]]
     marker_df = excel_utils.parse_marker(marker_dir)
-    log_details = []
 
     for wIdx, well in enumerate(well_names):
         loai = "N/A"
@@ -60,19 +58,9 @@ def well_checklist(
         loai_gieng_result[wIdx] = loai
         ten_gian_result[wIdx] = gian
         las_dir = os.path.join(wells_dir, well, "GIS", "Las")
-        las_file_paths = [
-            f.path
-            for f in os.scandir(las_dir)
-            if f.is_file() and f.name.lower().endswith(".las")
-        ]
-        log_result[wIdx] = "yes" if len(las_file_paths) > 0 else ""
-        for las_file_path in las_file_paths:
-            try:
-                res = json.loads(enhanced_las_parser(las_file_path)["text"])
-                if res.get('error') is None:
-                    log_details.append(res)
-            except Exception as e:
-                raise Exception(f"Error parsing las file {las_file_path}: {e}")
+        log_result[wIdx] = (
+            "yes" if os.path.exists(las_dir) and os.scandir(las_dir) else ""
+        )
         devi_dir = os.path.join(wells_dir, well, "GIS", "Devi")
         devi_result[wIdx] = (
             "yes" if os.path.exists(devi_dir) and os.scandir(devi_dir) else ""
@@ -106,5 +94,105 @@ def well_checklist(
         thu_via_result,
         plt_result,
         kqdvl_result,
-        log_details,
+    )
+
+
+def get_well_checklist_curves(
+    wells: list[str] = [],
+    wells_dir: str = "data/wells",
+):
+    if not os.path.isdir(wells_dir):
+        raise Exception(f"Directory {wells_dir} does not exist")
+
+    well_names = [f.name for f in os.scandir(wells_dir) if f.is_dir()]
+    if wells is not None and len(wells) > 0:
+        well_names = [f for f in well_names if f in wells]
+    well_names.sort()
+    count = len(well_names)
+    if count == 0:
+        raise Exception(f"No wells found for {wells}")
+
+    gr_result: list[str] = [""] * count
+    sp_result: list[str] = [""] * count
+    cal_result: list[str] = [""] * count
+    lld_result: list[str] = [""] * count
+    bk_result: list[str] = [""] * count
+    resdt_result: list[str] = [""] * count
+    ild_result: list[str] = [""] * count
+    rt_result: list[str] = [""] * count
+    llm_result: list[str] = [""] * count
+    lls_result: list[str] = [""] * count
+    msfl_result: list[str] = [""] * count
+    rxo_result: list[str] = [""] * count
+    rhob_result: list[str] = [""] * count
+    nphi_result: list[str] = [""] * count
+    dt_result: list[str] = [""] * count
+    pe_result: list[str] = [""] * count
+
+    for wIdx, well in enumerate(well_names):
+        las_dir = os.path.join(wells_dir, well, "GIS", "Las")
+        las_file_paths = [
+            f.path
+            for f in os.scandir(las_dir)
+            if f.is_file() and f.name.lower().endswith(".las")
+        ]
+        for las_file_path in las_file_paths:
+            try:
+                las, error = load_las_file(las_file_path)
+                if las is None:
+                    raise Exception(f"Error parsing las file {las_file_path}: {error}")
+                curve_names = [str.upper(c) for c in las.get_curve_names()]
+                if "GR" in curve_names:
+                    gr_result[wIdx] = "yes"
+                if "SP" in curve_names:
+                    sp_result[wIdx] = "yes"
+                if any(c in ["CAL", "CALI", "CALIPER"] for c in curve_names):
+                    cal_result[wIdx] = "yes"
+                if "LLD" in curve_names:
+                    lld_result[wIdx] = "yes"
+                if "BK" in curve_names:
+                    bk_result[wIdx] = "yes"
+                if "RESDT" in curve_names:
+                    resdt_result[wIdx] = "yes"
+                if "ILD" in curve_names:
+                    ild_result[wIdx] = "yes"
+                if "RT" in curve_names:
+                    rt_result[wIdx] = "yes"
+                if "LLM" in curve_names:
+                    llm_result[wIdx] = "yes"
+                if "LLS" in curve_names:
+                    lls_result[wIdx] = "yes"
+                if "MSFL" in curve_names:
+                    msfl_result[wIdx] = "yes"
+                if "RXO" in curve_names:
+                    rxo_result[wIdx] = "yes"
+                if any(c in ["RHOB", "RBOB"] for c in curve_names):
+                    rhob_result[wIdx] = "yes"
+                if "NPHI" in curve_names:
+                    nphi_result[wIdx] = "yes"
+                if "DT" in curve_names:
+                    dt_result[wIdx] = "yes"
+                if "PE" in curve_names:
+                    pe_result[wIdx] = "yes"
+            except Exception as e:
+                raise Exception(f"Error parsing las file {las_file_path}: {e}")
+
+    return (
+        well_names,
+        gr_result,
+        sp_result,
+        cal_result,
+        lld_result,
+        bk_result,
+        resdt_result,
+        ild_result,
+        rt_result,
+        llm_result,
+        lls_result,
+        msfl_result,
+        rxo_result,
+        rhob_result,
+        nphi_result,
+        dt_result,
+        pe_result,
     )
