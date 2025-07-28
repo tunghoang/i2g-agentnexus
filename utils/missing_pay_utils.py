@@ -1,4 +1,5 @@
 import os
+from naming import Naming
 from robust_las_parser import load_las_file
 import utils.excel_utils as excel_utils
 
@@ -6,7 +7,7 @@ import utils.excel_utils as excel_utils
 def get_well_checklist(
     wells: list[str] = [],
     wells_dir: str = "data/wells",
-    marker_dir: str = "data/misc/Marker.xlsx",
+    marker_path: str = "data/misc/Marker.xlsx",
 ):
     if not os.path.isdir(wells_dir):
         raise Exception(f"Directory {wells_dir} does not exist")
@@ -41,7 +42,7 @@ def get_well_checklist(
     oil_rate = prod_df[prod_cols[OIL_RATE_COL]]
     water_inj_rate = prod_df[prod_cols[WATER_INJ_COL]]
     gians = prod_df[prod_cols[RIG_COL]]
-    marker_df = excel_utils.parse_marker(marker_dir)
+    marker_df = excel_utils.parse_marker(marker_path)
 
     for wIdx, well in enumerate(well_names):
         loai = "N/A"
@@ -61,7 +62,7 @@ def get_well_checklist(
         log_result[wIdx] = (
             "yes" if os.path.exists(las_dir) and os.scandir(las_dir) else ""
         )
-        devi_dir = os.path.join(wells_dir, well, "GIS", "Devi")
+        devi_dir = Naming.devi_path(well)
         devi_result[wIdx] = (
             "yes" if os.path.exists(devi_dir) and os.scandir(devi_dir) else ""
         )

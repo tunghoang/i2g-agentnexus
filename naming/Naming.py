@@ -46,3 +46,23 @@ class Naming:
             return 'misc/Marker.xlsx'
         elif category == 'publish':
             return cls.publish_path('misc/Marker.xlsx')
+        else:
+            return cls.data_path('misc/Marker.xlsx')
+
+    @classmethod
+    def elevation_file(cls):
+        return cls.data_path('misc/elevation.xlsx')
+
+    @classmethod
+    def well_path(cls, well: str | None = None):
+        if well is None:
+            return cls.data_path("wells")
+        return cls.data_path(f"wells/{well}")
+
+    @classmethod
+    def devi_path(cls, well: str):
+        return f"{cls.well_path(well)}/GIS/devi"
+
+    @classmethod
+    def tvdss_file(cls, well: str):
+        return f"{cls.devi_path(well)}/TVDSS.csv"
