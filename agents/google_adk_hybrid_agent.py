@@ -2,21 +2,22 @@
 Google ADK Agent - FULLY FIXED VERSION
 Fixes all syntax errors, scope issues, and method access problems
 """
-
+import traceback
 import os
 import json
 import time
 import logging
+import inspect
 import asyncio
 from typing import Optional, Dict, Any, List, Union
 
 # Google ADK imports
 try:
-    from google.adk.agents import Agent
+    from google.adk.agents import Agent, LlmAgent
     from google.adk.runners import Runner
     from google.adk.sessions import InMemorySessionService
     from google.adk.models.lite_llm import LiteLlm
-    from google.adk.tools import FunctionTool
+    from google.adk.tools import FunctionTool, ToolContext
     from google.genai import types
     GOOGLE_ADK_AVAILABLE = True
 except ImportError as e:
@@ -24,7 +25,7 @@ except ImportError as e:
 
 from config.settings import AgentConfig
 from servers.mcp_server import MCPClient
-
+from base_utils import recursive_get, recursive_put
 logger = logging.getLogger(__name__)
 
 
@@ -482,8 +483,8 @@ class ToolExecutingAgentExecutor:
                 return {"status": "error", "message": str(e)}
         tools.append(unique_from_column)
 
-        def marker4well(well: str, marker_file: str = '', store: str = 'default') -> dict:
-            """Get marker for a file from a marker_file
+        def marker4well(well: str, tool_context: ToolContext,  marker_file: str = '', store: str = 'default') -> dict:
+            """Get marker for a well from a marker_file
 
             Args:
                 well: well
@@ -493,13 +494,42 @@ class ToolExecutingAgentExecutor:
                 dict: results
             """
             try:
-                executor_instance.logger.info(f"Executing marker4well with well: {well}, marker_file: {marker_file}")
+                fname = inspect.stack()[0][3]
+                _marker_file = recursive_get(tool_context.state, [fname, 'marker_file']) or ''
+                if marker_file:
+                    recursive_put(tool_context.state, [fname, 'marker_file'], marker_file)
+                    _marker_file = marker_file
+                executor_instance.logger.info(f"Executing marker4well with well: {well}, marker_file: {_marker_file}")
                 result = executor_instance._execute_mcp_tool('marker4well', json.dumps(dict(well=well,marker_file=marker_file, store=store)))
                 return {"status": "success", "result": result}
             except Exception as e:
                 executor_instance.logger.error(f"Error in marker4well {e}")
                 return dict(status="error", message=str(e))
-        tools.append(marker4well)
+        tools.append(FunctionTool(marker4well))
+
+        def zone4well(well: str, tool_context: ToolContext,  marker_file: str = '', store: str = 'default') -> dict:
+            """Get zone for a well from a marker_file
+
+            Args:
+                well: well
+                marker_file: marker file
+
+            Returns:
+                dict: results
+            """
+            try:
+                fname = inspect.stack()[0][3]
+                _marker_file = recursive_get(tool_context.state, [fname, 'marker_file']) or ''
+                if marker_file:
+                    recursive_put(tool_context.state, [fname, 'marker_file'], marker_file)
+                    _marker_file = marker_file
+                executor_instance.logger.info(f"Executing zone4well with well: {well}, marker_file: {_marker_file}")
+                result = executor_instance._execute_mcp_tool('zone4well', json.dumps(dict(well=well,file_path=marker_file, store=store)))
+                return {"status": "success", "result": result}
+            except Exception as e:
+                executor_instance.logger.error(f"Error in zone4well {e}")
+                return dict(status="error", message=str(e))
+        tools.append(FunctionTool(zone4well))
 
         def discover_wells_in_prodmonthly():
             """Discover wells in production monthy file
@@ -517,7 +547,7 @@ class ToolExecutingAgentExecutor:
                 return dic(status="error", message=str(e))
         tools.append(discover_wells_in_prodmonthly)
 
-        def productiondata4well(well: str, file_path: str='', store: str='default') -> dict:
+        def productiondata4well(tool_context: ToolContext, well: str, file_path: str='', store: str='default') -> dict:
             """Get production data for well from a production file
 
             Args:
@@ -528,10 +558,16 @@ class ToolExecutingAgentExecutor:
                 dict: results
             """
             try:
-                executor_instance.logger.info(f"Executing productiondata4well with well: {well}, file_path")
-                result = executor_instance._execute_mcp_tool('productiondata4well', json.dumps(dict(well=well,file_path=file_path, store=store)))
+                fname = inspect.stack()[0][3]
+                _file_path = recursive_get(tool_context.state, [fname, 'file_path']) or ''
+                if file_path:
+                    recursive_put(tool_context.state, [fname, 'file_path'], file_path)
+                    _file_path = file_path
+                executor_instance.logger.info(f"Executing productiondata4well with well: {well}, _file_path")
+                result = executor_instance._execute_mcp_tool('productiondata4well', json.dumps(dict(well=well,file_path=_file_path, store=store)))
                 return {"status": "success", "result": result}
             except Exception as e:
+                traceback.print_exc()
                 executor_instance.logger.error(f"Error in productiondata4well {e}")
                 return {"status": "error", "message": str(e)}
         tools.append(productiondata4well)
@@ -627,7 +663,7 @@ class ToolExecutingAgentExecutor:
         tools = self._create_tool_functions()
 
         # STEP 2: Create agent with tools
-        self.agent = Agent(
+        self.agent = LlmAgent(
             name="subsurface_data_analyst",
             model=LiteLlm(model="openai/gpt-4o-mini"),
             description="Subsurface data analyst with tool execution capabilities",
@@ -672,6 +708,7 @@ class ToolExecutingAgentExecutor:
 - User asks "get unique values from column 0 in file.xlsx sheet 0" → IMMEDIATELY call unique_from_column with column=0 file_path="file.xlsx" and sheet=0
 
 ## For CRM analysis:
+- User asks "build production data for WELL", then IMMEDIATELY call productiondata4well with well=WELL and file_path if provided
 - User asks "build CRM input using production wells and injection wells" → IMMEDIATELY call buildCRMInput with corresponding production_wells and injection_wells
 - User asks "show wells in marker file", then IMMEDIATELY call unique_from_column with column=0 file_path="misc/Marker.xlsx" and sheet=0
 - User asks "show wells in production monthly file", then IMMEDIATELY call unique_from_column with column=1 file_path="production/PVT_WellTest_Perforation_WaterAnalysis.xlsx" and sheet=4
@@ -720,7 +757,7 @@ Then: Present the results
 
 **REMEMBER: Always provide ALL required parameters when calling tools!**
 
-Available tools: list_files, system_status, health_check, directory_info, las_parser, las_analysis, formation_evaluation, well_correlation, segy_parser, segy_classify, segy_qc, quick_segy_summary, dump_content, plot_las, build_logplot, plot_histogram_las, show_sheets, show_columns, unique_from_column, marker4well, productiondata4well, buildCRMInput, trainCRMModel, well_checklist_table, well_checklist_curves.
+Available tools: list_files, system_status, health_check, directory_info, las_parser, las_analysis, formation_evaluation, well_correlation, segy_parser, segy_classify, segy_qc, quick_segy_summary, dump_content, plot_las, build_logplot, plot_histogram_las, show_sheets, show_columns, unique_from_column, marker4well, zone4well, productiondata4well, buildCRMInput, trainCRMModel, well_checklist_table, well_checklist_curves.
 """
 
     async def _execute_with_google_adk(self, query: str) -> str:

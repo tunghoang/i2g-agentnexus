@@ -10,6 +10,9 @@ class Naming:
     @classmethod
     def markername(cls, well):
         return f"well{well.strip()}.marker.csv"
+    @classmethod
+    def zonename(cls, well):
+        return f"well{well.strip()}.zone.csv"
 
     @classmethod
     def productionRecordName(cls, well):
@@ -34,3 +37,12 @@ class Naming:
     @classmethod
     def data_path(cls, inpath, prefix='./data'):
         return f'{prefix}/{inpath}'
+
+    @classmethod
+    def default_marker_file(cls, category='store'):
+        if category == 'store':
+            return cls.data_path('misc/Marker.xlsx')
+        elif category == 'raw':
+            return 'misc/Marker.xlsx'
+        elif category == 'publish':
+            return cls.publish_path('misc/Marker.xlsx')

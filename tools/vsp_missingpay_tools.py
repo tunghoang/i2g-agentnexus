@@ -16,7 +16,7 @@ from pywaterflood import CRM
 from utils.excel_utils import PROD_WELL_COL, parse_well_production
 from utils.missing_pay_utils import get_well_checklist, get_well_checklist_curves
 from utils.plot_utils import multi_chart, advLogplot, logplot
-
+from xlsx_utils import XLSX
 
 def create_missingpay_tools(mcp_server, data_config: DataConfig) -> List[str]:
     WELLS_DIR_PATH = "wells"
@@ -55,9 +55,9 @@ def create_missingpay_tools(mcp_server, data_config: DataConfig) -> List[str]:
 
             df = las.df().reset_index()
 
-
             if track_templates:
-                fig = advLogplot(df, las.curves, track_styles=track_templates, title=f"Well {well} Logplot")
+                zoneDF = XLSX.extract_zones(well)
+                fig = advLogplot(df, las.curves, track_styles=track_templates, title=f"Well {well} Logplot", zoneDF=zoneDF)
             else:
                 fig = logplot(df, las.curves)
 
@@ -192,9 +192,27 @@ def create_missingpay_tools(mcp_server, data_config: DataConfig) -> List[str]:
         except Exception as e:
             traceback.print_exc()
             return {"text": f"Tool failed: {str(e)}"}
-
+    @mcp_server.tool(
+        name="zone4well",
+        description="Create zones for well",
+    )
+    def zone4well(input):
+        try:
+            input_data = json.loads(input)
+            well = input_data.get('well')
+            file_path = input_data.get('file_path', Naming.default_marker_file())
+            print(file_path)
+            print(input_data)
+            zoneDF = XLSX.extract_zones(well, file_path=file_path)
+            storage = Store()
+            storage.save(zoneDF, Naming.zonename(well))
+            return dict(text=json.dumps(zoneDF.to_dict('records')))
+        except Exception as e:
+            traceback.print_exc()
+            return dict(text=str(e))
     tool_names = [
         "build_logplot",
+        "zone4well",
         "well_checklist_table",
         "well_checklist_curves",
     ]

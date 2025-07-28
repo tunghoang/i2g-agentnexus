@@ -79,6 +79,18 @@ def create_vsp_tools(mcp_server, data_config: DataConfig) -> List[str]:
         except Exception as e:
             traceback.print_exc()
             return {"text": "Tool failed: {str(e)}"}
+
+    @mcp_server.tool(
+        name="build_zone",
+        description="build zone for well from marker"
+    )
+    def build_zone(input):
+        try:
+            pass
+        except Exception as e:
+            traceback.print_exc()
+            return {"text": str(e)}
+
     @mcp_server.tool(
         name="productiondata4well",
         description="Retrieve production data for well from a monthly production file"
@@ -114,7 +126,7 @@ def create_vsp_tools(mcp_server, data_config: DataConfig) -> List[str]:
             if not well: 
                 return {"text": "You should specify a well"}
             if not os.path.isfile(file_path):
-                return {"text": "production file does not exist or is not a regular file"}
+                return {"text": f"production file {file_path} does not exist or is not a regular file"}
             excel_file = MemoryCache.get_instance().get(production_file)
             if excel_file is None:
                 excel_file = pd.ExcelFile(file_path, engine="openpyxl")
@@ -126,7 +138,10 @@ def create_vsp_tools(mcp_server, data_config: DataConfig) -> List[str]:
             df = df[df[columns[well_column]] == well]
             df = df[[ columns[i] for i in data_columns ]]
             #df['Date'] = df['Date'].astype(int)
-            df['Date'] = pd.to_datetime(df['Date'], unit='D', origin='1899-12-30').astype(str)
+            print(df['Date'])
+            print('----------------')
+            #df['Date'] = pd.to_datetime(df['Date'], unit='D', origin='1899-12-30').astype(str)
+            df['Date'] = pd.to_datetime(df['Date']).astype(str)
             storage.save(df, Naming.productionRecordName(well))
             df.sort_values(by='Date', ascending=True, inplace=True)
             return {"text": json.dumps(df.to_dict("records"))}
@@ -158,7 +173,6 @@ def create_vsp_tools(mcp_server, data_config: DataConfig) -> List[str]:
             columns = list(df.columns)
             df[columns[well_column]] = df[columns[well_column]].astype(str)
             df = df[[ columns[i] for i in data_columns ]]
-            #df['Date'] = pd.to_datetime(df['Date'], unit='D', origin='1899-12-30').astype(str)
             idx = df.groupby(columns[well_column])[columns[data_columns[0]]].idxmax()
             resultDF = df.iloc[idx]
             print(resultDF)
@@ -166,7 +180,7 @@ def create_vsp_tools(mcp_server, data_config: DataConfig) -> List[str]:
                 print(row)
                 return 'injection' if row[columns[15]] > 0 else 'production'
             resultDF['type'] = resultDF.apply(conclude_well, axis=1)
-            resultDF = resultDF.drop('Date', axis=1)
+            resultDF['Date'] = pd.to_datetime(resultDF['Date']).astype(str)
             print(resultDF)
             return {"text": json.dumps(resultDF.to_dict("records"))}
         except Exception as e:
@@ -269,11 +283,42 @@ def create_vsp_tools(mcp_server, data_config: DataConfig) -> List[str]:
             traceback.print_exc()
             return {"text": "trainCRMModel failed: {str(e)}"}
 
+    def production_vs_time(input: str) -> dict:
+        try:
+            input_data = json.loads(input)
+            well = input_data['well']
+            # Metrics
+            					
+            PRODUCTS = { # base Idx = 6
+                        "CV.OilRate": 0,            # Oil rate
+                        "Monthlyprod.Qoil/1000": 1, # Monthly oil rate in thousands 
+                        "CV.Oilcum/1000": 2,        # Oilcum in thousands
+                        "CV.LiqRate": 3,            # Liquid rate (oil + water)
+                        "Monthlyprod.Qwater/1000": 4, # Monthly
+                        "CV.WaterProdCum/1000": 5,
+                        "Monthlyprod.Qgas/1000": 6,
+                        "CV.GasCum/1000": 7,
+                        "CV.WaterInj_Rate": 8,
+                        "Monthlyinj.Qwater/1000": 9,
+                        "CV.WaterInjCum/1000": 10,
+                        "CV.Watercut": 11,
+                        "Monthlyprod.Qwater/1000+Monthlyprod.Qoil/1000": 12,
+                        "Monthlyprod.Qgas/Monthlyprod.Qoil*1000": 13,
+                        "Monthlyprod.Gor": 14,
+                        "Monthlyprod.Dayon": 15,
+                        "CV.WellProd": 16,
+                        "CV.WellInj": 17 }
+            products = input_data.get('product')
+            return dict(text="success")
+        except Exception as e:
+            traceback.print_exc()
+            return dict(text=str(e))
     tool_names = [
         "marker4well",
         "productiondata4well",
         "buildCRMInput",
-        "trainCRMModel"
+        "trainCRMModel",
+        "production_vs_time"
     ]
 
     return tool_names

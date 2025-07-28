@@ -1,0 +1,63 @@
+import pandas as pd
+import numpy as np
+from cache import MemoryCache
+from naming import Naming
+
+class XLSX:
+    PRODUCTION_FILEPATH="production/PVT_WellTest_Perforation_WaterAnalysis.xlsx"
+
+    @classmethod
+    def extract_perforation(cls, well):
+        PERFORATION_SHEET = 3 # sheet index = 3 (sheet 4)
+        WELL_COLUMN = 1
+        MD_TOP = 7
+        MD_BOTTOM = 8
+
+        xlsx_file = MemoryCache.get_instance().get(cls.PRODUCTION_FILEPATH)
+        if xlsx_file is None:
+           xlsx_file = pd.ExcelFile(Naming.data_path(cls.PRODUCTION_FILEPATH), engine='openpyxl')
+           MemoryCache.get_instance().put(cls.PRODUCTION_FILEPATH, xlsx_file)
+
+        sheetDF = xlsx_file.parse(PERFORATION_SHEET, skiprows=2, header=None)
+        dataDF = sheetDF.iloc[:, [1, 7, 8]]
+        dataDF.columns.values[0] = 'well'
+        dataDF.columns.values[1] = 'start'
+        dataDF.columns.values[2] = 'stop'
+
+        dataDF = dataDF[dataDF.well == well]
+        if dataDF.empty:
+            raise Exception(f'Well {well} does not exist in perforation file')
+
+        wellx2 = np.column_stack((dataDF['well'], dataDF['well']))
+        startx2 = np.column_stack((dataDF['start'], dataDF['start']))
+        stopx2 = np.column_stack((dataDF['stop'], dataDF['stop']))
+        md = np.column_stack((dataDF['start'], dataDF['stop']))
+
+        df = pd.DataFrame({'well': wellx2, 'md': md, 'start': startx2, 'stop': stopx2})
+        return df
+    @classmethod
+    def extract_markers(cls, well, file_path = None):
+        _file_path = file_path or Naming.default_marker_file('raw')
+        xlsx_file = MemoryCache.get_instance().get(_file_path)
+        if xlsx_file is None:
+            xlsx_file = pd.ExcelFile(Naming.data_path(_file_path), engine='openpyxl')
+            MemoryCache.get_instance().put(_file_path, xlsx_file)
+        allMarkerDF = xlsx_file.parse(0, header=0)
+        columns = list(allMarkerDF.columns)
+        firstColumn = columns[0]
+        allMarkerDF[firstColumn] = allMarkerDF[firstColumn].astype(str)
+        filteredDF = allMarkerDF[allMarkerDF[firstColumn] == well]
+        filteredDF.sort_values(by='MD', ascending=True, inplace=True)
+        return filteredDF
+
+    @classmethod
+    def extract_zones(cls, well, file_path = None):
+        markerDF = cls.extract_markers(well, file_path)
+        columns = list(markerDF.columns)
+        zoneDF = pd.DataFrame()
+        zoneDF[columns[0]] = markerDF[columns[0]]
+        zoneDF[columns[1]] = markerDF[columns[1]]
+        zoneDF['start'] = markerDF[columns[5]].astype(float)
+        zoneDF['stop'] = markerDF[columns[5]].shift(periods=-1).astype(float)
+        print(zoneDF)
+        return zoneDF

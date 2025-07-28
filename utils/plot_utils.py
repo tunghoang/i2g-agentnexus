@@ -69,7 +69,7 @@ def getTrackConfig(trackstyle):
 def __depth_track():
     pass
 
-def __track_header(fig, TRACK_HEADER, yanchor=1, TRACK_TITLE=20, xdomain='', colIdx = None):
+def __track_header(fig, TRACK_HEADER, yanchor=1, TRACK_TITLE=20, xdomain='', colIdx = None, curve=None, unit=None):
     if xdomain:
         fig.add_shape(
             type="rect",
@@ -111,6 +111,15 @@ def __track_header(fig, TRACK_HEADER, yanchor=1, TRACK_TITLE=20, xdomain='', col
             #row=1,
             #col=colIdx + 1,
         )
+        if curve and unit:
+            fig.add_annotation(text=f"{curve} ({unit})", 
+                               font=dict(color="black", size=10),
+                               showarrow=False,
+                               align="center",
+                               visible=True,
+                               xref=f"x{xdomain} domain", xanchor="center", x = 0.5, 
+                               yref=f"y domain", yanchor="middle", y = 1,
+                               yshift=TRACK_HEADER - 3*TRACK_TITLE/2 - 6)
     else:
         fig.add_shape(
             type="rect",
@@ -152,6 +161,17 @@ def __track_header(fig, TRACK_HEADER, yanchor=1, TRACK_TITLE=20, xdomain='', col
             row=1,
             col=colIdx + 1,
         )
+        if curve and unit:
+            fig.add_annotation(text=f"{curve} ({unit})", 
+                               font=dict(color="black", size=10),
+                               showarrow=False,
+                               align="center",
+                               visible=True,
+                               xref="x domain", xanchor="center", x = 0.5, 
+                               yref="y domain", yanchor="middle", y = 1,
+                               yshift=TRACK_HEADER - 3*TRACK_TITLE/2 - 6,
+                               row=1,
+                               col=colIdx + 1)
     return fig
 
 def __track_body(fig, TRACK_HEADER, trackbodyheight, xdomain='', colIdx=None ):
@@ -187,6 +207,8 @@ def __track_body(fig, TRACK_HEADER, trackbodyheight, xdomain='', colIdx=None ):
             row=1,
             col=colIdx + 1,
         )
+    if colIdx is not None and colIdx < 2:
+        fig.update_xaxes(showticklabels=False, showgrid=False, row=1, col=colIdx + 1)
     return fig
 
 def logplot(df, curves, title=None):
@@ -272,8 +294,14 @@ def logplot(df, curves, title=None):
     )
     return fig
 
-def advLogplot(df, curves, track_styles, title = None):
-    curveNames = df.columns[1:]
+def __makeHoverTemplate(columns):
+    template = ""
+    for idx,c in enumerate(columns):
+        template += (f"<b>{c}</b>:" + "<span>%{customdata[" + str(idx) + "]}</span><br>")
+    return template
+
+def advLogplot(df, curves, track_styles, title = None, zoneDF = None):
+    curveNames = list(df.columns[1:])
     refCurveName = df.columns[0]
 
     PLOT_HEADER = 60
@@ -283,9 +311,10 @@ def advLogplot(df, curves, track_styles, title = None):
     CURVE_HEADER = 47
     TRACK_TITLE = 20
     Y_DOMAIN = [0, (PLOT_HEIGHT - TRACK_HEADER) / PLOT_HEIGHT]
-    TRACK_NUM = len(track_styles) + 1
-    X_DOMAIN_SIZE = 1/TRACK_NUM
-    X_DOMAIN = lambda trackIdx: [trackIdx*X_DOMAIN_SIZE, (trackIdx+1)*X_DOMAIN_SIZE]
+    STATIC_TRACKS = lambda : 1 + (0 if zoneDF is None or zoneDF.empty else 1)
+    TRACK_NUM = lambda: len(track_styles) + STATIC_TRACKS()
+    X_DOMAIN_SIZE = lambda: 1/TRACK_NUM()
+    X_DOMAIN = lambda trackIdx: [trackIdx*X_DOMAIN_SIZE(), (trackIdx + 1) * X_DOMAIN_SIZE()]
 
     YAXIS_PROPS = dict(showline=False,
                        linewidth=0.5,
@@ -325,22 +354,46 @@ def advLogplot(df, curves, track_styles, title = None):
         curveProperties = { **curveSpec }
         if 'xaxis' in curveProperties:
             del curveProperties['xaxis']
+        #curveProperties['name'] = ''
         return curveProperties
 
     fig = make_subplots( rows=1, 
-            cols=len(track_styles) + 1, 
+            cols=TRACK_NUM(), 
             shared_yaxes=True, 
             horizontal_spacing=0 
     )
     # Prepare axes
     yaxes = { 'yaxis': { **YAXIS_PROPS, **YAXIS_LIMIT_PROPS(df) } }
     xaxes = { 'xaxis': dict(domain=X_DOMAIN(0)) }
+    if zoneDF is not None and not zoneDF.empty:
+        xaxes['xaxis2'] = dict( domain=X_DOMAIN(1), range=[0, 1])
 
-    print(yaxes)
-    fig.append_trace(go.Scattergl(x=[0,0], y = df[refCurveName].head(), name="depth"), 1, 1)
-    __track_header(fig, TRACK_HEADER, colIdx = 0)
-    xaxis_index = 1
-    track_idx = 1
+    for idx in range(STATIC_TRACKS()):
+        trace = go.Scattergl(x=[0,0], y = df[refCurveName].head(), name="Depth", xaxis=f"x{'' if idx==0 else (idx + 1)}", visible=False)
+        fig.add_trace(trace)
+        __track_header(fig, TRACK_HEADER, xdomain='' if idx == 0 else (idx + 1) , colIdx = idx, 
+                       curve='DEPTH' if idx == 0 else "Zone",
+                       unit='m')
+        if idx == 1:
+            # __drawZoneTrack 
+            for _,row in zoneDF.iterrows():
+                trace = go.Scattergl(x=[1,1],y=[row['start'],row['stop']], name="Zone", xaxis="x2", fill='tozerox', mode='lines', line_width=0)
+                fig.add_trace(trace)
+    xaxis_index = len(xaxes.keys())
+    track_idx = xaxis_index
+
+    selectedCurves = [refCurveName]
+    for track_style in track_styles:
+        trackConfig = getTrackConfig(track_style)
+        for c in trackConfig['curves']:
+            if c['name'] in curveNames:
+                selectedCurves.append(c['name'])
+
+    hoverdata = df[selectedCurves]
+    hovertemplate = __makeHoverTemplate(list(hoverdata.columns))
+
+    print(selectedCurves, curveNames)
+    print(hovertemplate)
     for _,track_style in enumerate(track_styles):
         trackConfig = getTrackConfig(track_style)
         overlaying_idx = 1
@@ -364,7 +417,8 @@ def advLogplot(df, curves, track_styles, title = None):
                 xaxes[f'xaxis{xaxis_index}']['overlaying'] = f'x{overlaying_idx}'
 
             trace = go.Scattergl(
-                x=df[c], y=df[refCurveName], xaxis=f'x{xaxis_index}', **curveProps(curveSpec)
+                x=df[c], y=df[refCurveName], xaxis=f'x{xaxis_index}', **curveProps(curveSpec), 
+                customdata=hoverdata, hovertemplate=hovertemplate
             )
             fig.add_trace(trace)
             fig.add_annotation(
@@ -382,6 +436,7 @@ def advLogplot(df, curves, track_styles, title = None):
             track_idx += 1
 
     plot_title=title or f"Logplot for {','.join(curveNames)}"
+    print(xaxes)
     fig.update_layout(
         **yaxes,
         **xaxes,
@@ -390,14 +445,19 @@ def advLogplot(df, curves, track_styles, title = None):
         overwrite=True,
         showlegend=False,
         margin=dict(l=0, r=0, t=PLOT_HEADER, b=0),
-        width=columnWidth * (len(track_styles) + 1),
+        width=columnWidth * TRACK_NUM(),
         height=PLOT_HEIGHT,
         autosize=False,
+        hoversubplots='overlaying',
+        hovermode="y unified",
+        hoverlabel_bgcolor="white",
+        hoverlabel_grouptitlefont_lineposition='through'
     )
-    fig.update_xaxes(showticklabels=False, showgrid=False, row=1, col=1)
+    #fig.update_xaxes(showticklabels=False, showgrid=False, row=1, col=1)
     fig.update_yaxes(**YAXIS_PROPS)
-    fig.update_yaxes(position=0.65/(1 + len(track_styles)), side='left', showline=False, anchor='free', row=1, col=1)
-    __track_body(fig, TRACK_HEADER, PLOT_HEIGHT - TRACK_HEADER - PLOT_HEADER, colIdx=0)
+    fig.update_yaxes(position=0.60/TRACK_NUM(), side='left', showline=False, anchor='free', row=1, col=1)
+    for idx in range(STATIC_TRACKS()):
+        __track_body(fig, TRACK_HEADER, PLOT_HEIGHT - TRACK_HEADER - PLOT_HEADER, xdomain='' if idx == 0 else (idx + 1), colIdx=idx)
     return fig
 
 def histogram(df, curve_names, num_bins, file_path: str=""):
