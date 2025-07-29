@@ -1,4 +1,6 @@
+from datetime import datetime
 import os
+import pandas as pd
 from naming import Naming
 from robust_las_parser import load_las_file
 import utils.excel_utils as excel_utils
@@ -22,6 +24,12 @@ def get_well_checklist(
 
     loai_gieng_result: list[str] = ["N/A"] * count
     ten_gian_result: list[str] = ["N/A"] * count
+    kb_result: list[str] = ["N/A"] * count
+    nam_khoan_result: list[str] = ["N/A"] * count
+    mong_result: list[str] = ["N/A"] * count
+    day_md_result: list[str] = ["N/A"] * count
+    day_tvdss_result: list[str] = ["N/A"] * count
+    doi_tuong_khoan_result: list[str] = ["N/A"] * count
     log_result: list[str] = ["N/A"] * count
     devi_result: list[str] = ["N/A"] * count
     mudlog_result: list[str] = ["N/A"] * count
@@ -30,34 +38,46 @@ def get_well_checklist(
     plt_result: list[str] = ["N/A"] * count
     kqdvl_result: list[str] = ["N/A"] * count
 
-    prod_df = excel_utils.parse_well_production()
-    prod_cols = prod_df.columns
-    DATE_COL = 1
-    WELL_COL = 1
-    RIG_COL = 4
-    OIL_RATE_COL = 6
-    WATER_INJ_COL = 14
-    max_date_idx = prod_df.groupby([prod_cols[WELL_COL]])[prod_cols[DATE_COL]].idxmax()
-    prod_df = prod_df.loc[max_date_idx]
-    oil_rate = prod_df[prod_cols[OIL_RATE_COL]]
-    water_inj_rate = prod_df[prod_cols[WATER_INJ_COL]]
-    gians = prod_df[prod_cols[RIG_COL]]
+    elevation_path = Naming.elevation_file()
+    ELEVATION_WELL_COL = 2
+    elevation_df = pd.read_excel(elevation_path, header=1)
+    elevation_well = elevation_df[elevation_df.columns[ELEVATION_WELL_COL]].astype(str)
+    loai_giengs = elevation_df[elevation_df.columns[3]]
+    gians = elevation_df[elevation_df.columns[4]]
+    kbs = elevation_df[elevation_df.columns[5]]
+    ngay_khoans = elevation_df[elevation_df.columns[6]]
+    do_sau_mongs = elevation_df[elevation_df.columns[8]]
+    day_mds = elevation_df[elevation_df.columns[10]]
+    day_tvdss = elevation_df[elevation_df.columns[11]]
+    doi_tuong_khoans = elevation_df[elevation_df.columns[12]]
+
     marker_df = excel_utils.parse_marker(marker_path)
 
     for wIdx, well in enumerate(well_names):
-        loai = "N/A"
-        gian = "N/A"
-        prod_row: int | None = next(
-            iter(prod_df.index[prod_df[prod_cols[WELL_COL]] == well]), None
+        elevation_row: int | None = next(
+            iter(elevation_well.index[elevation_well == well]), None
         )
-        if prod_row is not None:
-            if oil_rate[prod_row] > 0:
-                loai = "Khai thác"
-            elif water_inj_rate[prod_row] > 0:
-                loai = "Bơm ép"
-            gian = gians[prod_row]
-        loai_gieng_result[wIdx] = loai
-        ten_gian_result[wIdx] = gian
+        loai_gieng_result[wIdx] = loai_giengs.get(elevation_row) or "N/A"
+        ten_gian_result[wIdx] = gians.get(elevation_row) or "N/A"
+        kb_result[wIdx] = kbs.get(elevation_row) or "N/A"
+        date_str = ngay_khoans.get(elevation_row)
+        nam_khoan_result[wIdx] = (
+            datetime.strptime(date_str, "%d.%m.%Y").year.__str__()
+            if date_str
+            else "N/A"
+        )
+        do_sau_mong: int | str | None = do_sau_mongs.get(elevation_row)
+        mong_result[wIdx] = (
+            "yes"
+            if do_sau_mong is not None
+            and (isinstance(do_sau_mong, str) and do_sau_mong.isdigit())
+            or not isinstance(do_sau_mong, str)
+            else ""
+        )
+        day_md_result[wIdx] = day_mds.get(elevation_row) or "N/A"
+        day_tvdss_result[wIdx] = day_tvdss.get(elevation_row) or "N/A"
+        doi_tuong_khoan_result[wIdx] = doi_tuong_khoans.get(elevation_row) or "N/A"
+
         las_dir = os.path.join(wells_dir, well, "GIS", "Las")
         log_result[wIdx] = (
             "yes" if os.path.exists(las_dir) and os.scandir(las_dir) else ""
@@ -88,6 +108,12 @@ def get_well_checklist(
         well_names,
         loai_gieng_result,
         ten_gian_result,
+        kb_result,
+        nam_khoan_result,
+        mong_result,
+        day_md_result,
+        day_tvdss_result,
+        doi_tuong_khoan_result,
         log_result,
         devi_result,
         mudlog_result,
