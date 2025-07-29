@@ -1,7 +1,12 @@
 import os
+import numpy as np
+import joblib
+from sklearn.ensemble import RandomForestRegressor
+from sklearn.linear_model import LinearRegression
+
+import utils.excel_utils as excel_utils
 from naming import Naming
 from robust_las_parser import load_las_file
-import utils.excel_utils as excel_utils
 
 
 def get_well_checklist(
@@ -197,3 +202,125 @@ def get_well_checklist_curves(
         dt_result,
         pe_result,
     )
+
+
+def read_curves_from_las(las_file_path: str, curve_types: list[str]):
+    las, error = load_las_file(las_file_path)
+    if las is None:
+        raise Exception(f"Error parsing las file {las_file_path}: {error}")
+    curve_names = las.get_curve_names()
+    data = []
+    for curve in curve_types:
+        matched_curve = None
+        for las_curve in curve_names:
+            if curve in str.upper(las_curve):
+                matched_curve = las_curve
+                break
+        if not matched_curve:
+            return None
+        data.append(las.get_curve_data(matched_curve))
+
+    stacked = np.vstack(data).T
+    if np.any(np.isnan(stacked)):
+        stacked = np.nan_to_num(stacked, nan=0.0)
+    return stacked
+
+
+def load_las_data(wells: list[str], curve_types: list[str], wells_dir: str):
+    all_data = []
+    for well in wells:
+        las_dir = os.path.join(wells_dir, well, "GIS", "Las")
+        las_file_paths = [
+            f.path
+            for f in os.scandir(las_dir)
+            if f.is_file() and f.name.lower().endswith(".las")
+        ]
+        for las_file_path in las_file_paths:
+            data = read_curves_from_las(las_file_path, curve_types)
+            if data is not None:
+                all_data.append(data)
+                break # match the first las file
+    
+    if not all_data:
+        raise ValueError("No valid training data found.")
+    return np.vstack(all_data)
+
+
+def train_model(x_train, y_train, regression_model: str, **kwargs):
+    models = {
+        "random_forest": RandomForestRegressor,
+        "linear_regression": LinearRegression
+    }
+
+    if regression_model not in models:
+        raise ValueError(f"Unsupported model: '{regression_model}'")
+
+    default_params = {
+        "random_forest": {"n_estimators": 100, "max_depth": 10, "random_state": 42},
+        "linear_regression": {}
+    }
+
+    model_params = {**default_params.get(regression_model, {}), **kwargs}
+    model = models[regression_model](**model_params)
+    model.fit(x_train, y_train)
+    return model
+
+
+def generate_curve(
+        target_curve: str, 
+        target_well: str, 
+        input_curves: list[str], 
+        training_wells: list[str], 
+        regression_model: str, 
+        params: dict,
+        wells_dir: str = "data/wells",
+    ):
+    model = None
+    if len(training_wells) > 10:
+        # get pretrained model
+        model_file = Naming.model_file(target_curve)
+        if os.path.exists(model_file):
+            model = joblib.load(model_file)
+
+    if not model:
+        training_data = load_las_data(training_wells, list(set(input_curves + [target_curve])), wells_dir)
+        x_train = training_data[:, :-1]
+        y_train = training_data[:, -1]
+        model = train_model(x_train, y_train, regression_model, **params)
+
+    test_data = load_las_data([target_well], input_curves, wells_dir)
+    if test_data is None or len(test_data) == 0:
+        return
+
+    y_pred = model.predict(test_data)
+    return y_pred
+
+
+def make_psuedo_log(
+        psuedo_log: str = '',
+        well: str = '',
+        logs: list[str] = [],
+        wells: list[str] = [],
+        regression_model: str = "random_forest",
+        params: dict = {},
+        wells_dir: str = "data/wells",
+    ):
+    available_wells = [entry.name for entry in os.scandir(wells_dir) if entry.is_dir()]
+
+    if wells:
+        well_names = [name for name in available_wells if name in wells]
+    else:
+        well_names = available_wells
+    
+    well_names.sort()
+    if len(well_names) == 0:
+        raise Exception(f"No wells found for {wells}")
+    
+    if well not in available_wells:
+        raise Exception(f"No well {well} found")
+    
+    if len(logs) == 0:
+        raise Exception(f"No logs found")
+    
+    return generate_curve(psuedo_log, well, logs, wells, regression_model, params, wells_dir)
+

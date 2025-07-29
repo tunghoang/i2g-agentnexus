@@ -668,6 +668,46 @@ class ToolExecutingAgentExecutor:
                 return {"status": "error", "message": str(e)}
         tools.append(create_wells_tvdss)
 
+        def create_psuedo_log(
+            psuedo_log: str = '', 
+            well: str = '', 
+            logs: list[str] = [], 
+            wells: list[str] = [], 
+            regression_model: str = '', 
+            params: dict = {}
+        ):
+            """Create psuedo log for a well from logs in a list of wells using a regression model with params
+
+            Args:
+                psuedo_log: str, psuedo log name
+                well: str, well name
+                logs: list of logs splitted by commas
+                wells: list of wells splitted by commas
+                regression_model:str, type of machine learning model
+                params: dict, parameters for machine learning model
+
+            Returns:
+                dict: results
+            """
+            try:
+                executor_instance.logger.info(f"Executing create_psuedo_log for well {well}")
+                result = executor_instance._execute_mcp_tool('create_psuedo_log', 
+                    {
+                        "psuedo_log": psuedo_log,
+                        "well": well, 
+                        "logs": logs,
+                        "wells": wells,
+                        "regression_model": regression_model,
+                        "params": params
+                    }
+                )
+                return {"status": "success",
+                        "result": result}
+            except Exception as e:
+                executor_instance.logger.error(f"Error in create_psuedo_log {e}")
+                return {"status": "error", "message": str(e)}
+        tools.append(create_psuedo_log)
+
         self.logger.info(f"Created {len(tools)} tool functions (no default parameters)")
         return tools
 
@@ -776,7 +816,7 @@ Then: Present the results
 
 **REMEMBER: Always provide ALL required parameters when calling tools!**
 
-Available tools: list_files, system_status, health_check, directory_info, las_parser, las_analysis, formation_evaluation, well_correlation, segy_parser, segy_classify, segy_qc, quick_segy_summary, dump_content, plot_las, build_logplot, plot_histogram_las, show_sheets, show_columns, unique_from_column, marker4well, zone4well, productiondata4well, buildCRMInput, trainCRMModel, well_checklist_table, well_checklist_curves, create_wells_tvdss.
+Available tools: list_files, system_status, health_check, directory_info, las_parser, las_analysis, formation_evaluation, well_correlation, segy_parser, segy_classify, segy_qc, quick_segy_summary, dump_content, plot_las, build_logplot, plot_histogram_las, show_sheets, show_columns, unique_from_column, marker4well, zone4well, productiondata4well, buildCRMInput, trainCRMModel, well_checklist_table, well_checklist_curves, create_wells_tvdss, create_psuedo_log.
 """
 
     async def _execute_with_google_adk(self, query: str) -> str:

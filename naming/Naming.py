@@ -66,3 +66,7 @@ class Naming:
     @classmethod
     def tvdss_file(cls, well: str):
         return f"{cls.devi_path(well)}/TVDSS.csv"
+    
+    @classmethod
+    def model_file(cls, model: str):
+        return f"misc/models/trained_model_{model}.joblib"

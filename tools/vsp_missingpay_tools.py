@@ -14,7 +14,7 @@ import lasio
 from calendar import monthrange
 from pywaterflood import CRM
 from utils.excel_utils import PROD_WELL_COL, parse_well_production
-from utils.missing_pay_utils import get_well_checklist, get_well_checklist_curves
+from utils.missing_pay_utils import get_well_checklist, get_well_checklist_curves, make_psuedo_log
 from utils.plot_utils import multi_chart, advLogplot, logplot
 from xlsx_utils import XLSX
 
@@ -293,6 +293,34 @@ def create_missingpay_tools(mcp_server, data_config: DataConfig) -> List[str]:
             return {"text": f"Tool failed: {str(e)}"}
 
     @mcp_server.tool(
+        name="create_psuedo_log",
+        description="Create psuedo log for a well from logs in a list of wells using a regression model with params"
+    )
+    def create_psuedo_log(**kwargs):
+        try:
+            input_data = json.loads(kwargs["input"])
+            psuedo_log: str = input_data.get("psuedo_log")
+            well: str = input_data.get("well")
+            logs: list[str] = input_data.get("logs")
+            wells: list[str] = input_data.get("wells")
+            regression_model: str = input_data.get("regression_model")
+            params: dict = input_data.get("params")
+
+            result = make_psuedo_log(
+                psuedo_log, 
+                well, 
+                logs, 
+                wells,
+                regression_model,
+                params,
+            )
+
+            return {"text": result}
+        except Exception as e:
+            traceback.print_exc()
+            return {"text": f"Tool failed: {str(e)}"}
+
+    @mcp_server.tool(
         name="zone4well",
         description="Create zones for well",
     )
@@ -317,5 +345,6 @@ def create_missingpay_tools(mcp_server, data_config: DataConfig) -> List[str]:
         "well_checklist_table",
         "well_checklist_curves",
         "create_wells_tvdss",
+        "create_psuedo_log",
     ]
     return tool_names
