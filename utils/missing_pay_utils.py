@@ -142,18 +142,13 @@ def get_well_checklist_curves(
     gr_result: list[str] = [""] * count
     sp_result: list[str] = [""] * count
     cal_result: list[str] = [""] * count
-    lld_result: list[str] = [""] * count
-    bk_result: list[str] = [""] * count
-    resdt_result: list[str] = [""] * count
-    ild_result: list[str] = [""] * count
-    rt_result: list[str] = [""] * count
-    llm_result: list[str] = [""] * count
-    lls_result: list[str] = [""] * count
-    msfl_result: list[str] = [""] * count
-    rxo_result: list[str] = [""] * count
-    rhob_result: list[str] = [""] * count
-    nphi_result: list[str] = [""] * count
-    dt_result: list[str] = [""] * count
+    deep_res_result: list[str] = [""] * count
+    med_res_result: list[str] = [""] * count
+    shal_res_result: list[str] = [""] * count
+    micro_res_result: list[str] = [""] * count
+    density_result: list[str] = [""] * count
+    neutron_result: list[str] = [""] * count
+    sonic_result: list[str] = [""] * count
     pe_result: list[str] = [""] * count
 
     for wIdx, well in enumerate(well_names):
@@ -173,32 +168,37 @@ def get_well_checklist_curves(
                     gr_result[wIdx] = "yes"
                 if "SP" in curve_names:
                     sp_result[wIdx] = "yes"
-                if any(c in ["CAL", "CALI", "CALIPER"] for c in curve_names):
-                    cal_result[wIdx] = "yes"
-                if "LLD" in curve_names:
-                    lld_result[wIdx] = "yes"
-                if "BK" in curve_names:
-                    bk_result[wIdx] = "yes"
-                if "RESDT" in curve_names:
-                    resdt_result[wIdx] = "yes"
-                if "ILD" in curve_names:
-                    ild_result[wIdx] = "yes"
-                if "RT" in curve_names:
-                    rt_result[wIdx] = "yes"
-                if "LLM" in curve_names:
-                    llm_result[wIdx] = "yes"
-                if "LLS" in curve_names:
-                    lls_result[wIdx] = "yes"
-                if "MSFL" in curve_names:
-                    msfl_result[wIdx] = "yes"
-                if "RXO" in curve_names:
-                    rxo_result[wIdx] = "yes"
-                if any(c in ["RHOB", "RBOB"] for c in curve_names):
-                    rhob_result[wIdx] = "yes"
-                if "NPHI" in curve_names:
-                    nphi_result[wIdx] = "yes"
+                cal_curves = [
+                    c for c in curve_names if c in ["CAL", "CALI", "CALIPER", "UCAV"]
+                ]
+                if len(cal_curves) > 0:
+                    cal_result[wIdx] = f"yes - {', '.join(cal_curves)}"
+                deep_res_curves = [
+                    c
+                    for c in curve_names
+                    if c in ["LLD", "BK", "RESDT", "ILD", "RT", "P40H"]
+                ]
+                if len(deep_res_curves) > 0:
+                    deep_res_result[wIdx] = f"yes - {', '.join(deep_res_curves)}"
+                med_res_curves = [c for c in curve_names if c in ["P22H", "P34H"]]
+                if len(med_res_curves) > 0:
+                    med_res_result[wIdx] = f"yes - {', '.join(med_res_curves)}"
+                shal_res_curves = [c for c in curve_names if c in ["LLS", "P16H"]]
+                if len(shal_res_curves) > 0:
+                    shal_res_result[wIdx] = f"yes - {', '.join(shal_res_curves)}"
+                micro_res_curves = [c for c in curve_names if c in ["MSFL", "RXO"]]
+                if len(micro_res_curves) > 0:
+                    micro_res_result[wIdx] = f"yes - {', '.join(micro_res_curves)}"
+                density_curves = [
+                    c for c in curve_names if c in ["RHOB", "RBOB", "ROBB"]
+                ]
+                if len(density_curves) > 0:
+                    density_result[wIdx] = f"yes - {', '.join(density_curves)}"
+                neutron_curves = [c for c in curve_names if c in ["NPHI", "TNPH"]]
+                if len(neutron_curves) > 0:
+                    neutron_result[wIdx] = f"yes - {', '.join(neutron_curves)}"
                 if "DT" in curve_names:
-                    dt_result[wIdx] = "yes"
+                    sonic_result[wIdx] = "yes"
                 if "PE" in curve_names:
                     pe_result[wIdx] = "yes"
             except Exception as e:
@@ -209,17 +209,12 @@ def get_well_checklist_curves(
         gr_result,
         sp_result,
         cal_result,
-        lld_result,
-        bk_result,
-        resdt_result,
-        ild_result,
-        rt_result,
-        llm_result,
-        lls_result,
-        msfl_result,
-        rxo_result,
-        rhob_result,
-        nphi_result,
-        dt_result,
+        deep_res_result,
+        med_res_result,
+        shal_res_result,
+        micro_res_result,
+        density_result,
+        neutron_result,
+        sonic_result,
         pe_result,
     )
