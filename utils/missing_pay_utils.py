@@ -242,7 +242,7 @@ def load_las_data(wells: list[str], curve_types: list[str], wells_dir: str):
                 break # match the first las file
     
     if not all_data:
-        raise ValueError("No valid training data found.")
+        raise ValueError(f"No valid data found for logs {curve_types} in wells {wells}")
     return np.vstack(all_data)
 
 

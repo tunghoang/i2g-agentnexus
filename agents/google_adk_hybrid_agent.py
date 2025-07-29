@@ -669,13 +669,13 @@ class ToolExecutingAgentExecutor:
         tools.append(create_wells_tvdss)
 
         def create_psuedo_log(
-            psuedo_log: str = '', 
-            well: str = '', 
-            logs: list[str] = [], 
-            wells: list[str] = [], 
-            regression_model: str = '', 
-            params: dict = {}
-        ):
+            psuedo_log: str,
+            well: str, 
+            logs: list[str], 
+            wells: list[str], 
+            regression_model: str, 
+            params: dict
+        ) -> dict:
             """Create psuedo log for a well from logs in a list of wells using a regression model with params
 
             Args:
