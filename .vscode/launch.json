@@ -1,18 +1,18 @@
 {
   "configurations": [
     {
+      "name": "Agent",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "app",
+      "args": ["--agent"]
+    },
+    {
       "name": "MCP",
       "type": "debugpy",
       "request": "launch",
       "module": "app",
       "args": ["--mcp"]
     },
-    {
-      "name": "Agent",
-      "type": "debugpy",
-      "request": "launch",
-      "module": "app",
-      "args": ["--agent"]
-    }
   ]
 }

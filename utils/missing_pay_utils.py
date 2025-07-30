@@ -3,7 +3,7 @@ import os
 import pandas as pd
 from naming import Naming
 from robust_las_parser import load_las_file
-import utils.excel_utils as excel_utils
+from xlsx_utils import XLSX
 
 
 def get_well_checklist(
@@ -51,7 +51,7 @@ def get_well_checklist(
     day_tvdss = elevation_df[elevation_df.columns[11]]
     doi_tuong_khoans = elevation_df[elevation_df.columns[12]]
 
-    marker_df = excel_utils.parse_marker(marker_path)
+    marker_df = XLSX.parse_marker(marker_path)
 
     for wIdx, well in enumerate(well_names):
         elevation_row: int | None = next(

@@ -13,7 +13,6 @@ import pandas as pd
 import lasio
 from calendar import monthrange
 from pywaterflood import CRM
-from utils.excel_utils import PROD_WELL_COL, parse_well_production
 from utils.missing_pay_utils import get_well_checklist, get_well_checklist_curves
 from utils.plot_utils import multi_chart, advLogplot, logplot
 from xlsx_utils import XLSX
