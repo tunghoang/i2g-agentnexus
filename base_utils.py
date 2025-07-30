@@ -20,3 +20,7 @@ def recursive_put(tree: dict, path: list, value):
             _tree[p] = {}
         _tree = _tree[p]
     _tree[ path[-1] ] = value
+
+def update_dict(d, d1):
+    for k in d1:
+        d[k] = d1[k]

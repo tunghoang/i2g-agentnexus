@@ -611,6 +611,27 @@ class ToolExecutingAgentExecutor:
                 return {"status": "error", "result": result}
         tools.append(trainCRMModel)
 
+        def production_by_time(params: list[str], wells: list[str]):
+            """Plot production params by time for wells from production data file
+
+            Args:
+                params: list of production parameters
+                wells: list of wells
+
+            Returns:
+                dict: results
+            """
+            try:
+                executor_instance.logger.info(f"Executing production_by_time with {params} and {wells}")
+                result = executor_instance._execute_mcp_tool('production_by_time', json.dumps(dict(params=params, wells=wells)))
+                return {"status": "success",
+                        "result": "result is created. Output is in attachment field",
+                        "attachment": result}
+            except Exception as e:
+                executor_instance.logger.error(f"Error in production_by_time {e}")
+                return {"status": "error", "message": str(e)}
+        tools.append(production_by_time)
+
         def well_checklist_table(wells: str = ''):
             """Get well checklist table for a list of wells
 
@@ -763,7 +784,7 @@ class ToolExecutingAgentExecutor:
 - User asks "analyze well.las" → IMMEDIATELY call las_parser with file_path="well.las"
 - User asks "classify survey.sgy" → IMMEDIATELY call segy_classify with file_path="survey.sgy"
 - User asks "plot well.las" → IMMEDIATELY call plot_las with file_path="well.las"
-- User asks "show columns in file.xlsx sheet 0" → IMMEDIATELY call show_columns with file_path="well.las" and sheet=0
+- User asks "show columns in file.xlsx sheet 0" → IMMEDIATELY call show_columns with file_path="file.xlsx" and sheet=0
 - User asks "get unique values from column 0 in file.xlsx sheet 0" → IMMEDIATELY call unique_from_column with column=0 file_path="file.xlsx" and sheet=0
 
 ## For CRM analysis:
@@ -771,6 +792,26 @@ class ToolExecutingAgentExecutor:
 - User asks "build CRM input using production wells and injection wells" → IMMEDIATELY call buildCRMInput with corresponding production_wells and injection_wells
 - User asks "show wells in marker file", then IMMEDIATELY call unique_from_column with column=0 file_path="misc/Marker.xlsx" and sheet=0
 - User asks "show wells in production monthly file", then IMMEDIATELY call unique_from_column with column=1 file_path="production/PVT_WellTest_Perforation_WaterAnalysis.xlsx" and sheet=4
+- User asks "Plot [params] of wells [wells] by time from production file", then IMMEDIATELY call production_by_time with params and wells as list[str] if user provided or else wells=[]
+    Always call using these standardized param names from user provided params, DO NOT use monthly params if user not provided explicitly:
+    "CV.OilRate",              # Oil rate
+    "Monthlyprod.Qoil/1000",   # Monthly oil rate in thousands
+    "CV.Oilcum/1000",          # Oilcum in thousands
+    "CV.LiqRate",              # Liquid rate (oil + water)
+    "Monthlyprod.Qwater/1000",
+    "CV.WaterProdCum/1000",
+    "Monthlyprod.Qgas/1000",
+    "CV.GasCum/1000",
+    "CV.WaterInj_Rate",
+    "Monthlyinj.Qwater/1000",
+    "CV.WaterInjCum/1000",
+    "CV.Watercut",
+    "Monthlyprod.Qwater/1000+Monthlyprod.Qoil/1000",
+    "Monthlyprod.Qgas/Monthlyprod.Qoil*1000",
+    "Monthlyprod.Gor",
+    "Monthlyprod.Dayon",
+    "CV.WellProd",
+    "CV.WellInj".
 
 ## For generating plots
 - User asks "generate TRACK_TEMPLATES logplot for WELL  → IMMEDIATELY call build_logplot with well=WELL and track_templates=TRACK_TEMPLATES
@@ -816,7 +857,12 @@ Then: Present the results
 
 **REMEMBER: Always provide ALL required parameters when calling tools!**
 
-Available tools: list_files, system_status, health_check, directory_info, las_parser, las_analysis, formation_evaluation, well_correlation, segy_parser, segy_classify, segy_qc, quick_segy_summary, dump_content, plot_las, build_logplot, plot_histogram_las, show_sheets, show_columns, unique_from_column, marker4well, zone4well, productiondata4well, buildCRMInput, trainCRMModel, well_checklist_table, well_checklist_curves, create_wells_tvdss, create_psuedo_log.
+Available tools: list_files, system_status, health_check, directory_info,
+las_parser, las_analysis, formation_evaluation, well_correlation, segy_parser, segy_classify, segy_qc,
+quick_segy_summary, dump_content, plot_las, build_logplot, plot_histogram_las, show_sheets, show_columns,
+unique_from_column, marker4well, zone4well, productiondata4well,
+buildCRMInput, trainCRMModel, production_by_time,
+well_checklist_table, well_checklist_curves, create_wells_tvdss, create_psuedo_log
 """
 
     async def _execute_with_google_adk(self, query: str) -> str:

@@ -5,6 +5,35 @@ from naming import Naming
 
 class XLSX:
     PRODUCTION_FILEPATH="production/PVT_WellTest_Perforation_WaterAnalysis.xlsx"
+    PRODUCTION_MONTHLY_SHEET=4
+
+    @classmethod
+    def parse_excel(cls, file_path: str, sheet: int = 0):
+        excel_file = MemoryCache.get_instance().get(file_path)
+        if excel_file is None:
+            excel_file = pd.ExcelFile(file_path, engine="openpyxl")
+            MemoryCache.get_instance().put(file_path, excel_file)
+        df = excel_file.parse(
+            sheet,
+            header=0,
+        )
+        return df
+
+    @classmethod
+    def parse_well_production(cls, sheet: int = PRODUCTION_MONTHLY_SHEET):
+        PROD_WELL_COL = 1
+        df = cls.parse_excel(Naming.data_path(cls.PRODUCTION_FILEPATH), sheet)
+        # convert well number to string
+        df[df.columns[PROD_WELL_COL]] = df[df.columns[PROD_WELL_COL]].astype(str)
+        return df
+
+    @classmethod
+    def parse_marker(cls, sheet: int = 0):
+        MARKER_WELL_COL = 0
+        df = cls.parse_excel(Naming.default_marker_file(), sheet)
+        # convert well number to string
+        df[df.columns[MARKER_WELL_COL]] = df[df.columns[MARKER_WELL_COL]].astype(str)
+        return df
 
     @classmethod
     def extract_perforation(cls, well):
@@ -61,3 +90,38 @@ class XLSX:
         zoneDF['stop'] = markerDF[columns[5]].shift(periods=-1).astype(float)
         print(zoneDF)
         return zoneDF
+
+    @classmethod
+    def extract_zones1(cls, well, file_path = None):
+        markerDF = cls.extract_markers(well, file_path)
+        columns = list(markerDF.columns)
+
+        markerDF = markerDF.sort_values(columns[5])
+        markerDF = markerDF.reset_index()
+        max_depth = markerDF.iloc[-1][columns[5]]
+        keyMarkerDF = markerDF[markerDF[columns[1]].str.startswith('SH')]
+
+        keyZoneDF = pd.DataFrame()
+        keyZoneDF[columns[0]] = keyMarkerDF[columns[0]]
+        keyZoneDF[columns[1]] = keyMarkerDF[columns[1]]
+        keyZoneDF[f"{columns[1]}-1"] = keyMarkerDF[columns[1]].shift(periods=-1)
+        keyZoneDF['start'] = keyMarkerDF[columns[5]].astype(float)
+        keyZoneDF['stop'] = keyMarkerDF[columns[5]].shift(periods=-1).astype(float)
+        keyZoneDF.iat[-1, 4] = max_depth
+
+
+        zoneDF = pd.DataFrame()
+        zoneDF[columns[0]] = markerDF[columns[0]]
+        zoneDF[columns[1]] = markerDF[columns[1]]
+        zoneDF[f"{columns[1]}-1"] = markerDF[columns[1]].shift(periods=-1)
+        zoneDF['start'] = markerDF[columns[5]].astype(float)
+        zoneDF['stop'] = markerDF[columns[5]].shift(periods=-1).astype(float)
+
+        zoneDF = zoneDF[( zoneDF[columns[1]].str.startswith('T-') & zoneDF[ f"{columns[1]}-1" ].str.startswith('T-') ) |
+                        ( zoneDF[columns[1]].str.startswith('T-') & zoneDF[ f"{columns[1]}-1" ].str.startswith('B-') ) |
+                        ( zoneDF[columns[1]].str.startswith('T-') & zoneDF[ f"{columns[1]}-1" ].str.startswith('SH') ) |
+                        ( zoneDF[columns[1]].str.startswith('SH') & zoneDF[ f"{columns[1]}-1" ].str.startswith('B-') ) ]
+        
+        print(keyZoneDF)                
+        print(zoneDF)
+        return keyZoneDF, zoneDF
