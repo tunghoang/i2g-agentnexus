@@ -35,17 +35,17 @@ def create_missingpay_tools(mcp_server, data_config: DataConfig) -> List[str]:
             if track_templates is None:
                 raise Exception("Track templates should be specified")
 
-            well_data_dir = f'wells/{well}'
+            well_data_dir = f"wells/{well}"
             if not os.path.isdir(f"{data_config.data_dir}/{well_data_dir}"):
                 raise Exception(f"Well {well} not found")
             composite_logs = f"{well_data_dir}/GIS/Las/*.las"
             files = glob(f"{data_config.data_dir}/{composite_logs}")
             if len(files) == 0:
-                raise Exception(f'No composite logs found for well {well}')
+                raise Exception(f"No composite logs found for well {well}")
 
-            track_templates = input_data.get('track_templates', 'GR,LLD,NPHI')
-            track_templates = track_templates.split(',')
-            track_templates = [ tpl.strip() for tpl in track_templates ]
+            track_templates = input_data.get("track_templates", "GR,LLD,NPHI")
+            track_templates = track_templates.split(",")
+            track_templates = [tpl.strip() for tpl in track_templates]
 
             logDF_path = files[0]
 
@@ -58,13 +58,26 @@ def create_missingpay_tools(mcp_server, data_config: DataConfig) -> List[str]:
 
             if track_templates:
                 zoneDF = XLSX.extract_zones(well)
-                fig = advLogplot(df, las.curves, track_styles=track_templates, title=f"Well {well} Logplot", zoneDF=zoneDF)
+                fig = advLogplot(
+                    df,
+                    las.curves,
+                    track_styles=track_templates,
+                    title=f"Well {well} Logplot",
+                    zoneDF=zoneDF,
+                )
             else:
                 fig = logplot(df, las.curves)
 
-            dest_path = Naming.dest_path(logDF_path.removeprefix(f"{data_config.data_dir}/"), category='logplot')
+            dest_path = Naming.dest_path(
+                logDF_path.removeprefix(f"{data_config.data_dir}/"), category="logplot"
+            )
             fig.write_html(dest_path)
-            return {"text": Naming.publish_path(logDF_path.removeprefix(f"{data_config.data_dir}/"), category='logplot')}
+            return {
+                "text": Naming.publish_path(
+                    logDF_path.removeprefix(f"{data_config.data_dir}/"),
+                    category="logplot",
+                )
+            }
         except Exception as e:
             traceback.print_exc()
             return {"text": str(e)}
@@ -81,6 +94,12 @@ def create_missingpay_tools(mcp_server, data_config: DataConfig) -> List[str]:
                 well_names,
                 loai_gieng_result,
                 ten_gian_result,
+                kb_result,
+                nam_khoan_result,
+                mong_result,
+                day_md_result,
+                day_tvdss_result,
+                doi_tuong_khoan_result,
                 log_result,
                 devi_result,
                 mudlog_result,
@@ -103,12 +122,12 @@ def create_missingpay_tools(mcp_server, data_config: DataConfig) -> List[str]:
                     "Thân": ["N/A"] * count,
                     "Loại giếng": loai_gieng_result,
                     "Tên giàn": ten_gian_result,
-                    "KB (m)": ["N/A"] * count,
-                    "Năm khoan": ["N/A"] * count,
-                    "Móng": ["N/A"] * count,
-                    "Đáy giếng MD": ["N/A"] * count,
-                    "Đáy giếng TVDss": ["N/A"] * count,
-                    "Đối tượng khoan": ["N/A"] * count,
+                    "KB (m)": kb_result,
+                    "Năm khoan": nam_khoan_result,
+                    "Móng": mong_result,
+                    "Đáy giếng MD": day_md_result,
+                    "Đáy giếng TVDss": day_tvdss_result,
+                    "Đối tượng khoan": doi_tuong_khoan_result,
                     "Log": log_result,
                     "Deviation": devi_result,
                     "Mudlog": mudlog_result,
@@ -143,21 +162,15 @@ def create_missingpay_tools(mcp_server, data_config: DataConfig) -> List[str]:
                 gr_result,
                 sp_result,
                 cal_result,
-                lld_result,
-                bl_result,
-                resdt_result,
-                ild_result,
-                rt_result,
-                llm_result,
-                lls_result,
-                msfl_result,
-                rxo_result,
-                rhob_result,
-                nphi_result,
-                dt_result,
+                deep_res_result,
+                med_res_result,
+                shal_res_result,
+                micro_res_result,
+                density_result,
+                neutron_result,
+                sonic_result,
                 pe_result,
             ) = get_well_checklist_curves(wells=well_names_input)
-            count = len(well_names)
             out_file_relative_path = os.path.join(
                 f"well_checklist_curves{"_".join(well_names)}.html"
             )
@@ -165,21 +178,16 @@ def create_missingpay_tools(mcp_server, data_config: DataConfig) -> List[str]:
             df = pd.DataFrame(
                 data={
                     "Tên giếng": well_names,
-                    "GR": gr_result,
+                    "GammaRay": gr_result,
                     "SP": sp_result,
-                    "Caliper/CALI/CAL": cal_result,
-                    "LLD": lld_result,
-                    "BL": bl_result,
-                    "RESDT": resdt_result,
-                    "ILD": ild_result,
-                    "Rt": rt_result,
-                    "LLM": llm_result,
-                    "LLS": lls_result,
-                    "MSFL": msfl_result,
-                    "RXO": rxo_result,
-                    "RHOB/RBOB": rhob_result,
-                    "NPHI": nphi_result,
-                    "DT": dt_result,
+                    "Caliper": cal_result,
+                    "DeepRes": deep_res_result,
+                    "MedRes": med_res_result,
+                    "ShalRes": shal_res_result,
+                    "MicroRes": micro_res_result,
+                    "Density": density_result,
+                    "Neutron": neutron_result,
+                    "Sonic": sonic_result,
                     "PE": pe_result,
                 }
             )
@@ -212,8 +220,20 @@ def create_missingpay_tools(mcp_server, data_config: DataConfig) -> List[str]:
             if count == 0:
                 raise Exception(f"No wells found for {well_names_input}")
 
+            elevation_path = Naming.elevation_file()
+            elevation_kb: pd.Series | None = None
+            elevation_well: pd.Series | None = None
+            ELEVATION_WELL_COL = 2
+            ELEVATION_KB_COL = 5
+            if os.path.exists(elevation_path):
+                elevation_df = pd.read_excel(elevation_path, header=1)
+                elevation_well = elevation_df[
+                    elevation_df.columns[ELEVATION_WELL_COL]
+                ].astype(str)
+                elevation_kb = elevation_df[elevation_df.columns[ELEVATION_KB_COL]]
+
             successCount = 0
-            for wIdx, well in enumerate(well_names):
+            for well in well_names:
                 devi_dir = Naming.devi_path(well)
                 if not os.path.exists(devi_dir):
                     continue
@@ -232,23 +252,19 @@ def create_missingpay_tools(mcp_server, data_config: DataConfig) -> List[str]:
                 depth = inp_df[DEPTH].values
                 azim = inp_df[AZIM].values
                 incl = inp_df[INCL].values
-                elevation_path = Naming.elevation_file()
-                elevation: float | None = None
-                if os.path.exists(elevation_path):
-                    elevation_df = pd.read_excel(elevation_path)
-                    elevation_df[elevation_df.columns[1]] = elevation_df[
-                        elevation_df.columns[1]
-                    ].astype(str)
-                    elevation = elevation_df[elevation_df.columns[2]][
-                        elevation_df[elevation_df.columns[1]] == well
-                    ].get(0)
+                kb: float | None = None
+                if elevation_kb is not None:
+                    try:
+                        kb = elevation_kb[elevation_well == well].values[0]
+                    except:
+                        pass
 
                 tvd = [0] * len(depth)
                 tvdss: list[float | None] = [None] * len(depth)
                 for i in range(0, len(depth)):
                     if i == 0:
-                        if elevation is not None:
-                            tvdss[i] = tvd[i] - elevation
+                        if kb is not None:
+                            tvdss[i] = tvd[i] - kb
                         continue
                     dl = np.arccos(
                         np.cos(np.radians(incl[i - 1] - incl[i]))
@@ -271,8 +287,8 @@ def create_missingpay_tools(mcp_server, data_config: DataConfig) -> List[str]:
                         * rf
                     )
                     tvd[i] = tvd[i - 1] + deltaTvd
-                    if elevation is not None:
-                        tvdss[i] = tvd[i] - elevation
+                    if kb is not None:
+                        tvdss[i] = tvd[i] - kb
 
                 df = pd.DataFrame(
                     data={

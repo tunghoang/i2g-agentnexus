@@ -82,7 +82,7 @@ def run_agent_server():
     if app_server is not None:
         cleaner = cleaner_create(app_server)
         cleaner.run()
-        uvicorn.run(app_server, port=QA_PORT)
+        uvicorn.run(app_server, host='0.0.0.0', port=QA_PORT)
 
 if __name__ == "__main__":
     from argparse import ArgumentParser
