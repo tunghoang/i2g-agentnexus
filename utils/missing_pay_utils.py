@@ -222,7 +222,7 @@ def get_well_checklist_curves(
     )
 
 
-def read_curves_from_las(las_file_path: str, curves: list[str]) -> np.ndarray:
+def read_curves_from_las(las_file_path: str, curves: list[str]) -> np.ndarray | None:
     las, error = load_las_file(las_file_path)
     if las is None:
         raise Exception(f"Error parsing las file {las_file_path}: {error}")
