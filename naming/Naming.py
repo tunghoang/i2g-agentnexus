@@ -15,6 +15,10 @@ class Naming:
         return f"well{well.strip()}.zone.csv"
 
     @classmethod
+    def keyzonename(cls, well):
+        return f"well{well.strip()}.keyzone.csv"
+
+    @classmethod
     def productionRecordName(cls, well):
         return f"well{well.strip()}.prodrecord.csv"
 

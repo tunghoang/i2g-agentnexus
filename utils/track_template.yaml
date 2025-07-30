@@ -5,6 +5,7 @@ GR:
       line_color: green
       xaxis: 
         range: [0., 150.]
+        nticks: 5
     - name: SP
       mode: lines
       line_color: blue
@@ -25,6 +26,8 @@ LLD:
       xaxis:
         scale: log
         range: [0.2, 20.]
+        nticks: 10
+        ticks: [0.4, 0.6, 0.8, 1.0, 2.0, 4.0, 6.0, 8.0, 10.0]
 NPHI:
   curves:
     - name: NPHI
@@ -32,6 +35,7 @@ NPHI:
       line_color: blue
       xaxis:
         range: [0.6, 0]
+        nticks: 5
     - name: DT
       mode: lines
       line_color: '#ff00ff'

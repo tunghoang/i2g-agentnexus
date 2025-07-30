@@ -61,3 +61,38 @@ class XLSX:
         zoneDF['stop'] = markerDF[columns[5]].shift(periods=-1).astype(float)
         print(zoneDF)
         return zoneDF
+
+    @classmethod
+    def extract_zones1(cls, well, file_path = None):
+        markerDF = cls.extract_markers(well, file_path)
+        columns = list(markerDF.columns)
+
+        markerDF = markerDF.sort_values(columns[5])
+        markerDF = markerDF.reset_index()
+        max_depth = markerDF.iloc[-1][columns[5]]
+        keyMarkerDF = markerDF[markerDF[columns[1]].str.startswith('SH')]
+
+        keyZoneDF = pd.DataFrame()
+        keyZoneDF[columns[0]] = keyMarkerDF[columns[0]]
+        keyZoneDF[columns[1]] = keyMarkerDF[columns[1]]
+        keyZoneDF[f"{columns[1]}-1"] = keyMarkerDF[columns[1]].shift(periods=-1)
+        keyZoneDF['start'] = keyMarkerDF[columns[5]].astype(float)
+        keyZoneDF['stop'] = keyMarkerDF[columns[5]].shift(periods=-1).astype(float)
+        keyZoneDF.iat[-1, 4] = max_depth
+
+
+        zoneDF = pd.DataFrame()
+        zoneDF[columns[0]] = markerDF[columns[0]]
+        zoneDF[columns[1]] = markerDF[columns[1]]
+        zoneDF[f"{columns[1]}-1"] = markerDF[columns[1]].shift(periods=-1)
+        zoneDF['start'] = markerDF[columns[5]].astype(float)
+        zoneDF['stop'] = markerDF[columns[5]].shift(periods=-1).astype(float)
+
+        zoneDF = zoneDF[( zoneDF[columns[1]].str.startswith('T-') & zoneDF[ f"{columns[1]}-1" ].str.startswith('T-') ) |
+                        ( zoneDF[columns[1]].str.startswith('T-') & zoneDF[ f"{columns[1]}-1" ].str.startswith('B-') ) |
+                        ( zoneDF[columns[1]].str.startswith('T-') & zoneDF[ f"{columns[1]}-1" ].str.startswith('SH') ) |
+                        ( zoneDF[columns[1]].str.startswith('SH') & zoneDF[ f"{columns[1]}-1" ].str.startswith('B-') ) ]
+        
+        print(keyZoneDF)                
+        print(zoneDF)
+        return keyZoneDF, zoneDF

@@ -57,14 +57,8 @@ def create_missingpay_tools(mcp_server, data_config: DataConfig) -> List[str]:
             df = las.df().reset_index()
 
             if track_templates:
-                zoneDF = XLSX.extract_zones(well)
-                fig = advLogplot(
-                    df,
-                    las.curves,
-                    track_styles=track_templates,
-                    title=f"Well {well} Logplot",
-                    zoneDF=zoneDF,
-                )
+                keyZoneDF, zoneDF = XLSX.extract_zones1(well)
+                fig = advLogplot(df, las.curves, track_styles=track_templates, title=f"Well {well} Logplot", keyZoneDF = keyZoneDF, zoneDF=zoneDF)
             else:
                 fig = logplot(df, las.curves)
 
@@ -319,8 +313,9 @@ def create_missingpay_tools(mcp_server, data_config: DataConfig) -> List[str]:
             file_path = input_data.get("file_path", Naming.default_marker_file())
             print(file_path)
             print(input_data)
-            zoneDF = XLSX.extract_zones(well, file_path=file_path)
+            keyZoneDF, zoneDF = XLSX.extract_zones1(well, file_path=file_path)
             storage = Store()
+            storage.save(keyZoneDF, Naming.keyzonename(well))
             storage.save(zoneDF, Naming.zonename(well))
             return dict(text=json.dumps(zoneDF.to_dict("records")))
         except Exception as e:
