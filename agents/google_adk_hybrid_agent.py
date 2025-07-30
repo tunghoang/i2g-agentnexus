@@ -837,6 +837,7 @@ class ToolExecutingAgentExecutor:
 
 # FORMAT OUTPUT FILE:
 Format any html file in output (e.g.: /path/to/file.html) with the following template: http://dashboard.portal:9999/path/to/file.html. Also embed it into an <iframe>
+Format the output URL: http://localhost:5000 into http://dashboard.portal:5000 as an HTML <iframe> embed.
 
 # EXAMPLES OF CORRECT BEHAVIOR:
 User: "list files *.las"

@@ -2,7 +2,6 @@ import os
 import numpy as np
 from datetime import datetime
 
-import utils.excel_utils as excel_utils
 import pandas as pd
 from naming import Naming
 from robust_las_parser import load_las_file
@@ -338,8 +337,9 @@ def generate_model(
     wells_dir: str,
 ):
     import mlflow
+    mlflow_uri = "http://localhost:5000"
     model_name = f"{target_well}_{target_curve}_{regression_model}"
-    mlflow.set_tracking_uri("http://localhost:5000")
+    mlflow.set_tracking_uri(mlflow_uri)
 
     with mlflow.start_run(run_name=model_name):
         mlflow.log_param("target_curve", target_curve)
@@ -379,10 +379,11 @@ def generate_model(
         mlflow.log_metric("r2", r2_score(y_test, y_pred))
         
         # return prediction for target curve
-        test_data = load_las_data([target_well], input_curves, wells_dir)
-        if test_data is None or len(test_data) == 0:
-            return
-        return model.predict(test_data)
+        #test_data = load_las_data([target_well], input_curves, wells_dir)
+        #if test_data is None or len(test_data) == 0:
+        #    return
+        #return model.predict(test_data)
+        return mlflow_uri
 
 def make_psuedo_log(
         psuedo_log: str = '',

@@ -87,4 +87,4 @@ class Naming:
     
     @classmethod
     def model_file(cls, model: str):
-        return f"misc/models/trained_model_{model}.joblib"
+        return f"models.psuedo_log/trained_model_{model}.joblib"
