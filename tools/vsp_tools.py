@@ -360,7 +360,7 @@ def create_vsp_tools(mcp_server, data_config: DataConfig) -> List[str]:
             out_file = Naming.sanitize_filename(f"production-time-chart{'-'.join(wells)}{'-'.join(params)}")
             dest_path = Naming.dest_path(out_file)
             fig.write_html(dest_path)
-            return {'text': f'The result has been generated in {out_file}'}
+            return {'text': f'The result has been generated in {out_file}.html'}
         except Exception as e:
             traceback.print_exc()
             return dict(text=str(e))

@@ -227,7 +227,9 @@ def create_missingpay_tools(mcp_server, data_config: DataConfig) -> List[str]:
                 elevation_kb = elevation_df[elevation_df.columns[ELEVATION_KB_COL]]
 
             successCount = 0
+            print(well_names)
             for well in well_names:
+                print(well)
                 devi_dir = Naming.devi_path(well)
                 if not os.path.exists(devi_dir):
                     continue
