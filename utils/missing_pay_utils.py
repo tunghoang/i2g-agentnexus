@@ -53,7 +53,7 @@ def get_well_checklist(
     day_tvdss = elevation_df[elevation_df.columns[11]]
     doi_tuong_khoans = elevation_df[elevation_df.columns[12]]
 
-    marker_df = XLSX.parse_marker(marker_path)
+    marker_df = XLSX.parse_marker()
 
     for wIdx, well in enumerate(well_names):
         elevation_row: int | None = next(
