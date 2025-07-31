@@ -1,5 +1,7 @@
-from datetime import datetime
 import os
+import numpy as np
+from datetime import datetime
+
 import pandas as pd
 from naming import Naming
 from robust_las_parser import load_las_file
@@ -218,3 +220,262 @@ def get_well_checklist_curves(
         sonic_result,
         pe_result,
     )
+
+
+def read_curves_from_las(well_name: str, curves: list[str], wells_dir: str) -> np.ndarray | None:
+    las_dir = os.path.join(wells_dir, well_name, "GIS", "Las")
+    las_files = [
+        f.path for f in os.scandir(las_dir)
+        if f.is_file() and f.name.lower().endswith(".las")
+    ]
+    if not las_files:
+        raise FileNotFoundError(f"No las files found")
+    
+    las_file_path = las_files[0]
+    las, error = load_las_file(las_file_path)
+    if las is None:
+        raise Exception(f"Error parsing las file {las_file_path}: {error}")
+    
+    curve_names = las.get_curve_names()
+    data = []
+    for curve in curves:
+        matched_curve = next(
+            (las_curve for las_curve in curve_names if curve.upper() in las_curve.upper()),
+            None
+        )
+        if not matched_curve:
+            return None
+        data.append(las.get_curve_data(matched_curve))
+
+    stacked = np.vstack(data).T
+    if np.any(np.isnan(stacked)):
+        stacked = np.nan_to_num(stacked, nan=0.0)
+    return stacked
+
+def write_curve_to_las(well_name: str, curve_name: str, curve_data: np.ndarray, wells_dir: str) -> bool:
+    las_dir = os.path.join(wells_dir, well_name, "GIS", "Las")
+    las_files = [
+        f.path for f in os.scandir(las_dir)
+        if f.is_file() and f.name.lower().endswith(".las")
+    ]
+    if not las_files:
+        raise FileNotFoundError(f"No las files found")
+
+    las_file_path = las_files[0]
+    try:
+        import lasio
+        las = lasio.read(las_file_path)
+    except:
+        raise Exception(f"Error parsing las file {las_file_path}")
+    
+    matched_curve = next(
+        (curve.mnemonic for curve in las.curves if curve_name.upper() in curve.mnemonic.upper()),
+        None
+    )
+    if matched_curve:
+        las[curve_name] = curve_data
+    else:
+        las.curves.append(lasio.CurveItem(mnemonic=curve_name, data=curve_data, descr="Predicted curve"))
+    output_path = os.path.join(las_dir, f"{curve_name}_psuedo_log.las")
+    las.write(output_path)
+    return True
+
+
+def load_las_data(wells: list[str], curves: list[str], wells_dir: str) -> np.ndarray:
+    all_data = []
+    for well_name in wells:
+        data = read_curves_from_las(well_name, curves, wells_dir)
+        if data is not None:
+            all_data.append(data)
+
+    return np.vstack(all_data) if all_data else np.empty(0)
+
+def train_model(x_train: np.ndarray, y_train: np.ndarray, regression_model: str, **kwargs):
+    from sklearn.tree import DecisionTreeRegressor
+    from sklearn.linear_model import HuberRegressor, Lasso, LinearRegression
+    from sklearn.ensemble import RandomForestRegressor
+    from sklearn.svm import SVR
+    from sklearn.neural_network import MLPRegressor
+    from xgboost import XGBRegressor
+
+    models = {
+        "decision_tree": DecisionTreeRegressor,
+        "huber": HuberRegressor,
+        "lasso": Lasso,
+        "linear": LinearRegression,
+        "neural_network": MLPRegressor,
+        "random_forest": RandomForestRegressor,
+        "svm": SVR,
+        "xgboost": XGBRegressor,
+    }
+
+    if regression_model not in models:
+        raise ValueError(f"Unsupported model: '{regression_model}'")
+
+    default_params = {
+        "decision_tree": {},
+        "huber": {},
+        "lasso": {},
+        "linear": {},
+        "neural_network": {"hidden_layer_sizes": (100,), "activation": "relu", "max_iter": 500},
+        "random_forest": {"n_estimators": 100, "max_depth": 10, "random_state": 42},
+        "svm": {},
+        "xgboost": {},
+    }
+
+    model_params = {**default_params.get(regression_model, {}), **kwargs}
+    model = models[regression_model](**model_params)
+    model.fit(x_train, y_train)
+    return model
+
+def generate_curve(
+        target_curve: str, 
+        target_well: str, 
+        input_curves: list[str], 
+        training_wells: list[str], 
+        regression_model: str, 
+        params: dict,
+        wells_dir: str = "data/wells",
+    ) -> np.ndarray:
+    import joblib
+    model = None
+    if len(training_wells) > 10:
+        # get pretrained model
+        model_path = Naming.model_file(target_curve)
+        if os.path.exists(model_path):
+            model = joblib.load(model_path)
+
+    if not model:
+        training_data = load_las_data(training_wells, list(set(input_curves + [target_curve])), wells_dir)
+        x_train = training_data[:, :-1]
+        y_train = training_data[:, -1]
+        model = train_model(x_train, y_train, regression_model, **params)
+
+    test_data = load_las_data([target_well], input_curves, wells_dir)
+    if test_data is None or len(test_data) == 0:
+        return
+
+    y_pred = model.predict(test_data)
+    return y_pred
+    
+def generate_model(
+    target_curve: str,
+    target_well: str,
+    input_curves: list[str],
+    wells: list[str],
+    regression_model: str,
+    params: dict,
+    wells_dir: str,
+):
+    import mlflow
+    mlflow_uri = "http://localhost:5000"
+    model_name = f"{target_well}_{target_curve}_{regression_model}"
+    mlflow.set_tracking_uri(mlflow_uri)
+
+    with mlflow.start_run(run_name=model_name):
+        mlflow.log_param("target_curve", target_curve)
+        mlflow.log_param("regression_model", regression_model)
+        mlflow.log_param("input_curves", input_curves)
+        mlflow.log_param("input_wells", wells)
+        mlflow.log_params(params)
+
+        curves = [c for c in input_curves if c != target_curve] + [target_curve]
+        data = load_las_data(wells, curves, wells_dir) 
+        if data.size == 0:
+            raise ValueError(f"No valid data found for {curves} in wells {wells}")
+        
+        split_index = int(len(wells) * 0.8)
+        training_data = data[:split_index]
+        testing_data = data[split_index:]
+        if training_data.size == 0 or testing_data.size == 0:
+            raise ValueError(f"Insufficient data for training")
+
+        #try:
+        #    model_uri = f"models:/{model_name}/latest"
+        #    model = mlflow.sklearn.load_model(model_uri)
+        #except Exception:
+        x_train = training_data[:, :-1]
+        y_train = training_data[:, -1]
+        model = train_model(x_train, y_train, regression_model, **params)
+        mlflow.sklearn.log_model(model, name=model_name, input_example=x_train[:1])
+
+        # log metrics
+        from sklearn.metrics import (
+            mean_squared_error, r2_score,
+            mean_absolute_error, max_error,
+            explained_variance_score
+        )
+        x_test = testing_data[:, :-1]
+        y_test = testing_data[:, -1]
+        y_pred = model.predict(x_test)
+        mse = mean_squared_error(y_test, y_pred)
+        rmse = np.sqrt(mse)
+        r2 = r2_score(y_test, y_pred)
+        mae = mean_absolute_error(y_test, y_pred)
+        mask = y_test != 0
+        mape = np.mean(np.abs((y_test[mask] - y_pred[mask]) / y_test[mask])) * 100
+        max_err = max_error(y_test, y_pred)
+        ev = explained_variance_score(y_test, y_pred)
+
+        mlflow.log_metric("rmse", rmse)
+        mlflow.log_metric("mse", mse)
+        mlflow.log_metric("mae", mae)
+        mlflow.log_metric("mape", mape)
+        mlflow.log_metric("max_error", max_err)
+        mlflow.log_metric("r2", r2)
+        mlflow.log_metric("explained_variance", ev)
+
+        # write to las file
+        write_result = False
+        test_data = load_las_data([target_well], input_curves, wells_dir)
+        if test_data.size > 0:
+            curve_data = model.predict(test_data)
+            success = write_curve_to_las(target_well, target_curve, curve_data, wells_dir)
+            if success:
+                write_result = True
+
+        # return model info
+#        return {
+#           "Tên mô hình": model_name,
+#           "Loại mô hình": regression_model,
+#           "Sai số phần trăm tuyệt đối trung bình (MAPE)": mape,
+#           "Căn bậc hai sai số bình phương trung bình (RMSE)": rmse,
+#           "Hệ số xác định (R² Score)": r2,
+#           "Liên kết đánh giá MLflow": mlflow_uri,
+#           "Trạng thái lưu kết quả": write_result,
+#       }
+        return {
+            "Model Name": model_name,
+            "Model Type": regression_model,
+            "MAPE (%)": f"{mape:.2f}",
+            "RMSE": f"{rmse:.4f}",
+            "R² Score": f"{r2:.4f}",
+            "Evaluation Dashboard": "http://dashboard.portal:5000",
+            "Curve Save Status": write_result,
+        }
+
+def make_psuedo_log(
+        psuedo_log: str = '',
+        well: str = '',
+        logs: list[str] = [],
+        wells: list[str] = [],
+        regression_model: str = "random_forest",
+        params: dict = {},
+        wells_dir: str = "data/wells",
+    ):
+    available_wells = [entry.name for entry in os.scandir(wells_dir) if entry.is_dir()]
+    well_names = [name for name in available_wells if name in wells] if wells else available_wells
+    well_names.sort()
+
+    if len(well_names) == 0:
+        raise Exception(f"No wells found for {wells}")
+    
+    if well not in available_wells:
+        raise Exception(f"No well {well} found")
+    
+    if len(logs) == 0:
+        raise Exception(f"No logs found")
+    
+    return generate_model(psuedo_log, well, logs, well_names, regression_model, params, wells_dir)
+
+

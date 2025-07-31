@@ -13,7 +13,7 @@ import pandas as pd
 import lasio
 from calendar import monthrange
 from pywaterflood import CRM
-from utils.missing_pay_utils import get_well_checklist, get_well_checklist_curves
+from utils.missing_pay_utils import get_well_checklist, get_well_checklist_curves, make_psuedo_log
 from utils.plot_utils import multi_chart, advLogplot, logplot
 from xlsx_utils import XLSX
 
@@ -302,6 +302,45 @@ def create_missingpay_tools(mcp_server, data_config: DataConfig) -> List[str]:
             return {"text": f"Tool failed: {str(e)}"}
 
     @mcp_server.tool(
+        name="create_psuedo_log",
+        description="Create psuedo log for a well from logs in a list of wells using a regression model with params"
+    )
+    def create_psuedo_log(**kwargs):
+        try:
+            input_data = json.loads(kwargs["input"])
+            psuedo_log: str = input_data.get("psuedo_log")
+            well: str = input_data.get("well")
+            logs: list[str] = input_data.get("logs")
+            wells: list[str] = input_data.get("wells")
+            regression_model: str = input_data.get("regression_model")
+            params: dict = input_data.get("params")
+
+            out_file_relative_path = os.path.join(
+                f"model_psuedo_log_report_{psuedo_log}_{well}.html"
+            )
+            out_file_path = os.path.join("/tmp", out_file_relative_path)
+            
+            result = make_psuedo_log(psuedo_log, well, logs, wells,regression_model, params)
+            df = pd.DataFrame([result])
+            table = df.to_html(index=False)
+            with open("templates/model_psuedo_log_report_tpl.html", "r") as tpl_file:
+                template = tpl_file.read()
+
+            result = (
+                template.replace("{{TABLE}}", table)
+                        .replace("{{log}}", psuedo_log)
+                        .replace("{{well}}", well)
+            )
+
+            with open(out_file_path, "w") as output_file:
+                output_file.write(result)
+
+            return {"text": out_file_relative_path}
+        except Exception as e:
+            traceback.print_exc()
+            return {"text": f"Tool failed: {str(e)}"}
+
+    @mcp_server.tool(
         name="zone4well",
         description="Create zones for well",
     )
@@ -327,5 +366,6 @@ def create_missingpay_tools(mcp_server, data_config: DataConfig) -> List[str]:
         "well_checklist_table",
         "well_checklist_curves",
         "create_wells_tvdss",
+        "create_psuedo_log",
     ]
     return tool_names
