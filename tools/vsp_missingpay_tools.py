@@ -315,16 +315,27 @@ def create_missingpay_tools(mcp_server, data_config: DataConfig) -> List[str]:
             regression_model: str = input_data.get("regression_model")
             params: dict = input_data.get("params")
 
-            result = make_psuedo_log(
-                psuedo_log, 
-                well, 
-                logs, 
-                wells,
-                regression_model,
-                params,
+            out_file_relative_path = os.path.join(
+                f"model_psuedo_log_report_{psuedo_log}_{well}.html"
+            )
+            out_file_path = os.path.join("/tmp", out_file_relative_path)
+            
+            result = make_psuedo_log(psuedo_log, well, logs, wells,regression_model, params)
+            df = pd.DataFrame([result])
+            table = df.to_html(index=False)
+            with open("templates/model_psuedo_log_report_tpl.html", "r") as tpl_file:
+                template = tpl_file.read()
+
+            result = (
+                template.replace("{{TABLE}}", table)
+                        .replace("{{log}}", psuedo_log)
+                        .replace("{{well}}", well)
             )
 
-            return {"text": result}
+            with open(out_file_path, "w") as output_file:
+                output_file.write(result)
+
+            return {"text": out_file_relative_path}
         except Exception as e:
             traceback.print_exc()
             return {"text": f"Tool failed: {str(e)}"}

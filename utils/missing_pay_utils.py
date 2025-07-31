@@ -222,10 +222,20 @@ def get_well_checklist_curves(
     )
 
 
-def read_curves_from_las(las_file_path: str, curves: list[str]) -> np.ndarray | None:
+def read_curves_from_las(well_name: str, curves: list[str], wells_dir: str) -> np.ndarray | None:
+    las_dir = os.path.join(wells_dir, well_name, "GIS", "Las")
+    las_files = [
+        f.path for f in os.scandir(las_dir)
+        if f.is_file() and f.name.lower().endswith(".las")
+    ]
+    if not las_files:
+        raise FileNotFoundError(f"No las files found")
+    
+    las_file_path = las_files[0]
     las, error = load_las_file(las_file_path)
     if las is None:
         raise Exception(f"Error parsing las file {las_file_path}: {error}")
+    
     curve_names = las.get_curve_names()
     data = []
     for curve in curves:
@@ -242,20 +252,41 @@ def read_curves_from_las(las_file_path: str, curves: list[str]) -> np.ndarray | 
         stacked = np.nan_to_num(stacked, nan=0.0)
     return stacked
 
+def write_curve_to_las(well_name: str, curve_name: str, curve_data: np.ndarray, wells_dir: str) -> bool:
+    las_dir = os.path.join(wells_dir, well_name, "GIS", "Las")
+    las_files = [
+        f.path for f in os.scandir(las_dir)
+        if f.is_file() and f.name.lower().endswith(".las")
+    ]
+    if not las_files:
+        raise FileNotFoundError(f"No las files found")
+
+    las_file_path = las_files[0]
+    try:
+        import lasio
+        las = lasio.read(las_file_path)
+    except:
+        raise Exception(f"Error parsing las file {las_file_path}")
+    
+    matched_curve = next(
+        (curve.mnemonic for curve in las.curves if curve_name.upper() in curve.mnemonic.upper()),
+        None
+    )
+    if matched_curve:
+        las[curve_name] = curve_data
+    else:
+        las.curves.append(lasio.CurveItem(mnemonic=curve_name, data=curve_data, descr="Predicted curve"))
+    output_path = os.path.join(las_dir, f"{curve_name}_psuedo_log.las")
+    las.write(output_path)
+    return True
+
+
 def load_las_data(wells: list[str], curves: list[str], wells_dir: str) -> np.ndarray:
     all_data = []
-    for well in wells:
-        las_dir = os.path.join(wells_dir, well, "GIS", "Las")
-        las_file_paths = [
-            f.path
-            for f in os.scandir(las_dir)
-            if f.is_file() and f.name.lower().endswith(".las")
-        ]
-        for las_file_path in las_file_paths:
-            data = read_curves_from_las(las_file_path, curves)
-            if data is not None:
-                all_data.append(data)
-                break # match the first las file
+    for well_name in wells:
+        data = read_curves_from_las(well_name, curves, wells_dir)
+        if data is not None:
+            all_data.append(data)
 
     return np.vstack(all_data) if all_data else np.empty(0)
 
@@ -369,21 +400,59 @@ def generate_model(
         mlflow.sklearn.log_model(model, name=model_name, input_example=x_train[:1])
 
         # log metrics
-        from sklearn.metrics import mean_squared_error, r2_score
+        from sklearn.metrics import (
+            mean_squared_error, r2_score,
+            mean_absolute_error, max_error,
+            explained_variance_score
+        )
         x_test = testing_data[:, :-1]
         y_test = testing_data[:, -1]
         y_pred = model.predict(x_test)
         mse = mean_squared_error(y_test, y_pred)
         rmse = np.sqrt(mse)
+        r2 = r2_score(y_test, y_pred)
+        mae = mean_absolute_error(y_test, y_pred)
+        mask = y_test != 0
+        mape = np.mean(np.abs((y_test[mask] - y_pred[mask]) / y_test[mask])) * 100
+        max_err = max_error(y_test, y_pred)
+        ev = explained_variance_score(y_test, y_pred)
+
         mlflow.log_metric("rmse", rmse)
-        mlflow.log_metric("r2", r2_score(y_test, y_pred))
-        
-        # return prediction for target curve
-        #test_data = load_las_data([target_well], input_curves, wells_dir)
-        #if test_data is None or len(test_data) == 0:
-        #    return
-        #return model.predict(test_data)
-        return mlflow_uri
+        mlflow.log_metric("mse", mse)
+        mlflow.log_metric("mae", mae)
+        mlflow.log_metric("mape", mape)
+        mlflow.log_metric("max_error", max_err)
+        mlflow.log_metric("r2", r2)
+        mlflow.log_metric("explained_variance", ev)
+
+        # write to las file
+        write_result = False
+        test_data = load_las_data([target_well], input_curves, wells_dir)
+        if test_data.size > 0:
+            curve_data = model.predict(test_data)
+            success = write_curve_to_las(target_well, target_curve, curve_data, wells_dir)
+            if success:
+                write_result = True
+
+        # return model info
+#        return {
+#           "Tên mô hình": model_name,
+#           "Loại mô hình": regression_model,
+#           "Sai số phần trăm tuyệt đối trung bình (MAPE)": mape,
+#           "Căn bậc hai sai số bình phương trung bình (RMSE)": rmse,
+#           "Hệ số xác định (R² Score)": r2,
+#           "Liên kết đánh giá MLflow": mlflow_uri,
+#           "Trạng thái lưu kết quả": write_result,
+#       }
+        return {
+            "Model Name": model_name,
+            "Model Type": regression_model,
+            "MAPE (%)": f"{mape:.2f}",
+            "RMSE": f"{rmse:.4f}",
+            "R² Score": f"{r2:.4f}",
+            "Evaluation Dashboard": "http://dashboard.portal:5000",
+            "Curve Save Status": write_result,
+        }
 
 def make_psuedo_log(
         psuedo_log: str = '',
