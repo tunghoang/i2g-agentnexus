@@ -698,7 +698,7 @@ class ToolExecutingAgentExecutor:
             params: dict = {}
         ) -> dict:
             """
-            Create a pseudo log for a well using logs from a list of wells and a regression model.
+            Create a pseudo log for a well from logs in a list of wells using a regression model with params.
 
             Args:
                 pseudo_log (str): Name of the pseudo log to be created.
@@ -713,8 +713,8 @@ class ToolExecutingAgentExecutor:
             """
             try:
                 executor_instance.logger.info(
-                    f"Creating pseudo log '{pseudo_log}' for well '{well}' "
-                    f"using model '{regression_model}' with logs {logs} and wells {wells}"
+                    f"Executing create_pseudo_log '{pseudo_log}' for well '{well}'"
+                    f"from logs {logs} in wells {wells} using model '{regression_model}' with '{params}'"
                 )
 
                 result = executor_instance._execute_mcp_tool(
@@ -743,7 +743,7 @@ class ToolExecutingAgentExecutor:
             regression_model: str, 
         ) -> dict:
             """
-            View training result after create pseudo log for a well 
+            View training results of a created pseudo log for a well 
             using a regression model with specific parameters.
 
             Args:
@@ -782,8 +782,6 @@ class ToolExecutingAgentExecutor:
             except Exception as e:
                 executor_instance.logger.error(f"Error in view_training_result {e}")
                 return {"status": "error", "message": str(e)}
-
-
         tools.append(view_training_result)
 
         self.logger.info(f"Created {len(tools)} tool functions (no default parameters)")
