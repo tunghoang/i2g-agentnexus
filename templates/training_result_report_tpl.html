@@ -44,15 +44,21 @@
 
 <body>
   <div>
-    <h1>Create Pseudo Log {{log}} for Well {{well}}</h1>
+    <h1>Training Result</h1>
     {{TABLE}}
   </div>
   <script>
     document.querySelectorAll("tr").forEach((tr, idx) => {
       tr.querySelectorAll("td").forEach((td, idx) => {
-        if (idx < 10) return;
-        if (td.textContent.trim() === "yes") {
+        //if (idx < 10) return;
+        if (td.textContent.trim() === "FINISHED") {
           td.style.backgroundColor = "#ccffcc";
+        }
+        if (td.textContent.trim() === "FAILED") {
+          td.style.backgroundColor = "red";
+        }
+        if (td.textContent.trim() === "RUNNING") {
+          td.style.backgroundColor = "yellow";
         }
       })
     });

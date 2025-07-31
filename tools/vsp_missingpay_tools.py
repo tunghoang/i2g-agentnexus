@@ -13,9 +13,10 @@ import pandas as pd
 import lasio
 from calendar import monthrange
 from pywaterflood import CRM
-from utils.missing_pay_utils import get_well_checklist, get_well_checklist_curves, make_psuedo_log
+from utils.missing_pay_utils import get_well_checklist, get_well_checklist_curves, make_pseudo_log, get_training_result
 from utils.plot_utils import multi_chart, advLogplot, logplot
 from xlsx_utils import XLSX
+from multiprocessing import Process
 
 
 def create_missingpay_tools(mcp_server, data_config: DataConfig) -> List[str]:
@@ -302,35 +303,69 @@ def create_missingpay_tools(mcp_server, data_config: DataConfig) -> List[str]:
             return {"text": f"Tool failed: {str(e)}"}
 
     @mcp_server.tool(
-        name="create_psuedo_log",
-        description="Create psuedo log for a well from logs in a list of wells using a regression model with params"
+        name="create_pseudo_log",
+        description="Create pseudo log for a well from logs in a list of wells using a regression model with params"
     )
-    def create_psuedo_log(**kwargs):
+    def create_pseudo_log(**kwargs):
         try:
             input_data = json.loads(kwargs["input"])
-            psuedo_log: str = input_data.get("psuedo_log")
+            pseudo_log: str = input_data.get("pseudo_log")
             well: str = input_data.get("well")
             logs: list[str] = input_data.get("logs")
             wells: list[str] = input_data.get("wells")
             regression_model: str = input_data.get("regression_model")
             params: dict = input_data.get("params")
+            mlflow_uri = "http://localhost:5000"
+
+            process = Process(
+                target=make_pseudo_log,
+                args=(pseudo_log, well, logs, wells, regression_model, params, mlflow_uri)
+            )
+            process.start()
+            
+            return {
+                "text": 'Done. Type <br>View training result</br> to check the results'
+            }
+        except Exception as e:
+            traceback.print_exc()
+            return {"text": f"Tool failed: {str(e)}"}
+
+    @mcp_server.tool(
+        name="view_training_result",
+        description="Show the training result from trained model created by create pseudo log"
+    )
+    def view_training_result(**kwargs):
+        try:
+            input_data = json.loads(kwargs["input"])
+            pseudo_log: str = input_data.get("pseudo_log")
+            well: str = input_data.get("well")
+            regression_model: str = input_data.get("regression_model")
+            mlflow_uri = "http://dashboard.portal:5000"
 
             out_file_relative_path = os.path.join(
-                f"model_psuedo_log_report_{psuedo_log}_{well}.html"
+                f"training_result_report.html"
             )
             out_file_path = os.path.join("/tmp", out_file_relative_path)
-            
-            result = make_psuedo_log(psuedo_log, well, logs, wells,regression_model, params)
-            df = pd.DataFrame([result])
-            table = df.to_html(index=False)
-            with open("templates/model_psuedo_log_report_tpl.html", "r") as tpl_file:
+
+            (
+                model_names,
+                time_status,
+                status_list,
+                durations,
+                details
+            ) = get_training_result(pseudo_log, well, regression_model, mlflow_uri)
+            df = pd.DataFrame(data={
+                "Model Name": model_names,
+                "Created": time_status,
+                "Status": status_list,
+                "Duration": durations,
+                "Detail": details
+            })
+            table = df.to_html(index=False, escape=False)
+            with open("templates/training_result_report_tpl.html", "r") as tpl_file:
                 template = tpl_file.read()
 
-            result = (
-                template.replace("{{TABLE}}", table)
-                        .replace("{{log}}", psuedo_log)
-                        .replace("{{well}}", well)
-            )
+            result = template.replace("{{TABLE}}", table)
 
             with open(out_file_path, "w") as output_file:
                 output_file.write(result)
@@ -366,6 +401,7 @@ def create_missingpay_tools(mcp_server, data_config: DataConfig) -> List[str]:
         "well_checklist_table",
         "well_checklist_curves",
         "create_wells_tvdss",
-        "create_psuedo_log",
+        "create_pseudo_log",
+        "view_training_result",
     ]
     return tool_names

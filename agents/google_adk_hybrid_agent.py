@@ -689,45 +689,102 @@ class ToolExecutingAgentExecutor:
                 return {"status": "error", "message": str(e)}
         tools.append(create_wells_tvdss)
 
-        def create_psuedo_log(
-            psuedo_log: str,
-            well: str, 
-            logs: list[str], 
-            wells: list[str], 
-            regression_model: str, 
-            params: dict
+        def create_pseudo_log(
+            pseudo_log: str,
+            well: str,
+            logs: list[str],
+            wells: list[str],
+            regression_model: str,
+            params: dict = {}
         ) -> dict:
-            """Create psuedo log for a well from logs in a list of wells using a regression model with params
+            """
+            Create a pseudo log for a well using logs from a list of wells and a regression model.
 
             Args:
-                psuedo_log: str, psuedo log name
-                well: str, well name
-                logs: list of logs splitted by commas
-                wells: list of wells splitted by commas
-                regression_model:str, type of machine learning model
-                params: dict, parameters for machine learning model
-
+                pseudo_log (str): Name of the pseudo log to be created.
+                well (str): Target well for pseudo log creation.
+                logs (list[str]): Log types used for training.
+                wells (list[str]): Source wells used for training data.
+                regression_model (str): Regression model to apply (e.g., linear, random forest).
+                params (dict): Model hyperparameters.
+            
             Returns:
-                dict: results
+                dict: Result of the pseudo log creation, or error message if failed.
             """
             try:
-                executor_instance.logger.info(f"Executing create_psuedo_log for well {well}")
-                result = executor_instance._execute_mcp_tool('create_psuedo_log', 
-                    {
-                        "psuedo_log": psuedo_log,
-                        "well": well, 
+                executor_instance.logger.info(
+                    f"Creating pseudo log '{pseudo_log}' for well '{well}' "
+                    f"using model '{regression_model}' with logs {logs} and wells {wells}"
+                )
+
+                result = executor_instance._execute_mcp_tool(
+                    'create_pseudo_log',
+                    json.dumps({
+                        "pseudo_log": pseudo_log,
+                        "well": well,
                         "logs": logs,
                         "wells": wells,
                         "regression_model": regression_model,
                         "params": params
-                    }
+                    })
                 )
-                return {"status": "success",
-                        "result": result}
+
+                return {"status": "success", "result": result}
+
             except Exception as e:
-                executor_instance.logger.error(f"Error in create_psuedo_log {e}")
+                executor_instance.logger.error(f"Error in create_pseudo_log: {e}")
                 return {"status": "error", "message": str(e)}
-        tools.append(create_psuedo_log)
+        tools.append(create_pseudo_log)
+        
+        def view_training_result(
+            tool_context: ToolContext,
+            pseudo_log: str,
+            well: str, 
+            regression_model: str, 
+        ) -> dict:
+            """
+            View training result after create pseudo log for a well 
+            using a regression model with specific parameters.
+
+            Args:
+                pseudo_log (str): Name of the pseudo log to evaluate.
+                well (str): The target well to generate pseudo log for.
+                regression_model (str): Name/type of the regression model used.
+                Returns:
+                    dict: Result of the training visualization or summary.
+            """
+            try:
+                fname = inspect.stack()[0][3]  # Get the current function name for namespacing context
+                def get_or_update_param(key: str, value):
+                    existing = recursive_get(tool_context.state, [fname, key]) or None
+                    if value not in [None, '', [], {}]:
+                        recursive_put(tool_context.state, [fname, key], value)
+                        return value
+                    return existing
+
+                _pseudo_log       = get_or_update_param('pseudo_log', pseudo_log)
+                _well             = get_or_update_param('well', well)
+                _regression_model = get_or_update_param('regression_model', regression_model)
+
+                executor_instance.logger.info(
+                    f"Executing view_training_result for well: {_well}, pseudo_log: {_pseudo_log}, model: {_regression_model}"
+                )
+
+                result = executor_instance._execute_mcp_tool(
+                    'view_training_result',
+                    json.dumps({
+                        "pseudo_log": _pseudo_log,
+                        "well": _well,
+                        "regression_model": _regression_model,
+                    })
+                )
+                return {"status": "success", "result": result}
+            except Exception as e:
+                executor_instance.logger.error(f"Error in view_training_result {e}")
+                return {"status": "error", "message": str(e)}
+
+
+        tools.append(view_training_result)
 
         self.logger.info(f"Created {len(tools)} tool functions (no default parameters)")
         return tools
@@ -837,6 +894,7 @@ class ToolExecutingAgentExecutor:
 
 # FORMAT OUTPUT FILE:
 Format any html file in output (e.g.: /path/to/file.html) with the following template: http://dashboard.portal:9999/path/to/file.html. Also embed it into an <iframe>
+Format the output containing URL http://dashboard.portal:5000 into an <iframe>
 
 # EXAMPLES OF CORRECT BEHAVIOR:
 User: "list files *.las"
@@ -862,7 +920,7 @@ las_parser, las_analysis, formation_evaluation, well_correlation, segy_parser, s
 quick_segy_summary, dump_content, plot_las, build_logplot, plot_histogram_las, show_sheets, show_columns,
 unique_from_column, marker4well, zone4well, productiondata4well,
 buildCRMInput, trainCRMModel, production_by_time,
-well_checklist_table, well_checklist_curves, create_wells_tvdss, create_psuedo_log
+well_checklist_table, well_checklist_curves, create_wells_tvdss, create_pseudo_log, view_training_result
 """
 
     async def _execute_with_google_adk(self, query: str) -> str:
