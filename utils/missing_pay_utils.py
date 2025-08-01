@@ -1,6 +1,7 @@
 import os
 import json
 import numpy as np
+import lasio
 from datetime import datetime
 
 import pandas as pd
@@ -254,9 +255,8 @@ def read_curves_from_las(well_name: str, curve_names: list[str], wells_dir: str)
         return None
 
     stacked = np.vstack(data).T
-    if np.any(np.isnan(stacked)):
-        stacked = np.nan_to_num(stacked, nan=0.0)
-    return stacked
+    valid_mask = ~np.isnan(stacked).any(axis=1)
+    return stacked[valid_mask]
 
 def write_curve_to_las(well_name: str, curve_name: str, curve_data: np.ndarray, wells_dir: str) -> bool:
     las_dir = os.path.join(wells_dir, well_name, "GIS", "Las")
@@ -269,7 +269,6 @@ def write_curve_to_las(well_name: str, curve_name: str, curve_data: np.ndarray, 
 
     las_file_path = las_files[0]
     try:
-        import lasio
         las = lasio.read(las_file_path)
     except:
         raise Exception(f"Error parsing las file {las_file_path}")
@@ -282,11 +281,11 @@ def write_curve_to_las(well_name: str, curve_name: str, curve_data: np.ndarray, 
         las[curve_name] = curve_data
     else:
         las.curves.append(lasio.CurveItem(mnemonic=curve_name, data=curve_data, descr="Predicted curve"))
+
     output_path = os.path.join(las_dir, "pseudo_log", f"{curve_name}.las")
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
     las.write(output_path)
     return True
-
 
 def load_las_data(wells: list[str], curves: list[str], wells_dir: str) -> np.ndarray:
     all_data = []
@@ -334,36 +333,6 @@ def train_model(x_train: np.ndarray, y_train: np.ndarray, regression_model: str,
     model = models[regression_model](**model_params)
     model.fit(x_train, y_train)
     return model
-
-#def generate_curve(
-#        target_curve: str, 
-#        target_well: str, 
-#        input_curves: list[str], 
-#        training_wells: list[str], 
-#        regression_model: str, 
-#        params: dict,
-#        wells_dir: str = "data/wells",
-#    ) -> np.ndarray:
-#    import joblib
-#    model = None
-#    if len(training_wells) > 10:
-#        # get pretrained model
-#        model_path = Naming.model_file(target_curve)
-#        if os.path.exists(model_path):
-#            model = joblib.load(model_path)
-#
-#    if not model:
-#        training_data = load_las_data(training_wells, list(set(input_curves + [target_curve])), wells_dir)
-#        x_train = training_data[:, :-1]
-#        y_train = training_data[:, -1]
-#        model = train_model(x_train, y_train, regression_model, **params)
-#
-#    test_data = load_las_data([target_well], input_curves, wells_dir)
-#    if test_data is None or len(test_data) == 0:
-#        return
-#
-#    y_pred = model.predict(test_data)
-#    return y_pred
     
 def generate_model(
     target_curve: str,
@@ -388,13 +357,13 @@ def generate_model(
 
         curves = [c for c in input_curves if c != target_curve] + [target_curve]
         data = load_las_data(wells, curves, wells_dir) 
-        if data.size == 0:
+        if len(data) == 0:
             raise ValueError(f"No valid data found for {curves} in wells {wells}")
         
-        split_index = int(len(wells) * 0.8)
+        split_index = int(len(data) * 0.8)
         training_data = data[:split_index]
         testing_data = data[split_index:]
-        if training_data.size == 0 or testing_data.size == 0:
+        if len(training_data) == 0 or len(testing_data) == 0:
             raise ValueError(f"Insufficient data for training")
 
         x_train = training_data[:, :-1]
@@ -405,6 +374,7 @@ def generate_model(
         # log metrics
         from sklearn.metrics import (
             mean_squared_error, r2_score,
+            mean_absolute_percentage_error,
             mean_absolute_error, max_error,
             explained_variance_score
         )
@@ -415,8 +385,7 @@ def generate_model(
         rmse = np.sqrt(mse)
         r2 = r2_score(y_test, y_pred)
         mae = mean_absolute_error(y_test, y_pred)
-        mask = y_test != 0
-        mape = np.mean(np.abs((y_test[mask] - y_pred[mask]) / y_test[mask])) * 100
+        mape = mean_absolute_percentage_error(y_test, y_pred) * 100
         max_err = max_error(y_test, y_pred)
         ev = explained_variance_score(y_test, y_pred)
 
@@ -429,15 +398,13 @@ def generate_model(
         mlflow.log_metric("explained_variance", ev)
         
         # write to las file
-        write_result = False
-        test_data = load_las_data([target_well], input_curves, wells_dir)
-        if test_data.size > 0:
-            curve_data = model.predict(test_data)
-            success = write_curve_to_las(target_well, target_curve, curve_data, wells_dir)
-            if success:
-                write_result = True
-        
-        mlflow.log_metric("saved_las_file", write_result)
+        write_success = False
+        target_input = load_las_data([target_well], input_curves, wells_dir)
+        if len(target_input) > 0:
+            predicted_curve = model.predict(target_input)
+            write_success = write_curve_to_las(target_well, target_curve, predicted_curve, wells_dir)
+
+        mlflow.log_metric("saved_las_file", int(write_success))
 
 def human_readable_diff(ms_diff: int) -> str:
     seconds_total = ms_diff // 1000
@@ -457,17 +424,42 @@ def human_readable_diff(ms_diff: int) -> str:
 
     return ' '.join(parts)
 
-def get_model_list(
-    target_curve: str,
-    target_well: str,
-    regression_model: str,
-    mlflow_uri: str,
-):
+def make_pseudo_log(
+        pseudo_log: str = '',
+        well: str = '',
+        logs: list[str] = [],
+        wells: list[str] = [],
+        regression_model: str = "random_forest",
+        params: dict = {},
+        mlflow_uri: str = "http://localhost:5000",
+        wells_dir: str = "data/wells",
+    ):
+
+    available_wells = [entry.name for entry in os.scandir(wells_dir) if entry.is_dir()]
+    well_names = [name for name in available_wells if name in wells] if wells else available_wells
+    well_names.sort()
+
+    if len(well_names) == 0:
+        raise Exception(f"No wells found for {wells}")
+    
+    if well not in available_wells:
+        raise Exception(f"No well {well} found")
+    
+    if len(logs) == 0:
+        raise Exception(f"No logs found")
+    
+    generate_model(pseudo_log, well, logs, well_names, regression_model, params, mlflow_uri, wells_dir)
+
+def get_training_result(
+        pseudo_log: str = '',
+        well: str = '',
+        regression_model: str = "random_forest",
+        mlflow_uri: str = "http://localhost:5000",
+    ):
     import mlflow
     from mlflow.tracking import MlflowClient
 
     client = MlflowClient()
-    experiment = client.get_experiment_by_name("Default")
     experiment = client.get_experiment_by_name("Default")
     if not experiment:
         raise ValueError("MLflow experiment 'Default' not found.")
@@ -514,7 +506,7 @@ def get_model_list(
             "RMSE": f'{data.metrics.get("rmse", 0):.4f}',
             "R² Score": f'{data.metrics.get("r2", 0):.4f}',
             "Evaluation Dashboard": f'<a href="{mlflow_uri}" target="_blank">View on MLflow</a>',
-            "Las File Saved": data.metrics.get("saved_las_file", "N/A"),
+            "Las File Saved": "yes" if data.metrics.get("saved_las_file") == 1 else "no",
         }])
         table = df.to_html(index=False, escape=False)
         result = template.replace("{{TABLE}}", table)
@@ -536,44 +528,3 @@ def get_model_list(
         durations,
         details
     )
-
-def make_pseudo_log(
-        pseudo_log: str = '',
-        well: str = '',
-        logs: list[str] = [],
-        wells: list[str] = [],
-        regression_model: str = "random_forest",
-        params: dict = {},
-        mlflow_uri: str = "http://localhost:5000",
-        wells_dir: str = "data/wells",
-    ):
-
-    available_wells = [entry.name for entry in os.scandir(wells_dir) if entry.is_dir()]
-    well_names = [name for name in available_wells if name in wells] if wells else available_wells
-    well_names.sort()
-
-    if len(well_names) == 0:
-        raise Exception(f"No wells found for {wells}")
-    
-    if well not in available_wells:
-        raise Exception(f"No well {well} found")
-    
-    if len(logs) == 0:
-        raise Exception(f"No logs found")
-    
-    generate_model(pseudo_log, well, logs, well_names, regression_model, params, mlflow_uri, wells_dir)
-
-def get_training_result(
-        pseudo_log: str = '',
-        well: str = '',
-        regression_model: str = "random_forest",
-        mlflow_uri: str = "http://localhost:5000",
-        wells_dir: str = "data/wells",
-    ):
-
-    available_wells = [entry.name for entry in os.scandir(wells_dir) if entry.is_dir()]
-    
-    if well not in available_wells:
-        raise Exception(f"No well {well} found")
-    
-    return get_model_list(pseudo_log, well, regression_model, mlflow_uri)

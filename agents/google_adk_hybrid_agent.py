@@ -716,7 +716,6 @@ class ToolExecutingAgentExecutor:
                     f"Executing create_pseudo_log '{pseudo_log}' for well '{well}'"
                     f"from logs {logs} in wells {wells} using model '{regression_model}' with '{params}'"
                 )
-
                 result = executor_instance._execute_mcp_tool(
                     'create_pseudo_log',
                     json.dumps({
@@ -728,7 +727,6 @@ class ToolExecutingAgentExecutor:
                         "params": params
                     })
                 )
-
                 return {"status": "success", "result": result}
 
             except Exception as e:
@@ -739,7 +737,7 @@ class ToolExecutingAgentExecutor:
         def view_training_result(
             tool_context: ToolContext,
             pseudo_log: str,
-            well: str, 
+            well: str,
             regression_model: str, 
         ) -> dict:
             """
@@ -750,8 +748,9 @@ class ToolExecutingAgentExecutor:
                 pseudo_log (str): Name of the pseudo log to evaluate.
                 well (str): The target well to generate pseudo log for.
                 regression_model (str): Name/type of the regression model used.
-                Returns:
-                    dict: Result of the training visualization or summary.
+
+            Returns:
+                dict: Result of the training visualization or summary.
             """
             try:
                 fname = inspect.stack()[0][3]  # Get the current function name for namespacing context
@@ -769,7 +768,6 @@ class ToolExecutingAgentExecutor:
                 executor_instance.logger.info(
                     f"Executing view_training_result for well: {_well}, pseudo_log: {_pseudo_log}, model: {_regression_model}"
                 )
-
                 result = executor_instance._execute_mcp_tool(
                     'view_training_result',
                     json.dumps({
@@ -892,7 +890,7 @@ class ToolExecutingAgentExecutor:
 
 # FORMAT OUTPUT FILE:
 Format any html file in output (e.g.: /path/to/file.html) with the following template: http://dashboard.portal:9999/path/to/file.html. Also embed it into an <iframe>
-Format the output containing URL http://dashboard.portal:5000 into an <iframe>
+Format the URL http://dashboard.portal:5000 into an <iframe>
 
 # EXAMPLES OF CORRECT BEHAVIOR:
 User: "list files *.las"
