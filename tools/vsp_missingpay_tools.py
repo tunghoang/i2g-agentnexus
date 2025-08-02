@@ -360,7 +360,7 @@ def create_missingpay_tools(mcp_server, data_config: DataConfig) -> List[str]:
                 "Model Name": model_names,
                 "Created": time_status,
                 "Status": status_list,
-                "Training Duration": durations,
+                "Running Duration": durations,
                 "Detail": details
             })
             table = df.to_html(index=False, escape=False)

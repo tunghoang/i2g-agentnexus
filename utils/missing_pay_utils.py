@@ -555,7 +555,6 @@ def get_training_result(
         run_duration = run_duration.split(" ")[0] if run_duration else "N/A"
         
         curve = data.params.get("target_curve", "N/A")
-        well = data.params.get("target_well", "N/A")
         input_curves = data.params.get("input_curves", [])
         input_wells = data.params.get("input_wells", [])
         model_params = data.params.get("model_params", {})
@@ -573,7 +572,6 @@ def get_training_result(
         df = pd.DataFrame([{
             "Model Name": run_name,
             "Target Curve": curve,
-            "For Well": well,
             "From Curves": input_curves,
             "From Wells": input_wells,
             "Model Type": model_type,
