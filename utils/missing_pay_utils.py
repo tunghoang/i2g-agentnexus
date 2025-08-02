@@ -462,7 +462,6 @@ def make_pseudo_log(
         if len(target_input) > 0:
             predicted_curve = model.predict(target_input)
             write_success = write_curve_to_las(target_well, input_curves, target_curve, predicted_curve, wells_dir)
-
         mlflow.log_metric("saved_las_file", int(write_success))
         
         # evaluation
@@ -501,7 +500,7 @@ def visualize_training_result(model, data: np.ndarray):
         mode='lines+markers', name='Validation Score'
     ))
     fig.update_layout(
-        title='Learning Curve (Random Forest)',
+        title='Learning Curve',
         xaxis_title='Training Set Size',
         yaxis_title='R² Score',
         template='plotly_white'
@@ -523,6 +522,7 @@ def get_training_result(
     experiment = client.get_experiment_by_name("Default")
     if not experiment:
         raise ValueError("MLflow experiment 'Default' not found.")
+
     model_name = f"{target_curve}_{target_well}_{regression_model}"
     runs = client.search_runs(
         experiment_ids=[experiment.experiment_id], 
