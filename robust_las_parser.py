@@ -43,6 +43,7 @@ class RobustLASFile:
         self.version = {}
         self.source_file = None
         self.parsing_method = None
+        self.las_obj = None
 
     @classmethod
     def from_lasio(cls, las_obj, file_path=None):
@@ -59,6 +60,8 @@ class RobustLASFile:
         obj = cls()
         obj.source_file = file_path
         obj.parsing_method = "lasio"
+        
+        obj.las_obj = las_obj
 
         # Copy well info
         obj.well_info = {item.mnemonic: item.value for item in las_obj.well}
@@ -225,6 +228,32 @@ class RobustLASFile:
                 return curve["data"]
 
         return np.array([])
+
+    def get_robust_curve_data(self, mnemonic: str) -> np.ndarray:
+        mapping = {
+            "GR": ["GR"],
+            "SP": ["SP"],
+            "Caliper": ["UCAV", "CALIPER", "CALI"],
+            "DeepRes": ["P40H", "LLD", "LLD", "RT", "BK"],
+            "MedRes": ["P22H", "P34H"],
+            "ShalRes": ["P16H", "LLS"],
+            "MicroRes": ["MSFL", "RXO"],
+            "Density": ["ROBB", "RHOB"],
+            "Neutron": ["TNPH", "NPHI"],
+            "Sonic": ["DT"],
+            "PE": ["PE"]
+        }
+
+        target = mnemonic.upper()
+
+        for key, values in mapping.items():
+            if target == key.upper() or key in values:
+                for value in values:
+                    data = self.get_curve_data(value)
+                    if data is not None and len(data) > 0:
+                        return data 
+
+        return np.array([]) 
 
     def curve_exists(self, mnemonic):
         """Check if a curve exists"""

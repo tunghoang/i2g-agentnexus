@@ -224,7 +224,7 @@ def get_well_checklist_curves(
     )
 
 
-def read_curves_from_las(well_name: str, curve_names: list[str], wells_dir: str) -> np.ndarray | None:
+def read_curves_from_las(well_name: str, curves: list[str], wells_dir: str) -> np.ndarray | None:
     las_dir = os.path.join(wells_dir, well_name, "GIS", "Las")
     las_files = [
         f.path for f in os.scandir(las_dir)
@@ -238,27 +238,27 @@ def read_curves_from_las(well_name: str, curve_names: list[str], wells_dir: str)
     if las is None:
         raise Exception(f"Error parsing las file {las_file_path}: {error}")
     
-    las_curves = las.get_curve_names()
     data = []
-    for curve_name in curve_names:
-        if curve_name is None:
-            continue
-        matched_curve = next(
-            (las_curve for las_curve in las_curves if curve_name.upper() in las_curve.upper()),
-            None
-        )
-        if not matched_curve:
-            return None
-        data.append(las.get_curve_data(matched_curve))
+    for curve in curves:
+        curve_data = las.get_robust_curve_data(curve)
+        if len(curve_data) > 0:
+            data.append(curve_data)
 
-    if len(data) == 0:
+    if len(data) != len(curves):
         return None
 
     stacked = np.vstack(data).T
     valid_mask = ~np.isnan(stacked).any(axis=1)
     return stacked[valid_mask]
 
-def write_curve_to_las(well_name: str, curve_name: str, curve_data: np.ndarray, wells_dir: str) -> bool:
+def write_curve_to_las(
+        well_name: str, 
+        curves: list[str], 
+        curve_name: str, 
+        curve_data: np.ndarray, 
+        wells_dir: str
+    ) -> bool:
+
     las_dir = os.path.join(wells_dir, well_name, "GIS", "Las")
     las_files = [
         f.path for f in os.scandir(las_dir)
@@ -268,26 +268,48 @@ def write_curve_to_las(well_name: str, curve_name: str, curve_data: np.ndarray, 
         raise FileNotFoundError(f"No las files found")
 
     las_file_path = las_files[0]
-    try:
-        las = lasio.read(las_file_path)
-    except:
-        raise Exception(f"Error parsing las file {las_file_path}")
+    las, error = load_las_file(las_file_path)
+    if las is None:
+        raise Exception(f"Error parsing las file {las_file_path}: {error}")
+
+    data = []
+    for curve in curves:
+        curve_data = las.get_robust_curve_data(curve)
+        if len(curve_data) > 0:
+            data.append(curve_data)
+
+    if len(data) != len(curves) or len(data) == 0:
+        return False
+
+    stacked = np.vstack(data).T
+    masks = ~np.isnan(stacked).any(axis=1)
+    full_curve_data = np.full(len(masks), np.nan)
+    j = 0
+
+    for (i, mask) in enumerate(masks):
+        if j >= len(curve_data):
+            break
+        if not mask:
+            continue
+        full_curve_data[i] = curve_data[j]
+        j += 1
+
+    if not las.las_obj:
+        return False
+
+    las_obj = las.las_obj
     
-    matched_curve = next(
-        (curve.mnemonic for curve in las.curves if curve_name.upper() in curve.mnemonic.upper()),
-        None
-    )
-    if matched_curve:
-        las[curve_name] = curve_data
+    if las.curve_exists(curve_name):
+        las_obj[curve_name] = full_curve_data
     else:
-        las.curves.append(lasio.CurveItem(mnemonic=curve_name, data=curve_data, descr="Predicted curve"))
+        las_obj.curves.append(lasio.CurveItem(mnemonic=curve_name, data=full_curve_data, descr="Predicted curve"))
 
     output_path = os.path.join(las_dir, "pseudo_log", f"{curve_name}.las")
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
-    las.write(output_path)
+    las_obj.write(output_path)
     return True
 
-def load_las_data(wells: list[str], curves: list[str], wells_dir: str) -> np.ndarray:
+def prepare_las_training_data(wells: list[str], curves: list[str], wells_dir: str) -> np.ndarray:
     all_data = []
     for well in wells:
         data = read_curves_from_las(well, curves, wells_dir)
@@ -334,18 +356,53 @@ def train_model(x_train: np.ndarray, y_train: np.ndarray, regression_model: str,
     model.fit(x_train, y_train)
     return model
     
-def generate_model(
-    target_curve: str,
-    target_well: str,
-    input_curves: list[str],
-    wells: list[str],
-    regression_model: str,
-    params: dict,
-    mlflow_uri: str,
-    wells_dir: str,
-):
+def human_readable_diff(start_time: datetime, end_time: datetime) -> str:
+    if not start_time or not end_time:
+        return ""
+
+    seconds_total = int((end_time - start_time).total_seconds())
+    minutes, seconds = divmod(seconds_total, 60)
+    hours, minutes = divmod(minutes, 60)
+    days, hours = divmod(hours, 24)
+
+    parts = []
+    if days:
+        parts.append(f"{days}d")
+    if hours:
+        parts.append(f"{hours}h")
+    if minutes:
+        parts.append(f"{minutes}m")
+    if seconds or not parts:
+        parts.append(f"{seconds}s")
+
+    return ' '.join(parts)
+
+def make_pseudo_log(
+        target_curve: str = '',
+        target_well: str = '',
+        input_curves: list[str] = [],
+        wells: list[str] = [],
+        regression_model: str = "random_forest",
+        params: dict = {},
+        mlflow_uri: str = "http://localhost:5000",
+        wells_dir: str = "data/wells",
+    ):
+
+    available_wells = [entry.name for entry in os.scandir(wells_dir) if entry.is_dir()]
+    selected_wells = [name for name in available_wells if name in wells] if wells else available_wells
+    selected_wells.sort()
+
+    if len(selected_wells) == 0:
+        raise Exception(f"No wells {wells} found")
+    
+    if target_well not in available_wells:
+        raise Exception(f"No well {target_well} found")
+    
+    if len(input_curves) == 0:
+        raise Exception(f"No curves {input_curves} found")
+    
     import mlflow
-    model_name = f"{target_well}_{target_curve}_{regression_model}"
+    model_name = f"{target_curve}_{target_well}_{regression_model}"
     mlflow.set_tracking_uri(mlflow_uri)
 
     with mlflow.start_run(run_name=model_name):
@@ -356,7 +413,7 @@ def generate_model(
         mlflow.log_param("model_params", params)
 
         curves = [c for c in input_curves if c != target_curve] + [target_curve]
-        data = load_las_data(wells, curves, wells_dir) 
+        data = prepare_las_training_data(wells, curves, wells_dir) 
         if len(data) == 0:
             raise ValueError(f"No valid data found for {curves} in wells {wells}")
         
@@ -381,11 +438,13 @@ def generate_model(
         x_test = testing_data[:, :-1]
         y_test = testing_data[:, -1]
         y_pred = model.predict(x_test)
+
         mse = mean_squared_error(y_test, y_pred)
         rmse = np.sqrt(mse)
         r2 = r2_score(y_test, y_pred)
         mae = mean_absolute_error(y_test, y_pred)
-        mape = mean_absolute_percentage_error(y_test, y_pred) * 100
+        mask = y_test != 0
+        mape = mean_absolute_percentage_error(y_test[mask], y_pred[mask]) * 100
         max_err = max_error(y_test, y_pred)
         ev = explained_variance_score(y_test, y_pred)
 
@@ -399,60 +458,17 @@ def generate_model(
         
         # write to las file
         write_success = False
-        target_input = load_las_data([target_well], input_curves, wells_dir)
+        target_input = prepare_las_training_data([target_well], input_curves, wells_dir)
+
         if len(target_input) > 0:
             predicted_curve = model.predict(target_input)
-            write_success = write_curve_to_las(target_well, target_curve, predicted_curve, wells_dir)
+            write_success = write_curve_to_las(target_well, input_curves, target_curve, predicted_curve, wells_dir)
 
         mlflow.log_metric("saved_las_file", int(write_success))
 
-def human_readable_diff(ms_diff: int) -> str:
-    seconds_total = ms_diff // 1000
-    minutes, seconds = divmod(seconds_total, 60)
-    hours, minutes = divmod(minutes, 60)
-    days, hours = divmod(hours, 24)
-
-    parts = []
-    if days:
-        parts.append(f"{days}d")
-    if hours:
-        parts.append(f"{hours}h")
-    if minutes:
-        parts.append(f"{minutes}m")
-    if seconds or not parts:
-        parts.append(f"{seconds}s")
-
-    return ' '.join(parts)
-
-def make_pseudo_log(
-        pseudo_log: str = '',
-        well: str = '',
-        logs: list[str] = [],
-        wells: list[str] = [],
-        regression_model: str = "random_forest",
-        params: dict = {},
-        mlflow_uri: str = "http://localhost:5000",
-        wells_dir: str = "data/wells",
-    ):
-
-    available_wells = [entry.name for entry in os.scandir(wells_dir) if entry.is_dir()]
-    well_names = [name for name in available_wells if name in wells] if wells else available_wells
-    well_names.sort()
-
-    if len(well_names) == 0:
-        raise Exception(f"No wells found for {wells}")
-    
-    if well not in available_wells:
-        raise Exception(f"No well {well} found")
-    
-    if len(logs) == 0:
-        raise Exception(f"No logs found")
-    
-    generate_model(pseudo_log, well, logs, well_names, regression_model, params, mlflow_uri, wells_dir)
-
 def get_training_result(
-        pseudo_log: str = '',
-        well: str = '',
+        target_curve: str = '',
+        target_well: str = '',
         regression_model: str = "random_forest",
         mlflow_uri: str = "http://localhost:5000",
     ):
@@ -463,7 +479,7 @@ def get_training_result(
     experiment = client.get_experiment_by_name("Default")
     if not experiment:
         raise ValueError("MLflow experiment 'Default' not found.")
-    model_name = f"{target_well}_{target_curve}_{regression_model}"
+    model_name = f"{target_curve}_{target_well}_{regression_model}"
     runs = client.search_runs(
         experiment_ids=[experiment.experiment_id], 
         filter_string=f"tags.mlflow.runName='{model_name}'",
@@ -484,16 +500,15 @@ def get_training_result(
         out_file_path = f"{idx}_training_result_report.html"
         data = run.data
         run_name = run.info.run_name or "N/A"
+        run_status = run.info.status
         
         start_time = datetime.fromtimestamp(run.info.start_time / 1000.0)
-        end_time = datetime.fromtimestamp(run.info.end_time / 1000.0)
+        end_time = datetime.fromtimestamp(run.info.end_time / 1000.0) if run.info.end_time else None
         now = datetime.now()
-        elapsed_since_start_ms = int((now - start_time).total_seconds() * 1000)
-        run_duration_ms = int((end_time - start_time).total_seconds() * 1000)
-        
-        time_since_run = human_readable_diff(elapsed_since_start_ms).split(" ")[0] + " ago"
-        run_duration = human_readable_diff(run_duration_ms).split(" ")[0]
-        run_status = run.info.status
+        time_since_run = human_readable_diff(start_time, now)
+        time_since_run = time_since_run.split(" ")[0] + " ago" if time_since_run else "N/A"
+        run_duration = human_readable_diff(start_time, end_time)
+        run_duration = run_duration.split(" ")[0] if run_duration else "N/A"
         
         df = pd.DataFrame([{
             "Model Name": run_name,
