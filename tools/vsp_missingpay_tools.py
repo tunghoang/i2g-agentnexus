@@ -342,7 +342,7 @@ def create_missingpay_tools(mcp_server, data_config: DataConfig) -> List[str]:
             pseudo_log: str = input_data.get("pseudo_log")
             well: str = input_data.get("well")
             regression_model: str = input_data.get("regression_model")
-            mlflow_uri = "http://dashboard.portal:5000"
+            mlflow_uri = "http://localhost:5000"
 
             out_file_relative_path = os.path.join(
                 f"training_result_report.html"

@@ -426,30 +426,30 @@ def make_pseudo_log(
         x_train = training_data[:, :-1]
         y_train = training_data[:, -1]
         model = train_model(x_train, y_train, regression_model, **params)
-        mlflow.sklearn.log_model(model, name=model_name, input_example=x_train[:1])
+        mlflow.sklearn.log_model(model, name=model_name, input_example=x_train[:5])
 
         # log metrics
         from sklearn.metrics import (
             mean_squared_error, r2_score,
             mean_absolute_percentage_error,
             mean_absolute_error, max_error,
-            explained_variance_score
+            explained_variance_score,
         )
         x_test = testing_data[:, :-1]
         y_test = testing_data[:, -1]
         y_pred = model.predict(x_test)
 
+        mask = y_test != 0
         mse = mean_squared_error(y_test, y_pred)
         rmse = np.sqrt(mse)
-        r2 = r2_score(y_test, y_pred)
         mae = mean_absolute_error(y_test, y_pred)
-        mask = y_test != 0
         mape = mean_absolute_percentage_error(y_test[mask], y_pred[mask]) * 100
         max_err = max_error(y_test, y_pred)
+        r2 = r2_score(y_test, y_pred)
         ev = explained_variance_score(y_test, y_pred)
 
-        mlflow.log_metric("rmse", rmse)
         mlflow.log_metric("mse", mse)
+        mlflow.log_metric("rmse", rmse)
         mlflow.log_metric("mae", mae)
         mlflow.log_metric("mape", mape)
         mlflow.log_metric("max_error", max_err)
@@ -475,6 +475,7 @@ def get_training_result(
     import mlflow
     from mlflow.tracking import MlflowClient
 
+    mlflow.set_tracking_uri(mlflow_uri)
     client = MlflowClient()
     experiment = client.get_experiment_by_name("Default")
     if not experiment:
@@ -510,17 +511,21 @@ def get_training_result(
         run_duration = human_readable_diff(start_time, end_time)
         run_duration = run_duration.split(" ")[0] if run_duration else "N/A"
         
+        input_curves = data.params.get("input_curves", [])
+        input_wells = data.params.get("input_wells", [])
+        dashboard_uri = mlflow_uri.replace("localhost", "dashboard.portal")
+
         df = pd.DataFrame([{
             "Model Name": run_name,
             "Target Curve": data.params.get("target_curve", "N/A"),
-            "From Curves": data.params.get("input_curves", []),
-            "From Wells": data.params.get("input_wells", []),
+            "From Curves": input_curves,
+            "From Wells": input_wells,
             "Model Type": data.params.get("regression_model", "N/A"),
             "Params": data.params.get("model_params", {}),
             "MAPE (%)": f'{data.metrics.get("mape", 0):.2f}',
             "RMSE": f'{data.metrics.get("rmse", 0):.4f}',
             "R² Score": f'{data.metrics.get("r2", 0):.4f}',
-            "Evaluation Dashboard": f'<a href="{mlflow_uri}" target="_blank">View on MLflow</a>',
+            "Evaluation Dashboard": f'<a href="{dashboard_uri}" target="_blank">View on MLflow</a>',
             "Las File Saved": "yes" if data.metrics.get("saved_las_file") == 1 else "no",
         }])
         table = df.to_html(index=False, escape=False)
