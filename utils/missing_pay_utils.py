@@ -417,14 +417,14 @@ def make_pseudo_log(
         if len(data) == 0:
             raise ValueError(f"No valid data found for {curves} in wells {wells}")
         
-        split_index = int(len(data) * 0.8)
-        training_data = data[:split_index]
-        testing_data = data[split_index:]
-        if len(training_data) == 0 or len(testing_data) == 0:
-            raise ValueError(f"Insufficient data for training")
-
-        x_train = training_data[:, :-1]
-        y_train = training_data[:, -1]
+        if len(data) < 10:
+            raise ValueError(f"Insufficient data to train a model: only {len(data)} samples found")
+        
+        from sklearn.model_selection import train_test_split
+        train_data, test_data = train_test_split(data, test_size=0.2, random_state=42, shuffle=True)
+        
+        x_train = train_data[:, :-1]
+        y_train = train_data[:, -1]
         model = train_model(x_train, y_train, regression_model, **params)
         mlflow.sklearn.log_model(model, name=model_name, input_example=x_train[:5])
 
@@ -435,8 +435,8 @@ def make_pseudo_log(
             mean_absolute_error, max_error,
             explained_variance_score,
         )
-        x_test = testing_data[:, :-1]
-        y_test = testing_data[:, -1]
+        x_test = test_data[:, :-1]
+        y_test = test_data[:, -1]
         y_pred = model.predict(x_test)
 
         mask = y_test != 0
