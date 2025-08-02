@@ -367,7 +367,7 @@ def create_missingpay_tools(mcp_server, data_config: DataConfig) -> List[str]:
             with open("templates/training_result_report_tpl.html", "r") as tpl_file:
                 template = tpl_file.read()
 
-            result = template.replace("{{TABLE}}", table)
+            result = template.replace("{{TABLE}}", table).replace("{{PLOT}}", "")
 
             with open(out_file_path, "w") as output_file:
                 output_file.write(result)

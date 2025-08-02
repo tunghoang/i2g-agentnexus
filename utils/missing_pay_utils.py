@@ -456,21 +456,20 @@ def make_pseudo_log(
         mlflow.log_metric("r2", r2)
         mlflow.log_metric("explained_variance", ev)
 
-        # save evaluation plot
-        #fig = visualize_training_result(model, data)
-        #out_html = os.path.join("/tmp", "plot.html")
-        #fig.write_html(out_html)
-        #mlflow.log_artifact(out_html, artifact_path="plots")
-        
         # write to las file
         write_success = False
         target_input = prepare_las_training_data([target_well], input_curves, wells_dir)
-
         if len(target_input) > 0:
             predicted_curve = model.predict(target_input)
             write_success = write_curve_to_las(target_well, input_curves, target_curve, predicted_curve, wells_dir)
 
         mlflow.log_metric("saved_las_file", int(write_success))
+        
+        # evaluation
+        fig = visualize_training_result(model, data)
+        out_html = os.path.join("/tmp", "plot.html")
+        fig.write_html(out_html)
+        mlflow.log_artifact(out_html, artifact_path="plots")
 
 def visualize_training_result(model, data: np.ndarray):
     from sklearn.model_selection import learning_curve
@@ -555,25 +554,45 @@ def get_training_result(
         run_duration = human_readable_diff(start_time, end_time)
         run_duration = run_duration.split(" ")[0] if run_duration else "N/A"
         
+        curve = data.params.get("target_curve", "N/A")
+        well = data.params.get("target_well", "N/A")
         input_curves = data.params.get("input_curves", [])
         input_wells = data.params.get("input_wells", [])
+        model_params = data.params.get("model_params", {})
+        model_type = data.params.get("regression_model", "N/A")
+        mape_value = data.metrics.get("mape")
+        mape = f"{mape_value:.2f}" if mape_value is not None else "N/A"
+        rmse_value = data.metrics.get("rmse")
+        rmse = f"{rmse_value:.4f}" if rmse_value is not None else "N/A"
+        r2_value = data.metrics.get("r2")
+        r2 = f"{r2_value:.4f}" if r2_value is not None else "N/A"
         dashboard_uri = mlflow_uri.replace("localhost", "dashboard.portal")
+        dashboard = f'<a href="{dashboard_uri}" target="_blank">View on MLflow</a>'
+        las_saved = "yes" if data.metrics.get("saved_las_file") == 1 else "no"
 
         df = pd.DataFrame([{
             "Model Name": run_name,
-            "Target Curve": data.params.get("target_curve", "N/A"),
+            "Target Curve": curve,
+            "For Well": well,
             "From Curves": input_curves,
             "From Wells": input_wells,
-            "Model Type": data.params.get("regression_model", "N/A"),
-            "Params": data.params.get("model_params", {}),
-            "MAPE (%)": f'{data.metrics.get("mape", 0):.2f}',
-            "RMSE": f'{data.metrics.get("rmse", 0):.4f}',
-            "R² Score": f'{data.metrics.get("r2", 0):.4f}',
-            "Evaluation Dashboard": f'<a href="{dashboard_uri}" target="_blank">View on MLflow</a>',
-            "Las File Saved": "yes" if data.metrics.get("saved_las_file") == 1 else "no",
+            "Model Type": model_type,
+            "Params": model_params,
+            "MAPE (%)": mape,
+            "RMSE": rmse,
+            "R² Score": r2,
+            "Evaluation Dashboard": dashboard,
+            "Las File Saved": las_saved
         }])
         table = df.to_html(index=False, escape=False)
-        result = template.replace("{{TABLE}}", table)
+        plot_path = f"mlartifacts/0/{run.info.run_id}/artifacts/plots/plot.html"
+        if os.path.isfile(plot_path):
+            with open(plot_path, "r") as f:
+                plot = f.read()
+        else:
+            plot = "Evaluating..."
+
+        result = template.replace("{{TABLE}}", table).replace("{{PLOT}}", plot)
         with open(os.path.join("/tmp", out_file_path), "w") as output_file:
             output_file.write(result)
 
@@ -582,7 +601,7 @@ def get_training_result(
         status_list.append(run_status)
         durations.append(run_duration)
         details.append(
-            f'<a href="{out_file_path}" target="_blank">view</a>' if run_status == "FINISHED" else "N/A"
+            f'<a href="{out_file_path}" target="_blank">view</a>' #if run_status == "FINISHED" else "N/A"
         )
 
     return (
