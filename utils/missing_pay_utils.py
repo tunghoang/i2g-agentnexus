@@ -455,6 +455,12 @@ def make_pseudo_log(
         mlflow.log_metric("max_error", max_err)
         mlflow.log_metric("r2", r2)
         mlflow.log_metric("explained_variance", ev)
+
+        # save evaluation plot
+        #fig = visualize_training_result(model, data)
+        #out_html = os.path.join("/tmp", "plot.html")
+        #fig.write_html(out_html)
+        #mlflow.log_artifact(out_html, artifact_path="plots")
         
         # write to las file
         write_success = False
@@ -465,6 +471,44 @@ def make_pseudo_log(
             write_success = write_curve_to_las(target_well, input_curves, target_curve, predicted_curve, wells_dir)
 
         mlflow.log_metric("saved_las_file", int(write_success))
+
+def visualize_training_result(model, data: np.ndarray):
+    from sklearn.model_selection import learning_curve
+    import plotly.graph_objects as go
+
+    x, y = data[:, :-1], data[:, -1]
+    train_sizes, train_scores, val_scores = learning_curve(
+        model, x, y,
+        cv=3,
+        scoring='r2',
+        train_sizes=np.linspace(0.1, 1.0, 5),
+        shuffle=True,
+        random_state=42
+    )
+    train_mean = np.mean(train_scores, axis=1)
+    train_std = np.std(train_scores, axis=1)
+    val_mean = np.mean(val_scores, axis=1)
+    val_std = np.std(val_scores, axis=1)
+    
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(
+        x=train_sizes, y=train_mean,
+        error_y=dict(type='data', array=train_std),
+        mode='lines+markers', name='Training Score'
+    ))
+    fig.add_trace(go.Scatter(
+        x=train_sizes, y=val_mean,
+        error_y=dict(type='data', array=val_std),
+        mode='lines+markers', name='Validation Score'
+    ))
+    fig.update_layout(
+        title='Learning Curve (Random Forest)',
+        xaxis_title='Training Set Size',
+        yaxis_title='R² Score',
+        template='plotly_white'
+    )
+    return fig
+
 
 def get_training_result(
         target_curve: str = '',
