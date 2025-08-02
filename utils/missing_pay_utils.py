@@ -541,7 +541,6 @@ def get_training_result(
         template = tpl_file.read()
 
     for idx, run in enumerate(runs):
-        out_file_path = f"{idx}_training_result_report.html"
         data = run.data
         run_name = run.info.run_name or "N/A"
         run_status = run.info.status
@@ -590,8 +589,9 @@ def get_training_result(
         else:
             plot = "Evaluating..."
 
+        out_file = f"{idx}_training_result_report.html"
         result = template.replace("{{TABLE}}", table).replace("{{PLOT}}", plot)
-        with open(os.path.join("/tmp", out_file_path), "w") as output_file:
+        with open(os.path.join("/tmp", out_file), "w") as output_file:
             output_file.write(result)
 
         model_names.append(run_name)
@@ -599,7 +599,7 @@ def get_training_result(
         status_list.append(run_status)
         durations.append(run_duration)
         details.append(
-            f'<a href="{out_file_path}" target="_blank">view</a>' #if run_status == "FINISHED" else "N/A"
+            f'<a href="{out_file}" target="_blank">view</a>' #if run_status == "FINISHED" else "N/A"
         )
 
     return (
