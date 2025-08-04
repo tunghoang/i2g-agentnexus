@@ -1,8 +1,9 @@
 import os
 import numpy as np
 import json
-from glob import glob, iglob
+import time
 import traceback
+from glob import glob, iglob
 from datetime import datetime
 from typing import List, Dict, Any
 from config.settings import DataConfig
@@ -319,15 +320,45 @@ def create_missingpay_tools(mcp_server, data_config: DataConfig) -> List[str]:
             params: dict = input_data.get("params")
             mlflow_uri = "http://localhost:5000"
 
+            # start training
             process = Process(
                 target=make_pseudo_log,
                 args=(pseudo_log, well, logs, wells, regression_model, params, mlflow_uri)
             )
             process.start()
+
+            # trick: wait for training process to init
+            time.sleep(1)
             
-            return {
-                "text": 'Done. Type <br>View training result</br> to check the results'
-            }
+            # view training result
+            out_file_relative_path = os.path.join(
+                f"training_result_report.html"
+            )
+            out_file_path = os.path.join("/tmp", out_file_relative_path)
+            (
+                model_names,
+                time_status,
+                status_list,
+                durations,
+                details
+            ) = get_training_result(pseudo_log, well, regression_model, mlflow_uri)
+
+            df = pd.DataFrame(data={
+                "Model Name": model_names,
+                "Created": time_status,
+                "Status": status_list,
+                "Running Duration": durations,
+                "Detail": details
+            })
+            table = df.to_html(index=False, escape=False)
+            with open("templates/training_result_report_tpl.html", "r") as tpl_file:
+                template = tpl_file.read()
+
+            result = template.replace("{{TABLE}}", table).replace("{{PLOT}}", "")
+            with open(out_file_path, "w") as output_file:
+                output_file.write(result)
+
+            return {"text": out_file_relative_path}
         except Exception as e:
             traceback.print_exc()
             return {"text": f"Tool failed: {str(e)}"}
@@ -348,7 +379,6 @@ def create_missingpay_tools(mcp_server, data_config: DataConfig) -> List[str]:
                 f"training_result_report.html"
             )
             out_file_path = os.path.join("/tmp", out_file_relative_path)
-
             (
                 model_names,
                 time_status,
@@ -356,6 +386,7 @@ def create_missingpay_tools(mcp_server, data_config: DataConfig) -> List[str]:
                 durations,
                 details
             ) = get_training_result(pseudo_log, well, regression_model, mlflow_uri)
+
             df = pd.DataFrame(data={
                 "Model Name": model_names,
                 "Created": time_status,
@@ -368,7 +399,6 @@ def create_missingpay_tools(mcp_server, data_config: DataConfig) -> List[str]:
                 template = tpl_file.read()
 
             result = template.replace("{{TABLE}}", table).replace("{{PLOT}}", "")
-
             with open(out_file_path, "w") as output_file:
                 output_file.write(result)
 
