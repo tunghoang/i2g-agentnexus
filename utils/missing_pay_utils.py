@@ -4,7 +4,7 @@ import lasio
 import numpy as np
 import pandas as pd
 
-from datetime import datetime
+from datetime import datetime, timedelta
 from naming import Naming
 from robust_las_parser import load_las_file
 from xlsx_utils import XLSX
@@ -512,19 +512,54 @@ def visualize_training_result(model, data: np.ndarray):
     return fig
 
 
+def hours_ago_to_filter(hours: float) -> str:
+    now = datetime.utcnow()
+    start_time = now - timedelta(hours=hours)
+    start_timestamp_ms = int(start_time.timestamp() * 1000)
+    return f"attribute.start_time >= {start_timestamp_ms}"
+
+def normalize_filter_expr(expr: str) -> str:
+    import re
+    alias_map = {
+        "loss": "mape",
+        "accuracy": "r2",
+    }
+    metric_fields = ["r2", "mape", "rmse"]
+
+    for alias, actual in alias_map.items():
+        expr = re.sub(rf"\b(?<!\.){alias}\b", actual, expr)
+
+    for field in metric_fields:
+        expr = re.sub(rf"\b(?<!\.){field}\b", f"metrics.{field}", expr)
+
+    return expr
+
+
 def make_filter_params(
     target_curve: str, 
     target_well: str, 
     model_type: str, 
+    hours: int, 
+    filter_expr: str, 
 ) -> str:
+    
     filter_params = []
+    
     if target_curve:
         filter_params.append(f"params.target_curve = '{target_curve}'")
+    
     if target_well:
         filter_params.append(f"params.target_well = '{target_well}'")
+    
     if model_type:
         filter_params.append(f"params.model_type = '{model_type}'")
-
+    
+    if hours:
+        filter_params.append(hours_ago_to_filter(hours))
+    
+    if filter_expr:
+        filter_params.append(normalize_filter_expr(filter_expr))
+    
     return " and ".join(filter_params)
         
 
@@ -532,13 +567,15 @@ def get_training_result(
         target_curve: str = '',
         target_well: str = '',
         model_type: str = '',
+        hours: int = 0,
+        filter_expr: str = '',
     ):
     client = MlflowClient()
     experiment = client.get_experiment_by_name("Default")
     if not experiment:
         raise ValueError("MLflow experiment 'Default' not found.")
 
-    filter_params = make_filter_params(target_curve, target_well, model_type)
+    filter_params = make_filter_params(target_curve, target_well, model_type, hours, filter_expr)
     runs = client.search_runs(
         experiment_ids=[experiment.experiment_id], 
         filter_string=filter_params,
