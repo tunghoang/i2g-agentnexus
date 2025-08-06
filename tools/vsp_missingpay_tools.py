@@ -348,10 +348,10 @@ def create_missingpay_tools(mcp_server, data_config: DataConfig) -> List[str]:
             target_curve: str = input_data.get("target_curve")
             target_well: str = input_data.get("target_well")
             model_type: str = input_data.get("model_type")
-            hours: int = input_data.get("hours")
+            seconds: int = input_data.get("seconds")
             filter_expr: str = input_data.get("filter_expr")
 
-            out_file_relative_path = get_training_result(target_curve, target_well, model_type, hours, filter_expr)
+            out_file_relative_path = get_training_result(target_curve, target_well, model_type, seconds, filter_expr)
 
             return {"text": out_file_relative_path}
         except Exception as e:

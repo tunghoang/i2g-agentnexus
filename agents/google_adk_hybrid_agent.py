@@ -789,11 +789,12 @@ class ToolExecutingAgentExecutor:
             target_curve: str = '',
             target_well: str = '',
             model_type: str = '', 
-            hours: int = 0, 
+            seconds: int = 0, 
             filter_expr: str = '', 
         ) -> dict:
             """
-            View training experiments of a curve for a well using a machine learning model with a time range specified in hours ago and a filter expression.
+            View training experiments of a curve for a well using a machine learning model 
+            with a time range specified in miliseconds ago and a filter expression.
 
             Args:
                 target_curve (str, optional): Name of the curve to evaluate.
@@ -804,13 +805,13 @@ class ToolExecutingAgentExecutor:
                         - 'random_forest' for Random Forest Regressor
                         - 'neural_network' for Multi-layer Perceptron Regressor
                 
-                hours (int, optional): Time since experiment creation (in hours)
+                seconds (int, optional): Time since experiment creation, in seconds.  
+                    Used to normalize relative time expressions (e.g., "last minutes", "last days", "last years") to a common unit: seconds.
 
                 filter_expr (str, optional): A filter expression to filter experiments.
                     Supported fields:
                         - r2 (accuracy): R-squared
                         - mape, rmse (loss): MAPE, RMSE 
-                        - hour_time: Time since experiment creation (in hours)
 
                      Examples:
                         - "r2 > 0.85 and loss < 10"
@@ -823,7 +824,7 @@ class ToolExecutingAgentExecutor:
             try:
                 executor_instance.logger.info(
                     f"Executing view_training_experiment of curve {target_curve} for well {target_well} "
-                    f"using model {model_type}, filtering last {hours} hours ago with expression {filter_expr}"
+                    f"using model {model_type}, filtering last {seconds} seconds with expression {filter_expr}"
                 )
                 result = executor_instance._execute_mcp_tool(
                     'view_training_experiment',
@@ -831,7 +832,7 @@ class ToolExecutingAgentExecutor:
                         "target_curve": target_curve,
                         "target_well": target_well,
                         "model_type": model_type,
-                        "hours": hours,
+                        "seconds": seconds,
                         "filter_expr": filter_expr,
                     })
                 )

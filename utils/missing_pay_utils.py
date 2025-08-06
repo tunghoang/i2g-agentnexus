@@ -4,7 +4,7 @@ import lasio
 import numpy as np
 import pandas as pd
 
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from naming import Naming
 from robust_las_parser import load_las_file
 from xlsx_utils import XLSX
@@ -364,24 +364,26 @@ def train_model(x_train: np.ndarray, y_train: np.ndarray, model_type: str, **kwa
     
 def human_readable_diff(start_time: datetime, end_time: datetime) -> str:
     if not start_time or not end_time:
-        return ""
+        return "N/A"
 
-    seconds_total = int((end_time - start_time).total_seconds())
+    delta = end_time - start_time
+    if delta.days > 3:
+        utc7 = timezone(timedelta(hours=7))
+        return start_time.astimezone(utc7).strftime("%d/%m/%Y, %I:%M:%S %p")
+
+    seconds_total = int(delta.total_seconds())
     minutes, seconds = divmod(seconds_total, 60)
     hours, minutes = divmod(minutes, 60)
     days, hours = divmod(hours, 24)
 
-    parts = []
     if days:
-        parts.append(f"{days}d")
+        return f"{days} days ago"
     if hours:
-        parts.append(f"{hours}h")
+        return f"{hours} hours ago"
     if minutes:
-        parts.append(f"{minutes}m")
-    if seconds or not parts:
-        parts.append(f"{seconds}s")
-
-    return ' '.join(parts)
+        return f"{minutes} minutes ago"
+    
+    return f"{seconds} seconds ago"
 
 def make_pseudo_log(
         target_curve: str = '',
@@ -512,12 +514,6 @@ def visualize_training_result(model, data: np.ndarray):
     return fig
 
 
-def hours_ago_to_filter(hours: float) -> str:
-    now = datetime.utcnow()
-    start_time = now - timedelta(hours=hours)
-    start_timestamp_ms = int(start_time.timestamp() * 1000)
-    return f"attribute.start_time >= {start_timestamp_ms}"
-
 def normalize_filter_expr(expr: str) -> str:
     import re
     alias_map = {
@@ -534,12 +530,15 @@ def normalize_filter_expr(expr: str) -> str:
 
     return expr
 
+def seconds_ago_to_timestamp(seconds_ago: int) -> int:
+    dt = datetime.now() - timedelta(seconds=seconds_ago)
+    return int(dt.timestamp()) * 1000
 
 def make_filter_params(
     target_curve: str, 
     target_well: str, 
     model_type: str, 
-    hours: int, 
+    seconds: int, 
     filter_expr: str, 
 ) -> str:
     
@@ -554,8 +553,8 @@ def make_filter_params(
     if model_type:
         filter_params.append(f"params.model_type = '{model_type}'")
     
-    if hours:
-        filter_params.append(hours_ago_to_filter(hours))
+    if seconds:
+        filter_params.append(f"attributes.start_time >= {seconds_ago_to_timestamp(seconds)}")
     
     if filter_expr:
         filter_params.append(normalize_filter_expr(filter_expr))
@@ -567,7 +566,7 @@ def get_training_result(
         target_curve: str = '',
         target_well: str = '',
         model_type: str = '',
-        hours: int = 0,
+        seconds: int = 0,
         filter_expr: str = '',
     ):
     client = MlflowClient()
@@ -575,7 +574,7 @@ def get_training_result(
     if not experiment:
         raise ValueError("MLflow experiment 'Default' not found.")
 
-    filter_params = make_filter_params(target_curve, target_well, model_type, hours, filter_expr)
+    filter_params = make_filter_params(target_curve, target_well, model_type, seconds, filter_expr)
     runs = client.search_runs(
         experiment_ids=[experiment.experiment_id], 
         filter_string=filter_params,
@@ -621,12 +620,7 @@ def get_training_result(
         run_status = run.info.status
         
         start_time = datetime.fromtimestamp(run.info.start_time / 1000.0)
-        end_time = datetime.fromtimestamp(run.info.end_time / 1000.0) if run.info.end_time else None
-        now = datetime.now()
-        time_since_run = human_readable_diff(start_time, now)
-        time_since_run = time_since_run.split(" ")[0] + " ago" if time_since_run else "N/A"
-        run_duration = human_readable_diff(start_time, end_time)
-        run_duration = run_duration.split(" ")[0] if run_duration else "N/A"
+        time_since_run = human_readable_diff(start_time, datetime.now())
         
         curve = data.params.get("target_curve", "N/A")
         well = data.params.get("target_well", "N/A")
