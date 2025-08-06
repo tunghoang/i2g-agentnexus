@@ -14,7 +14,8 @@ import pandas as pd
 import lasio
 from calendar import monthrange
 from pywaterflood import CRM
-from utils.missing_pay_utils import get_well_checklist, get_well_checklist_curves, make_pseudo_log, get_training_result
+from utils.missing_pay_utils import get_well_checklist, get_well_checklist_curves,\
+    make_pseudo_log, get_training_result, remove_training_result
 from utils.plot_utils import multi_chart, advLogplot, logplot
 from xlsx_utils import XLSX
 from multiprocessing import Process
@@ -307,56 +308,30 @@ def create_missingpay_tools(mcp_server, data_config: DataConfig) -> List[str]:
 
     @mcp_server.tool(
         name="create_pseudo_log",
-        description="Create pseudo log for a well from logs in a list of wells using a regression model with params"
+        description="Generate a curve for a well from curves in a list of wells using a machine learning model with model parameters"
     )
     def create_pseudo_log(**kwargs):
         try:
             input_data = json.loads(kwargs["input"])
-            pseudo_log: str = input_data.get("pseudo_log")
-            well: str = input_data.get("well")
-            logs: list[str] = input_data.get("logs")
+            target_curve: str = input_data.get("target_curve")
+            target_well: str = input_data.get("target_well")
+            curves: list[str] = input_data.get("curves")
             wells: list[str] = input_data.get("wells")
-            regression_model: str = input_data.get("regression_model")
-            params: dict = input_data.get("params")
-            mlflow_uri = "http://localhost:5000"
+            model_type: str = input_data.get("model_type")
+            model_params: dict = input_data.get("model_params")
 
             # start training
             process = Process(
                 target=make_pseudo_log,
-                args=(pseudo_log, well, logs, wells, regression_model, params, mlflow_uri)
+                args=(target_curve, target_well, curves, wells, model_type, model_params)
             )
             process.start()
 
-            # trick: wait for training process to init
+            # trick: wait for the training process to init
             time.sleep(1)
             
             # view training result
-            out_file_relative_path = os.path.join(
-                f"training_result_report.html"
-            )
-            out_file_path = os.path.join("/tmp", out_file_relative_path)
-            (
-                model_names,
-                time_status,
-                status_list,
-                durations,
-                details
-            ) = get_training_result(pseudo_log, well, regression_model, mlflow_uri)
-
-            df = pd.DataFrame(data={
-                "Model Name": model_names,
-                "Created": time_status,
-                "Status": status_list,
-                "Running Duration": durations,
-                "Detail": details
-            })
-            table = df.to_html(index=False, escape=False)
-            with open("templates/training_result_report_tpl.html", "r") as tpl_file:
-                template = tpl_file.read()
-
-            result = template.replace("{{TABLE}}", table).replace("{{PLOT}}", "")
-            with open(out_file_path, "w") as output_file:
-                output_file.write(result)
+            out_file_relative_path = get_training_result(target_curve, target_well, model_type)
 
             return {"text": out_file_relative_path}
         except Exception as e:
@@ -370,37 +345,31 @@ def create_missingpay_tools(mcp_server, data_config: DataConfig) -> List[str]:
     def view_training_result(**kwargs):
         try:
             input_data = json.loads(kwargs["input"])
-            pseudo_log: str = input_data.get("pseudo_log")
-            well: str = input_data.get("well")
-            regression_model: str = input_data.get("regression_model")
-            mlflow_uri = "http://localhost:5000"
+            target_curve: str = input_data.get("target_curve")
+            target_well: str = input_data.get("target_well")
+            model_type: str = input_data.get("model_type")
 
-            out_file_relative_path = os.path.join(
-                f"training_result_report.html"
-            )
-            out_file_path = os.path.join("/tmp", out_file_relative_path)
-            (
-                model_names,
-                time_status,
-                status_list,
-                durations,
-                details
-            ) = get_training_result(pseudo_log, well, regression_model, mlflow_uri)
+            out_file_relative_path = get_training_result(target_curve, target_well, model_type)
 
-            df = pd.DataFrame(data={
-                "Model Name": model_names,
-                "Created": time_status,
-                "Status": status_list,
-                "Running Duration": durations,
-                "Detail": details
-            })
-            table = df.to_html(index=False, escape=False)
-            with open("templates/training_result_report_tpl.html", "r") as tpl_file:
-                template = tpl_file.read()
+            return {"text": out_file_relative_path}
+        except Exception as e:
+            traceback.print_exc()
+            return {"text": f"Tool failed: {str(e)}"}
+    
+    @mcp_server.tool(
+        name="delete_training_result",
+        description="Delete the training result with model_id"
+    )
+    def delete_training_result(**kwargs):
+        try:
+            input_data = json.loads(kwargs["input"])
+            model_id: str = input_data.get("model_id")
 
-            result = template.replace("{{TABLE}}", table).replace("{{PLOT}}", "")
-            with open(out_file_path, "w") as output_file:
-                output_file.write(result)
+            # delete
+            remove_training_result(model_id)
+            
+            # view
+            out_file_relative_path = get_training_result()
 
             return {"text": out_file_relative_path}
         except Exception as e:
@@ -435,5 +404,6 @@ def create_missingpay_tools(mcp_server, data_config: DataConfig) -> List[str]:
         "create_wells_tvdss",
         "create_pseudo_log",
         "view_training_result",
+        "delete_training_result",
     ]
     return tool_names
