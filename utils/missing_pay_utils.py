@@ -1,13 +1,19 @@
 import os
 import json
-import numpy as np
 import lasio
-from datetime import datetime
-
+import numpy as np
 import pandas as pd
+
+from datetime import datetime
 from naming import Naming
 from robust_las_parser import load_las_file
 from xlsx_utils import XLSX
+
+
+import mlflow
+from mlflow.tracking import MlflowClient
+mlflow_uri = "http://localhost:5000"
+mlflow.set_tracking_uri(mlflow_uri)
 
 
 def get_well_checklist(
@@ -318,7 +324,7 @@ def prepare_las_training_data(wells: list[str], curves: list[str], wells_dir: st
 
     return np.vstack(all_data) if all_data else np.empty(0)
 
-def train_model(x_train: np.ndarray, y_train: np.ndarray, regression_model: str, **kwargs):
+def train_model(x_train: np.ndarray, y_train: np.ndarray, model_type: str, **kwargs):
     from sklearn.tree import DecisionTreeRegressor
     from sklearn.linear_model import HuberRegressor, Lasso, LinearRegression
     from sklearn.ensemble import RandomForestRegressor
@@ -337,8 +343,8 @@ def train_model(x_train: np.ndarray, y_train: np.ndarray, regression_model: str,
         "xgboost": XGBRegressor,
     }
 
-    if regression_model not in models:
-        raise ValueError(f"Unsupported model: '{regression_model}'")
+    if model_type not in models:
+        raise ValueError(f"Unsupported model: '{model_type}'")
 
     default_params = {
         "decision_tree": {},
@@ -351,8 +357,8 @@ def train_model(x_train: np.ndarray, y_train: np.ndarray, regression_model: str,
         "xgboost": {},
     }
 
-    model_params = {**default_params.get(regression_model, {}), **kwargs}
-    model = models[regression_model](**model_params)
+    model_params = {**default_params.get(model_type, {}), **kwargs}
+    model = models[model_type](**model_params)
     model.fit(x_train, y_train)
     return model
     
@@ -380,11 +386,10 @@ def human_readable_diff(start_time: datetime, end_time: datetime) -> str:
 def make_pseudo_log(
         target_curve: str = '',
         target_well: str = '',
-        input_curves: list[str] = [],
+        curves: list[str] = [],
         wells: list[str] = [],
-        regression_model: str = "random_forest",
-        params: dict = {},
-        mlflow_uri: str = "http://localhost:5000",
+        model_type: str = "random_forest",
+        model_params: dict = {},
         wells_dir: str = "data/wells",
     ):
 
@@ -398,24 +403,23 @@ def make_pseudo_log(
     if target_well not in available_wells:
         raise Exception(f"No well {target_well} found")
     
-    if len(input_curves) == 0:
-        raise Exception(f"No curves {input_curves} found")
+    if len(curves) == 0:
+        raise Exception(f"No curves {curves} found")
     
-    import mlflow
-    model_name = f"{target_curve}_{target_well}_{regression_model}"
-    mlflow.set_tracking_uri(mlflow_uri)
+    model_name = f"{target_curve}_{target_well}_{model_type}"
 
     with mlflow.start_run(run_name=model_name):
         mlflow.log_param("target_curve", target_curve)
-        mlflow.log_param("regression_model", regression_model)
-        mlflow.log_param("input_curves", input_curves)
-        mlflow.log_param("input_wells", wells)
-        mlflow.log_param("model_params", params)
+        mlflow.log_param("target_well", target_well)
+        mlflow.log_param("model_type", model_type)
+        mlflow.log_param("input_curves", json.dumps(curves))
+        mlflow.log_param("input_wells", json.dumps(selected_wells))
+        mlflow.log_param("model_params", json.dumps(model_params))
 
-        curves = [c for c in input_curves if c != target_curve] + [target_curve]
-        data = prepare_las_training_data(wells, curves, wells_dir) 
+        all_curves = [c for c in curves if c != target_curve] + [target_curve]
+        data = prepare_las_training_data(selected_wells, all_curves, wells_dir) 
         if len(data) == 0:
-            raise ValueError(f"No valid data found for {curves} in wells {wells}")
+            raise ValueError(f"No valid data found for curves {input_curves} in wells {selected_wells}")
         
         if len(data) < 10:
             raise ValueError(f"Insufficient data to train a model: only {len(data)} samples found")
@@ -425,7 +429,7 @@ def make_pseudo_log(
         
         x_train = train_data[:, :-1]
         y_train = train_data[:, -1]
-        model = train_model(x_train, y_train, regression_model, **params)
+        model = train_model(x_train, y_train, model_type, **model_params)
         mlflow.sklearn.log_model(model, name=model_name, input_example=x_train[:5])
 
         # log metrics
@@ -453,15 +457,15 @@ def make_pseudo_log(
         mlflow.log_metric("mae", mae)
         mlflow.log_metric("mape", mape)
         mlflow.log_metric("max_error", max_err)
-        mlflow.log_metric("r2", r2)
+        mlflow.log_metric("r2_score", r2)
         mlflow.log_metric("explained_variance", ev)
 
         # write to las file
         write_success = False
-        target_input = prepare_las_training_data([target_well], input_curves, wells_dir)
+        target_input = prepare_las_training_data([target_well], curves, wells_dir)
         if len(target_input) > 0:
-            predicted_curve = model.predict(target_input)
-            write_success = write_curve_to_las(target_well, input_curves, target_curve, predicted_curve, wells_dir)
+            target_curve_data = model.predict(target_input)
+            write_success = write_curve_to_las(target_well, curves, target_curve, target_curve_data, wells_dir)
         mlflow.log_metric("saved_las_file", int(write_success))
         
         # evaluation
@@ -479,7 +483,7 @@ def visualize_training_result(model, data: np.ndarray):
         model, x, y,
         cv=3,
         scoring='r2',
-        train_sizes=np.linspace(0.1, 1.0, 5),
+        train_sizes=np.linspace(0.2, 1.0, 5),
         shuffle=True,
         random_state=42
     )
@@ -508,29 +512,44 @@ def visualize_training_result(model, data: np.ndarray):
     return fig
 
 
+def make_filter_params(
+    target_curve: str, 
+    target_well: str, 
+    model_type: str, 
+) -> str:
+    filter_params = []
+    if target_curve:
+        filter_params.append(f"params.target_curve = '{target_curve}'")
+    if target_well:
+        filter_params.append(f"params.target_well = '{target_well}'")
+    if model_type:
+        filter_params.append(f"params.model_type = '{model_type}'")
+
+    return " and ".join(filter_params)
+        
+
 def get_training_result(
         target_curve: str = '',
         target_well: str = '',
-        regression_model: str = "random_forest",
-        mlflow_uri: str = "http://localhost:5000",
+        model_type: str = '',
     ):
-    import mlflow
-    from mlflow.tracking import MlflowClient
-
-    mlflow.set_tracking_uri(mlflow_uri)
     client = MlflowClient()
     experiment = client.get_experiment_by_name("Default")
     if not experiment:
         raise ValueError("MLflow experiment 'Default' not found.")
 
-    model_name = f"{target_curve}_{target_well}_{regression_model}"
+    filter_params = make_filter_params(target_curve, target_well, model_type)
     runs = client.search_runs(
         experiment_ids=[experiment.experiment_id], 
-        filter_string=f"tags.mlflow.runName='{model_name}'",
+        filter_string=filter_params,
         order_by=["start_time DESC"], 
-        max_results=5
+        max_results=10
     )
+    run_ids: list[str] = []
     model_names: list[str] = []
+    curve_list: list[str] = []
+    well_list: list[str] = []
+    r2_scores: list[str] = []
     time_status: list[str] = []
     status_list: list[str] = []
     durations: list[str] = []
@@ -540,8 +559,27 @@ def get_training_result(
     with open(template_path, "r", encoding="utf-8") as tpl_file:
         template = tpl_file.read()
 
+    def parse_json_param(param: str):
+        if not param:
+            return "N/A"
+        try:
+            result = json.loads(param)
+            if type(result) == list:
+                return ", ".join(result)
+            elif type(result) == dict:
+                return ", ".join(f"{k}: {v}" for k, v in result.items())
+            return result
+        except:
+            return param
+
+    def parse_float_param(param: float | int):
+        if param is None:
+            return "N/A"
+        return f"{param:.2f}"
+
     for idx, run in enumerate(runs):
         data = run.data
+        run_id = run.info.run_id
         run_name = run.info.run_name or "N/A"
         run_status = run.info.status
         
@@ -554,35 +592,34 @@ def get_training_result(
         run_duration = run_duration.split(" ")[0] if run_duration else "N/A"
         
         curve = data.params.get("target_curve", "N/A")
-        input_curves = data.params.get("input_curves", [])
-        input_wells = data.params.get("input_wells", [])
-        model_params = data.params.get("model_params", {})
-        model_type = data.params.get("regression_model", "N/A")
-        mape_value = data.metrics.get("mape")
-        mape = f"{mape_value:.2f}" if mape_value is not None else "N/A"
-        rmse_value = data.metrics.get("rmse")
-        rmse = f"{rmse_value:.4f}" if rmse_value is not None else "N/A"
-        r2_value = data.metrics.get("r2")
-        r2 = f"{r2_value:.4f}" if r2_value is not None else "N/A"
-        dashboard_uri = mlflow_uri.replace("localhost", "dashboard.portal")
-        dashboard = f'<a href="{dashboard_uri}" target="_blank">View on MLflow</a>'
-        las_saved = "yes" if data.metrics.get("saved_las_file") == 1 else "no"
+        well = data.params.get("target_well", "N/A")
+        model = data.params.get("model_type", "N/A")
+        
+        input_curves = parse_json_param(data.params.get("input_curves"))
+        input_wells = parse_json_param(data.params.get("input_wells"))
+        model_params = parse_json_param(data.params.get("model_params"))
+        mape = parse_float_param(data.metrics.get("mape"))
+        rmse = parse_float_param(data.metrics.get("rmse"))
+        r2 = parse_float_param(data.metrics.get("r2_score"))
+        download_path = Naming.data_path("pseudo_log")
+        las_saved = f"<a href='{download_path}'>Download</a>" if data.metrics.get("saved_las_file") == 1 else "No"
 
         df = pd.DataFrame([{
+            "ID": run_id[:8],
             "Model Name": run_name,
             "Target Curve": curve,
+            "Target Well": well,
             "From Curves": input_curves,
             "From Wells": input_wells,
-            "Model Type": model_type,
+            "Model Type": model,
             "Params": model_params,
             "MAPE (%)": mape,
             "RMSE": rmse,
             "R² Score": r2,
-            "Evaluation Dashboard": dashboard,
             "Las File Saved": las_saved
         }])
         table = df.to_html(index=False, escape=False)
-        plot_path = f"mlartifacts/0/{run.info.run_id}/artifacts/plots/plot.html"
+        plot_path = f"mlartifacts/0/{run_id}/artifacts/plots/plot.html"
         if os.path.isfile(plot_path):
             with open(plot_path, "r") as f:
                 plot = f.read()
@@ -594,18 +631,49 @@ def get_training_result(
         with open(os.path.join("/tmp", out_file), "w") as output_file:
             output_file.write(result)
 
+        run_ids.append(f'<a href="{out_file}" target="_blank">{run_id[:8]}</a>')
         model_names.append(run_name)
+        curve_list.append(input_curves)
+        well_list.append(input_wells)
+        r2_scores.append(r2)
         time_status.append(time_since_run)
         status_list.append(run_status)
-        durations.append(run_duration)
-        details.append(
-            f'<a href="{out_file}" target="_blank">view</a>' #if run_status == "FINISHED" else "N/A"
-        )
 
-    return (
-        model_names,
-        time_status,
-        status_list,
-        durations,
-        details
+    out_file_relative_path = os.path.join(
+        f"training_result_report.html"
     )
+    out_file_path = os.path.join("/tmp", out_file_relative_path)
+
+    df = pd.DataFrame(data={
+        "ID": run_ids,
+        "Model Name": model_names,
+        "From Curves": curve_list,
+        "From Wells": well_list,
+        "R² Score": r2_scores,
+        "Created": time_status,
+        "Status": status_list,
+    })
+    table = df.to_html(index=False, escape=False)
+    with open("templates/training_result_report_tpl.html", "r") as tpl_file:
+        template = tpl_file.read()
+
+    result = template.replace("{{TABLE}}", table).replace("{{PLOT}}", "")
+    with open(out_file_path, "w") as output_file:
+        output_file.write(result)
+
+    return out_file_relative_path
+
+def remove_training_result(run_id_prefix: str) -> bool:
+    client = MlflowClient()
+    experiment = client.get_experiment_by_name("Default")
+    if not experiment:
+        raise ValueError("MLflow experiment 'Default' not found.")
+
+    runs = client.search_runs(experiment_ids=[experiment.experiment_id])
+    matched_runs = [run for run in runs if run.info.run_id.startswith(run_id_prefix)]
+
+    for run in matched_runs:
+        client.delete_run(run.info.run_id)
+    
+    return True
+    

@@ -690,41 +690,42 @@ class ToolExecutingAgentExecutor:
         tools.append(create_wells_tvdss)
 
         def create_pseudo_log(
-            pseudo_log: str,
-            well: str,
-            logs: list[str],
+            target_curve: str,
+            target_well: str,
+            curves: list[str],
             wells: list[str],
-            regression_model: str,
-            params: dict = {}
+            model_type: str,
+            model_params: dict
         ) -> dict:
             """
-            Create a pseudo log for a well from logs in a list of wells using a regression model with params.
+            Generate a curve for a well from curves in a list of wells using a machine learning model with model parameters.
+            Model parameter can be {}
 
             Args:
-                pseudo_log (str): Name of the pseudo log to be created.
-                well (str): Target well for pseudo log creation.
-                logs (list[str]): Log types used for training.
+                target_curve (str): Name of the curve to be created.
+                taget_well (str): Target well for curve creation.
+                curves (list[str]): Curve types used for training.
                 wells (list[str]): Source wells used for training data.
-                regression_model (str): Regression model to apply (e.g., linear, random forest).
-                params (dict): Model hyperparameters.
+                model_type (str): Machine learning model to apply (e.g., linear, random forest).
+                model_params (dict): Model parameters of the machine learning model.
             
             Returns:
                 dict: Result of the pseudo log creation, or error message if failed.
             """
             try:
                 executor_instance.logger.info(
-                    f"Executing create_pseudo_log '{pseudo_log}' for well '{well}'"
-                    f"from logs {logs} in wells {wells} using model '{regression_model}' with '{params}'"
+                    f"Executing create_pseudo_log of curve '{target_curve}' for well '{target_well}'"
+                    f"from curves {curves} in wells {wells} using model '{model_type}' with params '{model_params}'"
                 )
                 result = executor_instance._execute_mcp_tool(
                     'create_pseudo_log',
                     json.dumps({
-                        "pseudo_log": pseudo_log,
-                        "well": well,
-                        "logs": logs,
+                        "target_curve": target_curve,
+                        "target_well": target_well,
+                        "curves": curves,
                         "wells": wells,
-                        "regression_model": regression_model,
-                        "params": params
+                        "model_type": model_type,
+                        "model_params": model_params
                     })
                 )
                 return {"status": "success", "result": result}
@@ -734,46 +735,79 @@ class ToolExecutingAgentExecutor:
                 return {"status": "error", "message": str(e)}
         tools.append(create_pseudo_log)
         
+#        def view_training_result(
+#            tool_context: ToolContext,
+#            target_curve: str,
+#            target_well: str,
+#            model_type: str, 
+#        ) -> dict:
+#            """
+#            View training results of a created pseudo log for a well 
+#            using a regression model with specific parameters.
+#
+#            Args:
+#                target_curve (str): Name of the curve to evaluate.
+#                target_well (str): The target well to generate pseudo log for.
+#                model_type (str): Name/type of the regression model used.
+#
+#            Returns:
+#                dict: Result of the training visualization or summary.
+#            """
+#            try:
+#                fname = inspect.stack()[0][3]  # Get the current function name for namespacing context
+#                def get_or_update_param(key: str, value):
+#                    existing = recursive_get(tool_context.state, [fname, key]) or None
+#                    if value not in [None, '', [], {}]:
+#                        recursive_put(tool_context.state, [fname, key], value)
+#                        return value
+#                    return existing
+#
+#                _target_curve = get_or_update_param('target_curve', target_curve)
+#                _target_well = get_or_update_param('target_well', target_well)
+#                _model_type = get_or_update_param('model_type', model_type)
+#
+#                executor_instance.logger.info(
+#                    f"Executing view_training_result for well: {_target_well}, curve: {_target_curve}, model: {_model_type}"
+#                )
+#                result = executor_instance._execute_mcp_tool(
+#                    'view_training_result',
+#                    json.dumps({
+#                        "target_curve": _target_curve,
+#                        "target_well": _target_well,
+#                        "model_type": _model_type,
+#                    })
+#                )
+#                return {"status": "success", "result": result}
+#            except Exception as e:
+#                executor_instance.logger.error(f"Error in view_training_result {e}")
+#                return {"status": "error", "message": str(e)}
         def view_training_result(
-            tool_context: ToolContext,
-            pseudo_log: str,
-            well: str,
-            regression_model: str, 
+            target_curve: str = '',
+            target_well: str = '',
+            model_type: str = '', 
         ) -> dict:
             """
-            View training results of a created pseudo log for a well 
-            using a regression model with specific parameters.
+            View training results of a curve for a well using a machine learning model.
+            The args can be null.
 
             Args:
-                pseudo_log (str): Name of the pseudo log to evaluate.
-                well (str): The target well to generate pseudo log for.
-                regression_model (str): Name/type of the regression model used.
+                target_curve (str): Name of the curve to evaluate.
+                target_well (str): The target well to generate pseudo log for.
+                model_type (str): Name/type of the machine learning model used.
 
             Returns:
                 dict: Result of the training visualization or summary.
             """
             try:
-                fname = inspect.stack()[0][3]  # Get the current function name for namespacing context
-                def get_or_update_param(key: str, value):
-                    existing = recursive_get(tool_context.state, [fname, key]) or None
-                    if value not in [None, '', [], {}]:
-                        recursive_put(tool_context.state, [fname, key], value)
-                        return value
-                    return existing
-
-                _pseudo_log       = get_or_update_param('pseudo_log', pseudo_log)
-                _well             = get_or_update_param('well', well)
-                _regression_model = get_or_update_param('regression_model', regression_model)
-
                 executor_instance.logger.info(
-                    f"Executing view_training_result for well: {_well}, pseudo_log: {_pseudo_log}, model: {_regression_model}"
+                    f"Executing view_training_result of curve {target_curve} for well {target_well} using model {model_type}"
                 )
                 result = executor_instance._execute_mcp_tool(
                     'view_training_result',
                     json.dumps({
-                        "pseudo_log": _pseudo_log,
-                        "well": _well,
-                        "regression_model": _regression_model,
+                        "target_curve": target_curve,
+                        "target_well": target_well,
+                        "model_type": model_type,
                     })
                 )
                 return {"status": "success", "result": result}
@@ -781,6 +815,34 @@ class ToolExecutingAgentExecutor:
                 executor_instance.logger.error(f"Error in view_training_result {e}")
                 return {"status": "error", "message": str(e)}
         tools.append(view_training_result)
+        
+        def delete_training_result(
+            model_id: str,
+        ) -> dict:
+            """
+            Delete training result in mlflow with model_id
+
+            Args:
+                model_id (str): The id of model in raining result
+
+            Returns:
+                dict: results
+            """
+            try:
+                executor_instance.logger.info(
+                    f"Executing delete training resullt with model_id {model_id}"
+                )
+                result = executor_instance._execute_mcp_tool(
+                    'delete_training_result',
+                    json.dumps({
+                        "model_id": model_id,
+                    })
+                )
+                return {"status": "success", "result": result}
+            except Exception as e:
+                executor_instance.logger.error(f"Error in query_training_result {e}")
+                return {"status": "error", "message": str(e)}
+        tools.append(delete_training_result)
 
         def summarize_marker_data() -> dict:
             """Summarize marker data from marker file
