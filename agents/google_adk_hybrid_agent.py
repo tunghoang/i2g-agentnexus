@@ -782,6 +782,24 @@ class ToolExecutingAgentExecutor:
                 return {"status": "error", "message": str(e)}
         tools.append(view_training_result)
 
+        def summarize_marker_data() -> dict:
+            """Summarize marker data from marker file
+
+            Args:
+                None
+
+            Returns:
+                dict: results
+            """
+            try:
+                executor_instance.logger.info(f"Executing summarize_marker_data for all wells")
+                result = executor_instance._execute_mcp_tool('summarize_marker_data', { })
+                return {"status": "success", "result": result}
+            except Exception as e:
+                executor_instance.logger.error(f"Error in create_psuedo_log {e}")
+                return {"status": "error", "message": str(e)}
+        tools.append(summarize_marker_data)
+
         self.logger.info(f"Created {len(tools)} tool functions (no default parameters)")
         return tools
 
@@ -915,7 +933,7 @@ Then: Present the results
 Available tools: list_files, system_status, health_check, directory_info,
 las_parser, las_analysis, formation_evaluation, well_correlation, segy_parser, segy_classify, segy_qc,
 quick_segy_summary, dump_content, plot_las, build_logplot, plot_histogram_las, show_sheets, show_columns,
-unique_from_column, marker4well, zone4well, productiondata4well,
+unique_from_column, marker4well, zone4well, productiondata4well, summarize_marker_data,
 buildCRMInput, trainCRMModel, production_by_time,
 well_checklist_table, well_checklist_curves, create_wells_tvdss, create_pseudo_log, view_training_result
 """

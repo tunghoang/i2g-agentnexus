@@ -1,4 +1,5 @@
 import os
+import re
 import numpy as np
 import json
 import traceback
@@ -413,12 +414,51 @@ def create_vsp_tools(mcp_server, data_config: DataConfig) -> List[str]:
             traceback.print_exc()
             return dict(text=str(e))
 
+    @mcp_server.tool(
+        name="summarize_marker_data",
+        description="Summarize production layers for wells using marker file and perforation file",
+    )
+    def summarize_marker_data(input: str) -> dict:
+        def strip_prefix(row):
+            return re.sub("^[TB]-", "", row)
+
+        try:
+            input_data = json.loads(input)
+            wells = input_data.get("wells")
+            df = XLSX.parse_marker()
+            df = df[df[df.columns[1]].str.startswith('T-') | df[df.columns[1]].str.startswith('B-')]
+            df['layer'] = df[df.columns[1]].apply(strip_prefix)
+
+            _wells = wells or pd.Series(df[df.columns[0]].unique()).to_list()
+
+            _wells = [w.strip() for w in _wells]
+            
+            layers = XLSX.extract_layers()
+            results = [ ]
+            for l in layers:
+                _l = str(l).strip().replace("_", "-")
+                row = {"Layers": l}
+                for w in _wells:
+                    row[w] = ""
+                    df1 = df[(df[df.columns[0]] == w) & (df['layer'] == l)]
+                    if len(df1.index) > 0:
+                        row[w] = 'yes'
+                results.append(row)
+            resultDF = pd.DataFrame(results)
+            print(resultDF)
+            outpath = Naming.dest_path('misc/Marker.xlsx')
+            resultDF.to_html(outpath)
+            return {'text': Naming.publish_path('misc/Marker.xlsx') }
+        except Exception as e:
+            traceback.print_exc()
+            return dict(text=str(e))
     tool_names = [
         "marker4well",
         "productiondata4well",
         "buildCRMInput",
         "trainCRMModel",
         "production_by_time",
+        "summarize_marker_data"
     ]
 
     return tool_names

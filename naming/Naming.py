@@ -66,6 +66,16 @@ class Naming:
             return cls.publish_path("misc/Marker.xlsx")
         else:
             return cls.data_path("misc/Marker.xlsx")
+    @classmethod
+    def default_perforation_file(cls, category="store"):
+        if category == "store":
+            return cls.data_path("misc/perforation.xlsx")
+        elif category == "raw":
+            return "misc/perforation.xlsx"
+        elif category == "publish":
+            return cls.publish_path("misc/perforation.xlsx")
+        else:
+            return cls.data_path("misc/perforation.xlsx")
 
     @classmethod
     def elevation_file(cls):

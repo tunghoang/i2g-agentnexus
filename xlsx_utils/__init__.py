@@ -23,6 +23,8 @@ class XLSX:
     def parse_well_production(cls, sheet: int = PRODUCTION_MONTHLY_SHEET):
         PROD_WELL_COL = 1
         df = cls.parse_excel(Naming.data_path(cls.PRODUCTION_FILEPATH), sheet)
+        #df['Date'] = pd.to_datetime(df['Date'], unit='D', origin='1899-12-30')
+        df['Date'] = pd.to_datetime(df['Date'])
         # convert well number to string
         df[df.columns[PROD_WELL_COL]] = df[df.columns[PROD_WELL_COL]].astype(str)
         return df
@@ -125,3 +127,15 @@ class XLSX:
         print(keyZoneDF)                
         print(zoneDF)
         return keyZoneDF, zoneDF
+    @classmethod
+    def extract_layers(cls, file_path=None):
+        _file_path = file_path or Naming.default_perforation_file(category='raw')
+        print(_file_path)
+        xlsx_file = MemoryCache.get_instance().get(_file_path)
+        if xlsx_file is None:
+            xlsx_file = pd.ExcelFile(Naming.data_path(_file_path), engine='openpyxl')
+            MemoryCache.get_instance().put(_file_path, xlsx_file)
+        df = xlsx_file.parse(0, skiprows=3, header=None)
+        layers = df.iloc[:, 5].unique()
+        print(type(layers), layers)
+        return layers

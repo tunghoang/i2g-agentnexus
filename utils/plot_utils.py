@@ -1,9 +1,11 @@
 import os
+import json
 import numpy as np
 import hashlib
 import yaml
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
+from plotly.io import write_json
 from base_utils import recursive_get, update_dict
 _allTrackConfigs = None
 
@@ -322,11 +324,11 @@ def advLogplot(df, curves, track_styles, title = None, keyZoneDF = None, zoneDF 
     YAXIS_PROPS = dict(showline=False,
                        linewidth=0.5,
                        linecolor="#444",
-                       mirror=True,
+                       #mirror=True,
                        showgrid=True,
                        showticklabels=True,
-                       gridcolor='#eee',
-                       gridwidth=0.5,
+                       gridcolor=gridcolor(),
+                       #gridwidth=0.5,
                        domain=Y_DOMAIN)
 
     YAXIS_LIMIT_PROPS = lambda df: dict(range=[
@@ -371,11 +373,11 @@ def advLogplot(df, curves, track_styles, title = None, keyZoneDF = None, zoneDF 
 
     fig = make_subplots( rows=1, 
             cols=TRACK_NUM(), 
-            shared_yaxes=False, 
-            horizontal_spacing=0.005
+            #shared_yaxes=True,
+            #horizontal_spacing=0.005
     )
     # Prepare axes
-    yaxes = { 'yaxis': { **YAXIS_PROPS, **YAXIS_LIMIT_PROPS(df) } }
+    yaxes = { 'yaxis': { **YAXIS_PROPS, **YAXIS_LIMIT_PROPS(df) }, 'yaxis2': { **YAXIS_PROPS, **YAXIS_LIMIT_PROPS(df) }}
     xaxes = { 'xaxis': dict(domain=X_DOMAIN(0), range=[0,1]) }
     if zoneDF is not None and not zoneDF.empty:
         xaxes['xaxis2'] = dict( domain=X_DOMAIN(1), range=[0, 1])
@@ -384,17 +386,33 @@ def advLogplot(df, curves, track_styles, title = None, keyZoneDF = None, zoneDF 
         trace = go.Scattergl(x=[0,0], y = df[refCurveName].head(), name="Depth", xaxis=f"x{'' if idx==0 else (idx + 1)}", visible=False)
         fig.add_trace(trace)
         __track_header(fig, TRACK_HEADER, xdomain='' if idx == 0 else (idx + 1) , colIdx = idx, 
-                       curve='DEPTH' if idx == 0 else "Zone",
+                       curve='DEPTH' if idx == 0 else "ZONE",
                        unit='m')
         if idx == 1:
             # __drawZoneTrack 
             for _,row in zoneDF.iterrows():
-                trace = go.Scattergl(x=[1,1],y=[row['start'],row['stop']],name="Zone", xaxis="x2", fill='tozerox', mode='lines', line_width=0)
+                trace = go.Scattergl(x=[1,1],y=[row['start'],row['stop']],name="Zone", xaxis="x2", yaxis="y2", line_width=0, fill='tozerox', 
+                                     mode='lines')
+                                     #mode='lines+text', text=[row['Surface'], None], textposition="bottom left")
                 fig.add_trace(trace)
+                fig.add_annotation(xref="x2 domain", xanchor="right", x=1, xshift=-10, font_size=8, 
+                                   yref="y", yanchor="middle", y=(row['start'] + row['stop'])/2, 
+                                   text=row['Surface'], showarrow=False, bgcolor='#fff')
         elif idx == 0:
             for _,row in keyZoneDF.iterrows():
-                trace = go.Scattergl(x=[1,1],y=[row['start'],row['stop']], name="Zone", xaxis="x", fill='tozerox', mode='lines', line_width=0)
+                trace = go.Scattergl(x=[1,1],y=[row['start'],row['stop']], name="Zone", xaxis="x", line_width=0, fill='tozerox',  
+                                     mode='lines')
+                                     #mode='lines+text', text=[row['Surface'], None], textposition="bottom left")
                 fig.add_trace(trace)
+                fig.add_annotation(xref="x domain", xanchor="right", x=1, xshift=-10, font_size=8, 
+                                   yref="y", yanchor="middle", y=(row['start'] + row['stop'])/2, 
+                                   text=row['Surface'], showarrow=False, bgcolor='#fff')
+                fig.add_annotation(xref="x domain", xanchor="right", x=1, xshift=-10, font_size=8, 
+                                   yref="y", yanchor="top", y=row['start'], yshift=-10,
+                                   text=row['Surface'], showarrow=False, bgcolor='#fff')
+                fig.add_annotation(xref="x domain", xanchor="right", x=1, xshift=-10, font_size=8, 
+                                   yref="y", yanchor="bottom", y=row['stop'], yshift=10,
+                                   text=row['Surface'], showarrow=False, bgcolor='#fff')
 
     xaxis_index = len(xaxes.keys())
     track_idx = xaxis_index
@@ -433,7 +451,7 @@ def advLogplot(df, curves, track_styles, title = None, keyZoneDF = None, zoneDF 
             else:
                 xaxes[f'xaxis{xaxis_index}']['overlaying'] = f'x{overlaying_idx}'
             trace = go.Scattergl(
-                x=df[c], y=df[refCurveName], xaxis=f'x{xaxis_index}', **curveProps(curveSpec), 
+                x=df[c], y=df[refCurveName], xaxis=f'x{xaxis_index}', yaxis=f'y{track_idx + 1}', **curveProps(curveSpec), 
                 customdata=hoverdata, hovertemplate=hovertemplate
             )
             fig.add_trace(trace)
@@ -471,9 +489,12 @@ def advLogplot(df, curves, track_styles, title = None, keyZoneDF = None, zoneDF 
         if have_track:
             __track_header(fig, TRACK_HEADER, xdomain=overlaying_idx, colIdx=track_idx)
             __track_body(fig, TRACK_HEADER, PLOT_HEIGHT - TRACK_HEADER - PLOT_HEADER, xdomain=overlaying_idx)
+            yaxes[f'yaxis{track_idx + 1}'] = {**yaxes['yaxis'], "matches": 'y', "anchor":f'x{overlaying_idx}', "showticklabels":False}
             track_idx += 1
 
     plot_title=title or f"Logplot for {','.join(curveNames)}"
+    update_dict(yaxes['yaxis'], dict(position=0.60/TRACK_NUM(), side='left', showgrid=False, showline=False, anchor='free'))
+    update_dict(yaxes['yaxis2'], dict(position=1.60/TRACK_NUM(), matches='y', side='left', showgrid=False, showline=False, anchor='free'))
     fig.update_layout(
         **yaxes,
         **xaxes,
@@ -492,10 +513,12 @@ def advLogplot(df, curves, track_styles, title = None, keyZoneDF = None, zoneDF 
     )
     for idx in range(STATIC_TRACKS()):
         __track_body(fig, TRACK_HEADER, PLOT_HEIGHT - TRACK_HEADER - PLOT_HEADER, xdomain='' if idx == 0 else (idx + 1), colIdx=idx)
-    fig.update_yaxes(position=0.60/TRACK_NUM(), side='left', showgrid=True, showline=False, anchor='free', row=1, col=1)
-    fig.update_yaxes(side='left', gridcolor='#aaf', gridwidth=0.5, showgrid=True, row=1, col=3)
-    fig.update_yaxes(side='left', gridcolor='#aaf', gridwidth=0.5, showgrid=True, row=1, col=4)
-    print(fig.layout)
+    #fig.update_yaxes(position=0.60/TRACK_NUM(), side='left', showgrid=True, showline=False, anchor='free', row=1, col=1)
+    #fig.update_yaxes(side='left', gridcolor='#aaf', gridwidth=0.5, showgrid=True, row=1, col=3)
+    #fig.update_yaxes(side='left', gridcolor='#aaf', gridwidth=0.5, showgrid=True, row=1, col=4)
+
+    with open('/tmp/layout.json', 'w') as f:
+        write_json(fig, f, pretty=True)
     return fig
 
 def histogram(df, curve_names, num_bins, file_path: str=""):
