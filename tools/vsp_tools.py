@@ -368,18 +368,18 @@ def create_vsp_tools(mcp_server, data_config: DataConfig) -> List[str]:
                     x_suffix = ""
                 xaxis_name = f"x{x_suffix}"
                 overlaying_y = "y" if well_idx == 0 else f"y{well_idx*num_params+1}"
-                for param_idx, col in enumerate(cols):
+                for param_idx, param in enumerate(cols):
                     y_suffix = str(well_idx * num_params + param_idx + 1)
                     if y_suffix == "1":
                         y_suffix = ""
                     yaxis_name = f"y{y_suffix}"
 
-                    color = COLORS[col] if col in COLORS else getColor(col)
+                    color = COLORS[param] if param in COLORS else getColor(param)
                     fig.append_trace(
                         go.Scatter(
                             x=df_well[all_cols[DATE_COL]],
-                            y=df_well[col],
-                            name=f"{col}",
+                            y=df_well[param],
+                            name=f"{param}",
                             mode="lines",
                             line=dict(color=color),
                             xaxis=xaxis_name,
@@ -393,7 +393,7 @@ def create_vsp_tools(mcp_server, data_config: DataConfig) -> List[str]:
                         {
                             yaxis_key: dict(
                                 title=dict(
-                                    text=col,
+                                    text=param,
                                     font=dict(color=color),
                                 ),
                                 tickfont=dict(color=color),
