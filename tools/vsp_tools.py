@@ -5,6 +5,9 @@ import traceback
 from pathlib import Path
 from datetime import datetime
 from typing import List, Dict, Any
+
+from pytest import param
+from sqlalchemy import over
 from config.settings import DataConfig
 from store import Store
 from naming import Naming
@@ -13,6 +16,7 @@ import pandas as pd
 import mlflow
 from calendar import monthrange
 from pywaterflood import CRM
+from tools.plot_tools import getColor
 from utils.plot_utils import multi_chart
 from xlsx_utils import XLSX
 
@@ -292,8 +296,8 @@ def create_vsp_tools(mcp_server, data_config: DataConfig) -> List[str]:
     def production_by_time(input: str) -> dict:
         try:
             input_data = json.loads(input)
-            wells: list[str] = input_data["wells"]
-            params: list[str] = input_data.get("params")
+            wells: list[str] = [*set(input_data["wells"])]
+            params: set[str] = set(input_data.get("params"))
             # Metrics
             PARAMS = {  # base Idx = 6
                 "CV.OilRate": 0,  # Oil rate
@@ -315,52 +319,96 @@ def create_vsp_tools(mcp_server, data_config: DataConfig) -> List[str]:
                 "CV.WellProd": 16,
                 "CV.WellInj": 17,
             }
+            COLORS = {
+                "CV.OilRate": "#ff0000",
+                "CV.LiqRate": "#008000",
+                "CV.Watercut": "#0000ff",
+                "CV.Oilcum/1000": "#800000",
+            }
             params_indices = [PARAMS[p] + 6 for p in params]
             DATE_COL = 0
             WELL_COL = 1
             df = XLSX.parse_well_production()
             df = df[[df.columns[c] for c in [DATE_COL, WELL_COL, *params_indices]]]
-            cols = df.columns
+            all_cols = df.columns
+            cols = all_cols[2:]
             if len(wells) > 0:
                 df = df[df[df.columns[WELL_COL]].isin(wells)]
-            df_wells = [*df.groupby(cols[WELL_COL])]
+            df_wells = [*df.groupby(all_cols[WELL_COL])]
             if not len(df_wells):
                 raise Exception(f"Failed to find {wells} in production data file")
             if not len(wells):
                 wells = [str(w) for w, _ in df_wells]
 
             from plotly.subplots import make_subplots
+            import plotly.graph_objects as go
             fig = make_subplots(
                 rows=len(df_wells),
                 cols=1,
                 subplot_titles=[f"{w} Production" for w, _ in df_wells],
-                vertical_spacing=0.02,
+                vertical_spacing=0.1 / len(df_wells),
             )
-            import plotly.colors as pc
-            colors = pc.qualitative.Plotly[:len(cols[2:])]
+            num_params = len(cols)
+            X_START_POS = 0.2
+            for well_idx, (well, df_well) in enumerate(df_wells):
+                row=well_idx + 1
+                x_suffix = str(well_idx + 1)
+                xaxis_key = f"xaxis{x_suffix}"
+                fig.update_layout({
+                    xaxis_key: dict(
+                        domain=[X_START_POS, 1],
+                    )
+                })
+                fig.update_xaxes(
+                    domain=[X_START_POS, 1],
+                    row=row,
+                    col=1,
+                )
+                if x_suffix == "1":
+                    x_suffix = ""
+                xaxis_name = f"x{x_suffix}"
+                overlaying_y = "y" if well_idx == 0 else f"y{well_idx*num_params+1}"
+                for param_idx, col in enumerate(cols):
+                    y_suffix = str(well_idx * num_params + param_idx + 1)
+                    if y_suffix == "1":
+                        y_suffix = ""
+                    yaxis_name = f"y{y_suffix}"
 
-            import plotly.graph_objects as go
-            for i, (well, df_well) in enumerate(df_wells):
-                for j, col in enumerate(cols[2:]):
-                    fig.add_trace(
+                    color = COLORS[col] if col in COLORS else getColor(col)
+                    fig.append_trace(
                         go.Scatter(
-                            x=df_well[cols[DATE_COL]],
+                            x=df_well[all_cols[DATE_COL]],
                             y=df_well[col],
                             name=f"{col}",
-                            yaxis=f"y{j+1}",
                             mode="lines",
-                            showlegend=i == 0,
-                            line=dict(color=colors[j]),
+                            line=dict(color=color),
+                            xaxis=xaxis_name,
+                            yaxis=yaxis_name,
                         ),
-                        row=i + 1,
+                        row=row,
                         col=1,
                     )
-            fig.update_layout(height=500 * len(df_wells))
+                    yaxis_key = f"yaxis{y_suffix}"
+                    fig.update_layout(
+                        {
+                            yaxis_key: dict(
+                                title=dict(
+                                    text=col,
+                                    font=dict(color=color),
+                                ),
+                                tickfont=dict(color=color),
+                                anchor="free",
+                                overlaying=(None if param_idx == 0 else overlaying_y),
+                                position=param_idx / num_params * X_START_POS,
+                            )
+                        }
+                    )
 
-            out_file = Naming.sanitize_filename(f"production-time-chart{'-'.join(wells)}{'-'.join(params)}")
-            dest_path = Naming.dest_path(out_file)
+            fig.update_layout(height=500 * len(df_wells))
+            out_file = Naming.sanitize_filename(f"{'-'.join(wells)}{'-'.join(params)}")
+            dest_path = Naming.dest_path(out_file, "production-time-chart")
             fig.write_html(dest_path)
-            return {'text': f'The result has been generated in {out_file}.html'}
+            return {'text': Naming.publish_path(out_file, "production-time-chart")}
         except Exception as e:
             traceback.print_exc()
             return dict(text=str(e))

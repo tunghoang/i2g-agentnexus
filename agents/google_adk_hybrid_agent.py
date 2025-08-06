@@ -691,10 +691,10 @@ class ToolExecutingAgentExecutor:
 
         def create_psuedo_log(
             psuedo_log: str,
-            well: str, 
-            logs: list[str], 
-            wells: list[str], 
-            regression_model: str, 
+            well: str,
+            logs: list[str],
+            wells: list[str],
+            regression_model: str,
             params: dict
         ) -> dict:
             """Create psuedo log for a well from logs in a list of wells using a regression model with params
@@ -712,10 +712,10 @@ class ToolExecutingAgentExecutor:
             """
             try:
                 executor_instance.logger.info(f"Executing create_psuedo_log for well {well}")
-                result = executor_instance._execute_mcp_tool('create_psuedo_log', 
+                result = executor_instance._execute_mcp_tool('create_psuedo_log',
                     {
                         "psuedo_log": psuedo_log,
-                        "well": well, 
+                        "well": well,
                         "logs": logs,
                         "wells": wells,
                         "regression_model": regression_model,
@@ -792,8 +792,10 @@ class ToolExecutingAgentExecutor:
 - User asks "build CRM input using production wells and injection wells" → IMMEDIATELY call buildCRMInput with corresponding production_wells and injection_wells
 - User asks "show wells in marker file", then IMMEDIATELY call unique_from_column with column=0 file_path="misc/Marker.xlsx" and sheet=0
 - User asks "show wells in production monthly file", then IMMEDIATELY call unique_from_column with column=1 file_path="production/PVT_WellTest_Perforation_WaterAnalysis.xlsx" and sheet=4
-- User asks "Plot [params] of wells [wells] by time from production file", then IMMEDIATELY call production_by_time with params and wells as list[str] if user provided or else wells=[]
-    Always call using these standardized param names from user provided params, DO NOT use monthly params if user not provided explicitly:
+- User asks "Plot [params] of wells [wells] by time from production file" or "View production chart of wells [wells]",
+    then IMMEDIATELY call production_by_time with params as list[str] if user provided or else params=["CV.OilRate","CV.LiqRate","CV.Watercut","CV.Oilcum/1000"]
+    and wells as list[str] if user provided or else wells=[]
+    **ALWAYS call using these standardized param names from user provided params, DO NOT use monthly params if user not provided explicitly:
     "CV.OilRate",              # Oil rate
     "Monthlyprod.Qoil/1000",   # Monthly oil rate in thousands
     "CV.Oilcum/1000",          # Oilcum in thousands
