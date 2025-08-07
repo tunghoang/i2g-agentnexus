@@ -11,6 +11,9 @@ import inspect
 import asyncio
 from typing import Optional, Dict, Any, List, Union
 
+import urllib
+import urllib.parse
+
 # Google ADK imports
 try:
     from google.adk.agents import Agent, LlmAgent
@@ -28,6 +31,7 @@ from servers.mcp_server import MCPClient
 from base_utils import recursive_get, recursive_put
 logger = logging.getLogger(__name__)
 
+AGENT_URL = os.getenv("AGENT_URL") or "http://localhost:8990"
 
 class ToolExecutingAgentExecutor:
     """
@@ -689,6 +693,22 @@ class ToolExecutingAgentExecutor:
                 return {"status": "error", "message": str(e)}
         tools.append(create_wells_tvdss)
 
+        def plt_table() -> dict:
+            """View PLT table
+
+            Returns:
+                dict: results
+            """
+            try:
+                executor_instance.logger.info(f"Executing plt_table")
+                url = urllib.parse.urljoin(AGENT_URL, "excel-viewer/?file=/data/misc/plt.xlsx")
+                return {"status": "success",
+                        "result": url}
+            except Exception as e:
+                executor_instance.logger.error(f"Error in plt_table {e}")
+                return {"status": "error", "message": str(e)}
+        tools.append(plt_table)
+
         def create_pseudo_log(
             target_curve: str,
             target_well: str,
@@ -990,14 +1010,16 @@ User: "generate GR,NPHI logplot for well"
 You: [CALLS build_logplot(well="well", track_templates="GR,NPHI")]
 Then: Present the results
 
-**REMEMBER: Always provide ALL required parameters when calling tools!**
+**REMEMBER:
+- Always provide ALL required parameters when calling tools!**
+- Always place any URL in result into an <iframe>
 
 Available tools: list_files, system_status, health_check, directory_info,
 las_parser, las_analysis, formation_evaluation, well_correlation, segy_parser, segy_classify, segy_qc,
 quick_segy_summary, dump_content, plot_las, build_logplot, plot_histogram_las, show_sheets, show_columns,
 unique_from_column, marker4well, zone4well, productiondata4well, summarize_marker_data,
 buildCRMInput, trainCRMModel, production_by_time,
-well_checklist_table, well_checklist_curves, create_wells_tvdss, create_pseudo_log, view_training_result
+plt_table, well_checklist_table, well_checklist_curves, create_wells_tvdss, create_pseudo_log, view_training_result
 """
 
     async def _execute_with_google_adk(self, query: str) -> str:
