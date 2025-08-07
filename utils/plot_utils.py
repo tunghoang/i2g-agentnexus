@@ -5,7 +5,7 @@ import hashlib
 import yaml
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
-from plotly.io import write_json
+from plotly.io import write_json as __write_json
 from base_utils import recursive_get, update_dict
 _allTrackConfigs = None
 
@@ -381,12 +381,14 @@ def advLogplot(df, curves, track_styles, title = None, keyZoneDF = None, zoneDF 
     xaxes = { 'xaxis': dict(domain=X_DOMAIN(0), range=[0,1]) }
     if zoneDF is not None and not zoneDF.empty:
         xaxes['xaxis2'] = dict( domain=X_DOMAIN(1), range=[0, 1])
+        if "TVDSS" in list(df.columns):
+            xaxes['xaxis3'] = {"domain":X_DOMAIN(1), **XAXIS_DEFAULT_PROPS, "overlaying":'x2'}
 
     for idx in range(STATIC_TRACKS()):
         trace = go.Scattergl(x=[0,0], y = df[refCurveName].head(), name="Depth", xaxis=f"x{'' if idx==0 else (idx + 1)}", visible=False)
         fig.add_trace(trace)
         __track_header(fig, TRACK_HEADER, xdomain='' if idx == 0 else (idx + 1) , colIdx = idx, 
-                       curve='DEPTH' if idx == 0 else "ZONE",
+                       curve='DEPTH' if idx == 0 else ( "TVDSS" if "TVDSS" in list(df.columns) else "ZONE" ),
                        unit='m')
         if idx == 1:
             # __drawZoneTrack 
@@ -398,6 +400,9 @@ def advLogplot(df, curves, track_styles, title = None, keyZoneDF = None, zoneDF 
                 fig.add_annotation(xref="x2 domain", xanchor="right", x=1, xshift=-10, font_size=8, 
                                    yref="y", yanchor="middle", y=(row['start'] + row['stop'])/2, 
                                    text=row['Surface'], showarrow=False, bgcolor='#fff')
+            if "TVDSS" in list(df.columns):
+                tvdss = go.Scattergl(x=df['TVDSS'], y=df[refCurveName], name="TVDSS", xaxis="x3", yaxis="y2", line_width=0, mode="lines")
+                fig.add_trace(tvdss)
         elif idx == 0:
             for _,row in keyZoneDF.iterrows():
                 trace = go.Scattergl(x=[1,1],y=[row['start'],row['stop']], name="Zone", xaxis="x", line_width=0, fill='tozerox',  
@@ -415,9 +420,12 @@ def advLogplot(df, curves, track_styles, title = None, keyZoneDF = None, zoneDF 
                                    text=row['Surface'], showarrow=False, bgcolor='#fff')
 
     xaxis_index = len(xaxes.keys())
-    track_idx = xaxis_index
+    #track_idx = xaxis_index
+    track_idx = 2
 
     selectedCurves = [refCurveName]
+    if "TVDSS" in list(df.columns):
+        selectedCurves.append("TVDSS")
     for track_style in track_styles:
         trackConfig = getTrackConfig(track_style)
         for c in trackConfig['curves']:
@@ -517,9 +525,13 @@ def advLogplot(df, curves, track_styles, title = None, keyZoneDF = None, zoneDF 
     #fig.update_yaxes(side='left', gridcolor='#aaf', gridwidth=0.5, showgrid=True, row=1, col=3)
     #fig.update_yaxes(side='left', gridcolor='#aaf', gridwidth=0.5, showgrid=True, row=1, col=4)
 
-    with open('/tmp/layout.json', 'w') as f:
-        write_json(fig, f, pretty=True)
     return fig
+
+def write_json(fig, path):
+    with open(path, 'w') as f:
+        __write_json(fig, f)
+    return fig
+
 
 def histogram(df, curve_names, num_bins, file_path: str=""):
     fig = go.Figure(
@@ -577,3 +589,96 @@ def multi_chart(chart_titles, data1, data2, data3):
     )
     return fig
 
+def production_by_time_chart(df_wells, all_cols):
+    DATE_COL = 0
+    COLORS = {
+        "CV.OilRate": "#ff0000",
+        "CV.LiqRate": "#008000",
+        "CV.Watercut": "#0000ff",
+        "CV.Oilcum/1000": "#800000",
+    }
+    UNITS = {
+        "CV.OilRate": "m3/month",
+        "CV.LiqRate": "m3/month",
+        "CV.Watercut": "%",
+        "CV.Oilcum/1000": "thous,m3",
+    }
+    cols = all_cols[2:]
+    fig = go.Figure()
+    
+    num_params = len(cols)
+    WELLS = len(df_wells)
+    X_START_POS = 0.3
+    Y_DOMAIN = lambda well_idx: [well_idx  / WELLS, (well_idx + 0.85) / WELLS ]
+    yaxis_idx = 0
+    overlaying_idx = 0
+    for well_idx, (well, df_well) in enumerate(df_wells):
+        x_suffix = str(well_idx + 1)
+        if x_suffix == "1":
+            x_suffix = ""
+        xaxis_key = f"xaxis{x_suffix}"
+        xaxis_name = f"x{x_suffix}"
+        if well_idx > 0:
+            fig.update_layout({
+                xaxis_key: dict(domain=[X_START_POS, 1], 
+                                title_text=f"Well {well}", showticklabels=True, showgrid=False, gridcolor='#ccc', 
+                                matches='x',
+                                showline=True, mirror=True,linewidth=1, linecolor='#888')
+            })
+        else:
+            fig.update_layout({
+                xaxis_key: dict(domain=[X_START_POS, 1], 
+                                title_text=f"Well {well}", showticklabels=True, showgrid=False, gridcolor='#ccc',
+                                showline=True, mirror=True, linewidth=1, linecolor='#888',
+                                anchor="y")
+            })
+        overlaying_y = lambda overlaying_idx: f"y{overlaying_idx + 1 if overlaying_idx > 0 else ''}"
+        for param_idx, param in enumerate(cols):
+            if param_idx == 0:
+                overlaying_idx = yaxis_idx
+            color = COLORS[param] if param in COLORS else getColor(param)
+            y_suffix = '' if yaxis_idx == 0 else str(yaxis_idx + 1)
+            yaxis_name = f"y{y_suffix}"
+            yaxis_key = f"yaxis{y_suffix}"
+            fig.update_layout(
+                {
+                    yaxis_key: dict( title=None,
+                        tickfont=dict(color=color),
+                        zeroline=False,
+                        showline=True, linecolor=color, linewidth=0.5, side='right',
+                        domain=Y_DOMAIN(well_idx),
+                        #showgrid=True, gridcolor='#ccc', gridwidth=0.5,
+                        showgrid=False,
+                        anchor="free",
+                        overlaying=(None if param_idx == 0 else overlaying_y(overlaying_idx)),
+                        position=param_idx / num_params * X_START_POS,
+                    )
+                }
+            )
+            fig.add_trace(
+                go.Scatter(
+                    x=df_well[all_cols[DATE_COL]],
+                    y=df_well[param],
+                    name=f"{param}",
+                    mode="lines",
+                    line=dict(color=color),
+                    xaxis=xaxis_name,
+                    yaxis=yaxis_name,
+                    legendgroup=well
+                )
+            )
+            fig.add_annotation(text=f"{param} ({UNITS.get(param, 'NA')})", textangle=-90, font=dict(color=color),
+                x=param_idx / num_params * X_START_POS, xref='paper', xanchor='center', align = 'center',
+                y=0.5, yref=f"{yaxis_name} domain", yanchor='middle')
+            yaxis_idx = yaxis_idx + 1
+        if well_idx > 0:
+            fig.update_layout({
+                xaxis_key: dict(anchor=f"y{overlaying_idx + 1}")
+            })
+
+    fig.update_layout(height=500 * len(df_wells), 
+                        #plot_bgcolor='#fff',
+                        showlegend=False,
+                        legend_tracegroupgap=260,
+                        legend_traceorder="grouped+reversed")
+    return fig

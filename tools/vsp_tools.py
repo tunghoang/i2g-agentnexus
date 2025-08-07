@@ -18,7 +18,7 @@ import mlflow
 from calendar import monthrange
 from pywaterflood import CRM
 from tools.plot_tools import getColor
-from utils.plot_utils import multi_chart
+from utils.plot_utils import multi_chart, production_by_time_chart
 from xlsx_utils import XLSX
 
 _cACHE = dict()
@@ -341,6 +341,7 @@ def create_vsp_tools(mcp_server, data_config: DataConfig) -> List[str]:
             if not len(wells):
                 wells = [str(w) for w, _ in df_wells]
 
+            '''
             from plotly.subplots import make_subplots
             import plotly.graph_objects as go
             fig = make_subplots(
@@ -406,6 +407,8 @@ def create_vsp_tools(mcp_server, data_config: DataConfig) -> List[str]:
                     )
 
             fig.update_layout(height=500 * len(df_wells))
+            '''
+            fig = production_by_time_chart(df_wells, all_cols)
             out_file = Naming.sanitize_filename(f"{'-'.join(wells)}{'-'.join(params)}")
             dest_path = Naming.dest_path(out_file, "production-time-chart")
             fig.write_html(dest_path)

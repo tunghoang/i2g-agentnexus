@@ -1,10 +1,10 @@
 from pathlib import Path
-import os
+import os, shutil
 
 
 def ensure_path(inpath):
     path_to_ensure = inpath
-    if inpath.endswith(".html"):
+    if inpath.endswith((".html", ".json", ".js", ".css")):
         path_to_ensure = os.path.dirname(inpath)
     Path(path_to_ensure).mkdir(parents=True, exist_ok=True)
 
@@ -37,19 +37,19 @@ class Naming:
         return f"{lasname}.histogram.html"
 
     @classmethod
-    def dest_path(cls, inpath, category=""):
+    def dest_path(cls, inpath, category="", format='html'):
         CHART_DIR = "/tmp"
         outpath = (
-            f"{CHART_DIR}/{category}/{inpath}.html"
+            f"{CHART_DIR}/{category}/{inpath}.{format}"
             if category
-            else f"{CHART_DIR}/{inpath}.html"
+            else f"{CHART_DIR}/{inpath}.{format}"
         )
         ensure_path(outpath)
         return outpath
 
     @classmethod
-    def publish_path(cls, inpath, category=""):
-        outpath = f"{category}/{inpath}.html" if category else f"{inpath}.html"
+    def publish_path(cls, inpath, category="", format="html"):
+        outpath = f"{category}/{inpath}.{format}" if category else f"{inpath}.{format}"
         return outpath
 
     @classmethod
@@ -94,3 +94,15 @@ class Naming:
     @classmethod
     def tvdss_file(cls, well: str):
         return f"{cls.devi_path(well)}/TVDSS.csv"
+
+    @classmethod
+    def gen_site(cls):
+        files_to_gen = {
+            'js/plotly-utils': 'js',
+            'view_plot': 'html'
+        }
+        for fpath,ext in files_to_gen.items():
+            destPath = Naming.dest_path(fpath, format=ext)
+            if not os.path.exists(destPath):
+                ensure_path(destPath)
+                shutil.copyfile(f'templates/{fpath}.{ext}', destPath)

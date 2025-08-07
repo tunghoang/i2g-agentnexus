@@ -16,7 +16,7 @@ from calendar import monthrange
 from pywaterflood import CRM
 from utils.missing_pay_utils import get_well_checklist, get_well_checklist_curves,\
     make_pseudo_log, get_training_result, remove_training_result
-from utils.plot_utils import multi_chart, advLogplot, logplot
+from utils.plot_utils import multi_chart, advLogplot, logplot, write_json
 from xlsx_utils import XLSX
 from multiprocessing import Process
 
@@ -57,23 +57,33 @@ def create_missingpay_tools(mcp_server, data_config: DataConfig) -> List[str]:
                 MemoryCache.get_instance().put(logDF_path, las)
 
             df = las.df().reset_index()
-
+            print(list(df.columns))
             if track_templates:
                 keyZoneDF, zoneDF = XLSX.extract_zones1(well)
                 fig = advLogplot(df, las.curves, track_styles=track_templates, title=f"Well {well} Logplot", keyZoneDF = keyZoneDF, zoneDF=zoneDF)
             else:
                 fig = logplot(df, las.curves)
 
+            #dest_path = Naming.dest_path(
+            #    logDF_path.removeprefix(f"{data_config.data_dir}/"), category="logplot"
+            #)
+            #fig.write_html(dest_path)
             dest_path = Naming.dest_path(
-                logDF_path.removeprefix(f"{data_config.data_dir}/"), category="logplot"
+                logDF_path.removeprefix(f"{data_config.data_dir}/"), category="logplot", format='json'
             )
-            fig.write_html(dest_path)
+            write_json(fig, dest_path)
+            Naming.gen_site()
+            prefix = f"{data_config.data_dir}/"
+            relative_path = f"/logplot/{logDF_path.removeprefix(prefix)}.json"
             return {
-                "text": Naming.publish_path(
-                    logDF_path.removeprefix(f"{data_config.data_dir}/"),
-                    category="logplot",
-                )
+                "text": f'PLOT_URL=\'{Naming.publish_path("view_plot")}?plot={relative_path}\''
             }
+            #return {
+            #    "text": Naming.publish_path(
+            #        logDF_path.removeprefix(f"{data_config.data_dir}/"),
+            #        category="logplot",
+            #    )
+            #}
         except Exception as e:
             traceback.print_exc()
             return {"text": str(e)}

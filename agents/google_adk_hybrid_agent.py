@@ -703,7 +703,7 @@ class ToolExecutingAgentExecutor:
                 executor_instance.logger.info(f"Executing plt_table")
                 url = urllib.parse.urljoin(AGENT_URL, "excel-viewer/?file=/data/misc/plt.xlsx")
                 return {"status": "success",
-                        "result": url}
+                        "result": f"PLOT_URL={url}"}
             except Exception as e:
                 executor_instance.logger.error(f"Error in plt_table {e}")
                 return {"status": "error", "message": str(e)}
@@ -1018,6 +1018,7 @@ class ToolExecutingAgentExecutor:
 
 # FORMAT OUTPUT FILE:
 Format any html file in output (e.g.: /path/to/file.html) with the following template: http://dashboard.portal:9999/path/to/file.html. Also embed it into an <iframe>
+Format any PLOT_URL in output with the following template: http://dashboard.portal:9999/PLOT_URL. Also embed it into an <iframe>
 
 # EXAMPLES OF CORRECT BEHAVIOR:
 User: "list files *.las"

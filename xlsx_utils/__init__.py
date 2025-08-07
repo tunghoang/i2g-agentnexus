@@ -1,5 +1,6 @@
 import pandas as pd
 import numpy as np
+import re
 from cache import MemoryCache
 from naming import Naming
 
@@ -95,7 +96,11 @@ class XLSX:
 
     @classmethod
     def extract_zones1(cls, well, file_path = None):
-        markerDF = cls.extract_markers(well, file_path)
+        _well = well
+        if "-" in well:
+            _well = re.sub(r'^.+\-', '', well)
+
+        markerDF = cls.extract_markers(_well, file_path)
         columns = list(markerDF.columns)
 
         markerDF = markerDF.sort_values(columns[5])
