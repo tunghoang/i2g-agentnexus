@@ -157,6 +157,7 @@ My image goes here
         qa_server.agents[agentid] = dict(t0=now, tl=now, agent=new_agent, killed=0)
         return dict(agentid=agentid)
 
+    app.mount("/data", StaticFiles(directory="data"), name="data")
     app.mount("/", StaticFiles(directory="public", html=True), name="public")
 
     return app
