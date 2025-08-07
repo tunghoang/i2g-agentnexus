@@ -339,17 +339,19 @@ def create_missingpay_tools(mcp_server, data_config: DataConfig) -> List[str]:
             return {"text": f"Tool failed: {str(e)}"}
 
     @mcp_server.tool(
-        name="view_training_result",
-        description="Show the training result from trained model created by create pseudo log"
+        name="view_training_experiment",
+        description="Show the training experiments"
     )
-    def view_training_result(**kwargs):
+    def view_training_experiment(**kwargs):
         try:
             input_data = json.loads(kwargs["input"])
             target_curve: str = input_data.get("target_curve")
             target_well: str = input_data.get("target_well")
             model_type: str = input_data.get("model_type")
+            seconds: int = input_data.get("seconds")
+            filter_expr: str = input_data.get("filter_expr")
 
-            out_file_relative_path = get_training_result(target_curve, target_well, model_type)
+            out_file_relative_path = get_training_result(target_curve, target_well, model_type, seconds, filter_expr)
 
             return {"text": out_file_relative_path}
         except Exception as e:
@@ -357,16 +359,16 @@ def create_missingpay_tools(mcp_server, data_config: DataConfig) -> List[str]:
             return {"text": f"Tool failed: {str(e)}"}
     
     @mcp_server.tool(
-        name="delete_training_result",
-        description="Delete the training result with model_id"
+        name="delete_training_experiment",
+        description="Delete the training experiment with experiment_id"
     )
-    def delete_training_result(**kwargs):
+    def delete_training_experiment(**kwargs):
         try:
             input_data = json.loads(kwargs["input"])
-            model_id: str = input_data.get("model_id")
+            experiment_id: str = input_data.get("experiment_id")
 
             # delete
-            remove_training_result(model_id)
+            remove_training_result(experiment_id)
             
             # view
             out_file_relative_path = get_training_result()
@@ -403,7 +405,7 @@ def create_missingpay_tools(mcp_server, data_config: DataConfig) -> List[str]:
         "well_checklist_curves",
         "create_wells_tvdss",
         "create_pseudo_log",
-        "view_training_result",
-        "delete_training_result",
+        "view_training_experiment",
+        "delete_training_experiment",
     ]
     return tool_names

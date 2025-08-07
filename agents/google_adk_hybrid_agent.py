@@ -715,19 +715,23 @@ class ToolExecutingAgentExecutor:
             curves: list[str],
             wells: list[str],
             model_type: str,
-            model_params: dict
+            model_params: dict = {},
         ) -> dict:
             """
             Generate a curve for a well from curves in a list of wells using a machine learning model with model parameters.
-            Model parameter can be {}
 
             Args:
                 target_curve (str): Name of the curve to be created.
                 taget_well (str): Target well for curve creation.
                 curves (list[str]): Curve types used for training.
                 wells (list[str]): Source wells used for training data.
-                model_type (str): Machine learning model to apply (e.g., linear, random forest).
-                model_params (dict): Model parameters of the machine learning model.
+                model_type (str): Type of machine learning model to use. Supported:
+                    - 'linear' for Linear Regression
+                    - 'random_forest' for Random Forest Regressor
+                    - 'neural_network' for Multi-layer Perceptron Regressor
+                model_params (dict, optional): Dictionary of model parameters. Example:
+                    - For 'neural_network': {"hidden_layer_sizes": [50, 20], "max_iter": 200}
+                    - For 'random_forest': {"n_estimators": 100, "max_depth": 10}
             
             Returns:
                 dict: Result of the pseudo log creation, or error message if failed.
@@ -755,7 +759,7 @@ class ToolExecutingAgentExecutor:
                 return {"status": "error", "message": str(e)}
         tools.append(create_pseudo_log)
         
-#        def view_training_result(
+#        def view_training_experiment(
 #            tool_context: ToolContext,
 #            target_curve: str,
 #            target_well: str,
@@ -787,10 +791,10 @@ class ToolExecutingAgentExecutor:
 #                _model_type = get_or_update_param('model_type', model_type)
 #
 #                executor_instance.logger.info(
-#                    f"Executing view_training_result for well: {_target_well}, curve: {_target_curve}, model: {_model_type}"
+#                    f"Executing view_training_experiment for well: {_target_well}, curve: {_target_curve}, model: {_model_type}"
 #                )
 #                result = executor_instance._execute_mcp_tool(
-#                    'view_training_result',
+#                    'view_training_experiment',
 #                    json.dumps({
 #                        "target_curve": _target_curve,
 #                        "target_well": _target_well,
@@ -799,70 +803,92 @@ class ToolExecutingAgentExecutor:
 #                )
 #                return {"status": "success", "result": result}
 #            except Exception as e:
-#                executor_instance.logger.error(f"Error in view_training_result {e}")
+#                executor_instance.logger.error(f"Error in view_training_experiment {e}")
 #                return {"status": "error", "message": str(e)}
-        def view_training_result(
+        def view_training_experiment(
             target_curve: str = '',
             target_well: str = '',
             model_type: str = '', 
+            seconds: int = 0, 
+            filter_expr: str = '', 
         ) -> dict:
             """
-            View training results of a curve for a well using a machine learning model.
-            The args can be null.
+            View training experiments of a curve for a well using a machine learning model 
+            with a time range specified in miliseconds ago and a filter expression.
 
             Args:
-                target_curve (str): Name of the curve to evaluate.
-                target_well (str): The target well to generate pseudo log for.
-                model_type (str): Name/type of the machine learning model used.
+                target_curve (str, optional): Name of the curve to evaluate.
+                target_well (str, optional): The target well to generate the curve for.
+                model_type (str, optional): Type of machine learning model to use. 
+                    Supported values:
+                        - 'linear' for Linear Regression
+                        - 'random_forest' for Random Forest Regressor
+                        - 'neural_network' for Multi-layer Perceptron Regressor
+                
+                seconds (int, optional): Time since experiment creation, in seconds.  
+                    Used to normalize relative time expressions (e.g., "last minutes", "last days", "last years") to a common unit: seconds.
+
+                filter_expr (str, optional): A filter expression to filter experiments.
+                    Supported fields:
+                        - r2 (accuracy): R-squared
+                        - mape, rmse (loss): MAPE, RMSE 
+
+                     Examples:
+                        - "r2 > 0.85 and loss < 10"
+                        - "mape <= 5"
+                        - "accuracy >= 0.9 or loss < 7"
 
             Returns:
                 dict: Result of the training visualization or summary.
             """
             try:
                 executor_instance.logger.info(
-                    f"Executing view_training_result of curve {target_curve} for well {target_well} using model {model_type}"
+                    f"Executing view_training_experiment of curve {target_curve} for well {target_well} "
+                    f"using model {model_type}, filtering last {seconds} seconds with expression {filter_expr}"
                 )
                 result = executor_instance._execute_mcp_tool(
-                    'view_training_result',
+                    'view_training_experiment',
                     json.dumps({
                         "target_curve": target_curve,
                         "target_well": target_well,
                         "model_type": model_type,
+                        "seconds": seconds,
+                        "filter_expr": filter_expr,
                     })
                 )
                 return {"status": "success", "result": result}
             except Exception as e:
-                executor_instance.logger.error(f"Error in view_training_result {e}")
+                executor_instance.logger.error(f"Error in view_training_experiment {e}")
                 return {"status": "error", "message": str(e)}
-        tools.append(view_training_result)
+        tools.append(view_training_experiment)
         
-        def delete_training_result(
-            model_id: str,
+        def delete_training_experiment(
+            experiment_id: str,
         ) -> dict:
             """
-            Delete training result in mlflow with model_id
+            Delete a training experiment with experiment_id
 
             Args:
-                model_id (str): The id of model in raining result
+                experiment_id (str): The id of an experiment
 
             Returns:
                 dict: results
             """
             try:
                 executor_instance.logger.info(
-                    f"Executing delete training resullt with model_id {model_id}"
+                    f"Executing delete a training experiment with experiment_id {experiment_id}"
                 )
                 result = executor_instance._execute_mcp_tool(
-                    'delete_training_result',
+                    'delete_training_experiment',
                     json.dumps({
-                        "model_id": model_id,
+                        "experiment_id": experiment_id,
                     })
                 )
                 return {"status": "success", "result": result}
             except Exception as e:
-                executor_instance.logger.error(f"Error in query_training_result {e}")
+                executor_instance.logger.error(f"Error in view_training_experiment {e}")
                 return {"status": "error", "message": str(e)}
-        tools.append(delete_training_result)
+        tools.append(delete_training_experiment)
 
         def summarize_marker_data() -> dict:
             """Summarize marker data from marker file
