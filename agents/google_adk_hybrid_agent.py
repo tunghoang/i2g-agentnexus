@@ -1000,6 +1000,7 @@ class ToolExecutingAgentExecutor:
 ## For missing pay:
 - User asks "View checklist table of well logs data" → IMMEDIATELY call well_checklist_table with wells if user provided or else wells=''
 - User asks "Generate logplot for WELL, then IMMEDIATELY call build_logplot with well=WELL and track_templates if user provided or track_templates=GR,LLD,NPHI
+- "planset" is equivalent with "logplot"
 - User asks "plot histogram for CURVES from well WELL", then IMMEDIATELY call plot_histogram_well with WELL and CURVES and num_bins=10 if it is not provided
 - User asks "plot histogram for CURVE1 and CURVE2 from file.las with 9 bins" → IMMEDIATELY call plot_histogram_las with file_path="file.las" and curveNames=["CURVE1", "CURVE2"] and numBins=9
 

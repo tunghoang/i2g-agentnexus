@@ -105,6 +105,8 @@ class XLSX:
 
         markerDF = markerDF.sort_values(columns[5])
         markerDF = markerDF.reset_index()
+        if len(markerDF.index) < 2:
+            return None, None
         max_depth = markerDF.iloc[-1][columns[5]]
         keyMarkerDF = markerDF[markerDF[columns[1]].str.startswith('SH')]
 

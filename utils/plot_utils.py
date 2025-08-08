@@ -3,6 +3,7 @@ import json
 import numpy as np
 import hashlib
 import yaml
+import pandas as pd
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 from plotly.io import write_json as __write_json
@@ -316,7 +317,8 @@ def advLogplot(df, curves, track_styles, title = None, keyZoneDF = None, zoneDF 
     CURVE_HEADER = 47
     TRACK_TITLE = 20
     Y_DOMAIN = [0, (PLOT_HEIGHT - TRACK_HEADER) / PLOT_HEIGHT]
-    STATIC_TRACKS = lambda : 1 + (0 if zoneDF is None or zoneDF.empty else 1)
+    #STATIC_TRACKS = lambda : 1 + (0 if zoneDF is None or zoneDF.empty else 1)
+    STATIC_TRACKS = lambda : 2
     TRACK_NUM = lambda: len(track_styles) + STATIC_TRACKS()
     X_DOMAIN_SIZE = lambda: 1/TRACK_NUM()
     X_DOMAIN = lambda trackIdx: [trackIdx*X_DOMAIN_SIZE(), (trackIdx + 1) * X_DOMAIN_SIZE()]
@@ -379,10 +381,10 @@ def advLogplot(df, curves, track_styles, title = None, keyZoneDF = None, zoneDF 
     # Prepare axes
     yaxes = { 'yaxis': { **YAXIS_PROPS, **YAXIS_LIMIT_PROPS(df) }, 'yaxis2': { **YAXIS_PROPS, **YAXIS_LIMIT_PROPS(df) }}
     xaxes = { 'xaxis': dict(domain=X_DOMAIN(0), range=[0,1]) }
-    if zoneDF is not None and not zoneDF.empty:
-        xaxes['xaxis2'] = dict( domain=X_DOMAIN(1), range=[0, 1])
-        if "TVDSS" in list(df.columns):
-            xaxes['xaxis3'] = {"domain":X_DOMAIN(1), **XAXIS_DEFAULT_PROPS, "overlaying":'x2'}
+    #if zoneDF is not None and not zoneDF.empty:
+    xaxes['xaxis2'] = dict( domain=X_DOMAIN(1), range=[0, 1])
+    if "TVDSS" in list(df.columns):
+        xaxes['xaxis3'] = {"domain":X_DOMAIN(1), **XAXIS_DEFAULT_PROPS, "overlaying":'x2'}
 
     for idx in range(STATIC_TRACKS()):
         trace = go.Scattergl(x=[0,0], y = df[refCurveName].head(), name="Depth", xaxis=f"x{'' if idx==0 else (idx + 1)}", visible=False)
@@ -391,33 +393,35 @@ def advLogplot(df, curves, track_styles, title = None, keyZoneDF = None, zoneDF 
                        curve='DEPTH' if idx == 0 else ( "TVDSS" if "TVDSS" in list(df.columns) else "ZONE" ),
                        unit='m')
         if idx == 1:
-            # __drawZoneTrack 
-            for _,row in zoneDF.iterrows():
-                trace = go.Scattergl(x=[1,1],y=[row['start'],row['stop']],name="Zone", xaxis="x2", yaxis="y2", line_width=0, fill='tozerox', 
-                                     mode='lines')
-                                     #mode='lines+text', text=[row['Surface'], None], textposition="bottom left")
-                fig.add_trace(trace)
-                fig.add_annotation(xref="x2 domain", xanchor="right", x=1, xshift=-10, font_size=8, 
-                                   yref="y", yanchor="middle", y=(row['start'] + row['stop'])/2, 
-                                   text=row['Surface'], showarrow=False, bgcolor='#fff')
+            if isinstance(keyZoneDF, pd.DataFrame):
+                # __drawZoneTrack 
+                for _,row in zoneDF.iterrows():
+                    trace = go.Scattergl(x=[1,1],y=[row['start'],row['stop']],name="Zone", xaxis="x2", yaxis="y2", line_width=0, fill='tozerox', 
+                                         mode='lines')
+                                         #mode='lines+text', text=[row['Surface'], None], textposition="bottom left")
+                    fig.add_trace(trace)
+                    fig.add_annotation(xref="x2 domain", xanchor="right", x=1, xshift=-10, font_size=8, 
+                                       yref="y", yanchor="middle", y=(row['start'] + row['stop'])/2, 
+                                       text=row['Surface'], showarrow=False, bgcolor='#fff')
             if "TVDSS" in list(df.columns):
                 tvdss = go.Scattergl(x=df['TVDSS'], y=df[refCurveName], name="TVDSS", xaxis="x3", yaxis="y2", line_width=0, mode="lines")
                 fig.add_trace(tvdss)
         elif idx == 0:
-            for _,row in keyZoneDF.iterrows():
-                trace = go.Scattergl(x=[1,1],y=[row['start'],row['stop']], name="Zone", xaxis="x", line_width=0, fill='tozerox',  
-                                     mode='lines')
-                                     #mode='lines+text', text=[row['Surface'], None], textposition="bottom left")
-                fig.add_trace(trace)
-                fig.add_annotation(xref="x domain", xanchor="right", x=1, xshift=-10, font_size=8, 
-                                   yref="y", yanchor="middle", y=(row['start'] + row['stop'])/2, 
-                                   text=row['Surface'], showarrow=False, bgcolor='#fff')
-                fig.add_annotation(xref="x domain", xanchor="right", x=1, xshift=-10, font_size=8, 
-                                   yref="y", yanchor="top", y=row['start'], yshift=-10,
-                                   text=row['Surface'], showarrow=False, bgcolor='#fff')
-                fig.add_annotation(xref="x domain", xanchor="right", x=1, xshift=-10, font_size=8, 
-                                   yref="y", yanchor="bottom", y=row['stop'], yshift=10,
-                                   text=row['Surface'], showarrow=False, bgcolor='#fff')
+            if isinstance(keyZoneDF, pd.DataFrame):
+                for _,row in keyZoneDF.iterrows():
+                    trace = go.Scattergl(x=[1,1],y=[row['start'],row['stop']], name="Zone", xaxis="x", line_width=0, fill='tozerox',  
+                                         mode='lines')
+                                         #mode='lines+text', text=[row['Surface'], None], textposition="bottom left")
+                    fig.add_trace(trace)
+                    fig.add_annotation(xref="x domain", xanchor="right", x=1, xshift=-10, font_size=8, 
+                                       yref="y", yanchor="middle", y=(row['start'] + row['stop'])/2, 
+                                       text=row['Surface'], showarrow=False, bgcolor='#fff')
+                    fig.add_annotation(xref="x domain", xanchor="right", x=1, xshift=-10, font_size=8, 
+                                       yref="y", yanchor="top", y=row['start'], yshift=-10,
+                                       text=row['Surface'], showarrow=False, bgcolor='#fff')
+                    fig.add_annotation(xref="x domain", xanchor="right", x=1, xshift=-10, font_size=8, 
+                                       yref="y", yanchor="bottom", y=row['stop'], yshift=10,
+                                       text=row['Surface'], showarrow=False, bgcolor='#fff')
 
     xaxis_index = len(xaxes.keys())
     #track_idx = xaxis_index
@@ -448,6 +452,7 @@ def advLogplot(df, curves, track_styles, title = None, keyZoneDF = None, zoneDF 
                 continue
             have_track = True
             xaxis_index += 1
+            print(track_idx, TRACK_NUM(), X_DOMAIN(track_idx))
             xaxes[f'xaxis{xaxis_index}'] = dict(domain=X_DOMAIN(track_idx), 
                                                 tickfont_color=curveSpec.get('line_color', curveSpec.get('marker_color')), 
                                                 linecolor=curveSpec.get('line_color', curveSpec.get('marker_color')),
