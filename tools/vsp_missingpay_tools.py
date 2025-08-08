@@ -360,7 +360,6 @@ def create_missingpay_tools(mcp_server, data_config: DataConfig) -> List[str]:
                     model_type, 
                     model_params, 
                     started_event,
-                    wells_dir,
                 )
             )
             process.start()
