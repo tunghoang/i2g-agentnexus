@@ -396,19 +396,6 @@ def make_pseudo_log(
         wells_dir: str = "data/wells",
     ):
 
-    available_wells = [entry.name for entry in os.scandir(wells_dir) if entry.is_dir()]
-    selected_wells = [name for name in available_wells if name in wells] if wells else available_wells
-    selected_wells.sort()
-
-    if len(selected_wells) == 0:
-        raise Exception(f"No wells {wells} found")
-    
-    if target_well not in available_wells:
-        raise Exception(f"No well {target_well} found")
-    
-    if len(curves) == 0:
-        raise Exception(f"No curves {curves} found")
-    
     model_name = f"{target_curve}_{target_well}_{model_type}"
 
     with mlflow.start_run(run_name=model_name):
@@ -416,19 +403,16 @@ def make_pseudo_log(
         mlflow.log_param("target_well", target_well)
         mlflow.log_param("model_type", model_type)
         mlflow.log_param("input_curves", json.dumps(curves))
-        mlflow.log_param("input_wells", json.dumps(selected_wells))
+        mlflow.log_param("input_wells", json.dumps(wells))
         mlflow.log_param("model_params", json.dumps(model_params))
 
         if started_event:
             started_event.set()
 
         all_curves = [c for c in curves if c != target_curve] + [target_curve]
-        data = prepare_las_training_data(selected_wells, all_curves, wells_dir) 
+        data = prepare_las_training_data(wells, all_curves, wells_dir) 
         if len(data) == 0:
-            raise ValueError(f"No valid data found for curves {input_curves} in wells {selected_wells}")
-        
-        if len(data) < 10:
-            raise ValueError(f"Insufficient data to train a model: only {len(data)} samples found")
+            raise ValueError(f"No valid data found for curves {input_curves} in wells {wells}")
         
         from sklearn.model_selection import train_test_split
         train_data, test_data = train_test_split(data, test_size=0.2, random_state=42, shuffle=True)
@@ -473,7 +457,7 @@ def make_pseudo_log(
             target_curve_data = model.predict(target_input)
             write_success = write_curve_to_las(target_well, curves, target_curve, target_curve_data, wells_dir)
         mlflow.log_metric("saved_las_file", int(write_success))
-        
+    
         # evaluation
         fig = visualize_training_result(model, data)
         out_html = os.path.join("/tmp", "plot.html")
@@ -516,7 +500,6 @@ def visualize_training_result(model, data: np.ndarray):
         template='plotly_white'
     )
     return fig
-
 
 def normalize_filter_expr(expr: str) -> str:
     import re
@@ -565,6 +548,23 @@ def make_filter_params(
     
     return " and ".join(filter_params)
         
+def parse_json_param(param: str):
+    if not param:
+        return "N/A"
+    try:
+        result = json.loads(param)
+        if type(result) == list:
+            return ", ".join(result)
+        elif type(result) == dict:
+            return ", ".join(f"{k}: {v}" for k, v in result.items())
+        return result
+    except:
+        return param
+
+def parse_float_param(param: float | int):
+    if param is None:
+        return "N/A"
+    return f"{param:.2f}"
 
 def get_training_result(
         target_curve: str = '',
@@ -589,6 +589,8 @@ def get_training_result(
     model_names: list[str] = []
     curve_list: list[str] = []
     well_list: list[str] = []
+    mapes: list[str] = []
+    rmses: list[str] = []
     r2_scores: list[str] = []
     time_status: list[str] = []
     status_list: list[str] = []
@@ -598,24 +600,6 @@ def get_training_result(
     template_path = "templates/training_result_report_tpl.html"
     with open(template_path, "r", encoding="utf-8") as tpl_file:
         template = tpl_file.read()
-
-    def parse_json_param(param: str):
-        if not param:
-            return "N/A"
-        try:
-            result = json.loads(param)
-            if type(result) == list:
-                return ", ".join(result)
-            elif type(result) == dict:
-                return ", ".join(f"{k}: {v}" for k, v in result.items())
-            return result
-        except:
-            return param
-
-    def parse_float_param(param: float | int):
-        if param is None:
-            return "N/A"
-        return f"{param:.2f}"
 
     for idx, run in enumerate(runs):
         data = run.data
@@ -670,6 +654,8 @@ def get_training_result(
         model_names.append(run_name)
         curve_list.append(input_curves)
         well_list.append(input_wells)
+        mapes.append(mape)
+        rmses.append(rmse)
         r2_scores.append(r2)
         time_status.append(time_since_run)
         status_list.append(run_status)
@@ -684,6 +670,8 @@ def get_training_result(
         "Model Name": model_names,
         "From Curves": curve_list,
         "From Wells": well_list,
+        "MAPE": mapes,
+        "RMSE": rmses,
         "R² Score": r2_scores,
         "Created": time_status,
         "Status": status_list,

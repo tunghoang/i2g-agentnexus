@@ -332,13 +332,36 @@ def create_missingpay_tools(mcp_server, data_config: DataConfig) -> List[str]:
             wells: list[str] = input_data.get("wells")
             model_type: str = input_data.get("model_type")
             model_params: dict = input_data.get("model_params")
+            wells_dir = Naming.well_path()
 
+            available_wells = [entry.name for entry in os.scandir(wells_dir) if entry.is_dir()]
+            selected_wells = [name for name in available_wells if name in wells] if wells else []
+            selected_wells.sort()
+
+            if not selected_wells:
+                raise Exception(f"No valid wells found")
+            
+            if target_well not in available_wells:
+                raise Exception(f"Well '{target_well}' does not exist")
+            
+            if not curves:
+                raise Exception(f"No valid curves found")
+                    
             started_event = Event()
             
             # start training
             process = Process(
                 target=make_pseudo_log,
-                args=(target_curve, target_well, curves, wells, model_type, model_params, started_event)
+                args=(
+                    target_curve, 
+                    target_well, 
+                    curves, 
+                    selected_wells, 
+                    model_type, 
+                    model_params, 
+                    started_event,
+                    wells_dir,
+                )
             )
             process.start()
 
