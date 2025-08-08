@@ -28,6 +28,7 @@ except ImportError as e:
 
 from config.settings import AgentConfig
 from servers.mcp_server import MCPClient
+from naming import Naming
 from base_utils import recursive_get, recursive_put
 logger = logging.getLogger(__name__)
 
@@ -701,6 +702,7 @@ class ToolExecutingAgentExecutor:
             """
             try:
                 executor_instance.logger.info(f"Executing plt_table")
+                Naming.gen_site()
                 url = urllib.parse.urljoin(AGENT_URL, "excel-viewer/?file=/data/misc/plt.xlsx")
                 return {"status": "success",
                         "result": f"PLOT_URL={url}"}

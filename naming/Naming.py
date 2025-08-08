@@ -39,11 +39,9 @@ class Naming:
     @classmethod
     def dest_path(cls, inpath, category="", format='html'):
         CHART_DIR = "/tmp"
-        outpath = (
-            f"{CHART_DIR}/{category}/{inpath}.{format}"
-            if category
-            else f"{CHART_DIR}/{inpath}.{format}"
-        )
+        outpath = f"{CHART_DIR}/{category}/{inpath}" if category else f"{CHART_DIR}/{inpath}"
+        if format:
+            outpath = outpath + f".{format}"
         ensure_path(outpath)
         return outpath
 
@@ -98,11 +96,22 @@ class Naming:
     @classmethod
     def gen_site(cls):
         files_to_gen = {
+            'excel-viewer': 1, # directory and its subdirs recursively
+            'js/plotly-3.0.1.min': 'js',
             'js/plotly-utils': 'js',
             'view_plot': 'html'
         }
         for fpath,ext in files_to_gen.items():
-            destPath = Naming.dest_path(fpath, format=ext)
-            if not os.path.exists(destPath):
-                ensure_path(destPath)
-                shutil.copyfile(f'templates/{fpath}.{ext}', destPath)
+            if type(ext) == str:
+                destPath = Naming.dest_path(fpath, format=ext)
+                if not os.path.exists(destPath):
+                    ensure_path(destPath)
+                    shutil.copyfile(f'templates/{fpath}.{ext}', destPath)
+            elif ext == 1:
+                destPath = Naming.dest_path(fpath, format='')
+                print(destPath)
+                if not os.path.isdir(destPath):
+                    #ensure_path(destPath)
+                    #shutil.rmtree(destPath)
+                    print('Copytree', 'public/excel-viewer', destPath)
+                    shutil.copytree('public/excel-viewer', destPath)
