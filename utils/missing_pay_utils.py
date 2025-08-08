@@ -4,11 +4,11 @@ import lasio
 import numpy as np
 import pandas as pd
 
+from multiprocessing import Event
 from datetime import datetime, timedelta, timezone
 from naming import Naming
 from robust_las_parser import load_las_file
 from xlsx_utils import XLSX
-
 
 import mlflow
 from mlflow.tracking import MlflowClient
@@ -392,6 +392,7 @@ def make_pseudo_log(
         wells: list[str] = [],
         model_type: str = "random_forest",
         model_params: dict = {},
+        started_event: Event = None,
         wells_dir: str = "data/wells",
     ):
 
@@ -417,6 +418,9 @@ def make_pseudo_log(
         mlflow.log_param("input_curves", json.dumps(curves))
         mlflow.log_param("input_wells", json.dumps(selected_wells))
         mlflow.log_param("model_params", json.dumps(model_params))
+
+        if started_event:
+            started_event.set()
 
         all_curves = [c for c in curves if c != target_curve] + [target_curve]
         data = prepare_las_training_data(selected_wells, all_curves, wells_dir) 
