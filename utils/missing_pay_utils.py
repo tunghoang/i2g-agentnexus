@@ -413,7 +413,7 @@ def make_pseudo_log(
         all_curves = [c for c in curves if c != target_curve] + [target_curve]
         dataset = prepare_las_training_data(wells, all_curves) 
         if len(dataset) == 0:
-            raise ValueError(f"No valid data found for curves {input_curves} in wells {wells}")
+            raise ValueError(f"No valid data found for curves {curves} in wells {wells}")
         
         # training
         from sklearn.model_selection import train_test_split
@@ -711,7 +711,7 @@ def get_training_result(
         "Model Name": model_names,
         "From Curves": curve_list,
         "From Wells": well_list,
-        "MAPE": mapes,
+        "MAPE (%)": mapes,
         "RMSE": rmses,
         "R² Score": r2_scores,
         "Created": time_status,
