@@ -88,6 +88,10 @@ class Naming:
     @classmethod
     def devi_path(cls, well: str):
         return f"{cls.well_path(well)}/GIS/Devi"
+    
+    @classmethod
+    def las_path(cls, well: str):
+        return f"{cls.well_path(well)}/GIS/Las"
 
     @classmethod
     def tvdss_file(cls, well: str):

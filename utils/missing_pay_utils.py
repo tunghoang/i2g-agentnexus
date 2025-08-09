@@ -232,7 +232,7 @@ def get_well_checklist_curves(
 
 
 def read_curves_from_las(well_name: str, curves: list[str]) -> np.ndarray | None:
-    las_dir = Naming.data_path(f"wells/{well_name}/GIS/Las")
+    las_dir = Naming.las_path(well_name)
     las_file_paths = [
         f.path for f in os.scandir(las_dir)
         if f.is_file() and f.name.lower().endswith(".las")
@@ -265,7 +265,7 @@ def write_curve_to_las(
         curve_data: np.ndarray, 
     ) -> str | None:
 
-    las_dir = Naming.data_path(f"wells/{well_name}/GIS/Las")
+    las_dir = Naming.las_path(well_name)
     las_file_paths = [
         f.path for f in os.scandir(las_dir)
         if f.is_file() and f.name.lower().endswith(".las")
@@ -581,12 +581,11 @@ def get_mlflow_artifact_path(
         experiment_id: str,
         run_id: str,
         artifact_path: str,
-        dest_dir: str = "./mlartifacts",
         allow_remote: bool = False,
     ) -> str | None:
 
-    dest_path = os.path.join(dest_dir, experiment_id, run_id, "artifacts")
-    local_file_path = os.path.join(dest_path, artifact_path)
+    mlflow_path = Naming.data_path(f"{experiment_id}/{run_id}/artifacts", prefix="./mlartifacts")
+    local_file_path = os.path.join(mlflow_path, artifact_path)
 
     if os.path.isfile(local_file_path):
         return local_file_path 
