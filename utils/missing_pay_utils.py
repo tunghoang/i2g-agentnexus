@@ -415,9 +415,9 @@ def make_pseudo_log(
         if len(dataset) == 0:
             raise ValueError(f"No valid data found for curves {input_curves} in wells {wells}")
         
+        # training
         from sklearn.model_selection import train_test_split
         train_data, test_data = train_test_split(dataset, test_size=0.2, random_state=42, shuffle=True)
-        
         x_train = train_data[:, :-1]
         y_train = train_data[:, -1]
         model = train_model(x_train, y_train, model_type, **model_params)
@@ -457,7 +457,7 @@ def make_pseudo_log(
         if len(input_data) > 0:
             predicted_curve_data = model.predict(input_data)
             tmp_las = write_curve_to_las(target_well, curves, target_curve, predicted_curve_data)
-            mlflow.log_artifact(tmp_las, artifact_path="pseudo_logs")
+            mlflow.log_artifact(tmp_las, artifact_path="las")
             os.remove(tmp_las)
         mlflow.log_param("las_file", tmp_las)
     
@@ -661,7 +661,7 @@ def get_training_result(
         rmse = parse_float_param(data.metrics.get("rmse"))
         r2 = parse_float_param(data.metrics.get("r2_score"))
         las_file = data.params.get("las_file") 
-        las_file_path = get_mlflow_artifact_path(experiment.experiment_id, run_id, artifact_path=f"pseudo_logs/{las_file}")
+        las_file_path = get_mlflow_artifact_path(experiment.experiment_id, run_id, artifact_path=f"las/{las_file}")
         las_file_link = f"<a href='{las_file_path}'>Download</a>" if las_file else "N/A"
 
         # generate table
