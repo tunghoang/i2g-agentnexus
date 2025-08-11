@@ -3,6 +3,7 @@ Google ADK Agent - FULLY FIXED VERSION
 Fixes all syntax errors, scope issues, and method access problems
 """
 import traceback
+import re
 import os
 import json
 import time
@@ -30,6 +31,7 @@ from config.settings import AgentConfig
 from servers.mcp_server import MCPClient
 from naming import Naming
 from base_utils import recursive_get, recursive_put
+from context import Context
 logger = logging.getLogger(__name__)
 
 AGENT_URL = os.getenv("AGENT_URL") or "http://localhost:8990"
@@ -577,6 +579,30 @@ class ToolExecutingAgentExecutor:
                 return {"status": "error", "message": str(e)}
         tools.append(productiondata4well)
 
+        def production_monthly_data_table(wells:str = ""):
+            """Build and show production monthly data table for wells
+
+            Args:
+                wells: wells to include in the production monthly data table
+
+            Returns:
+                dict: result
+
+            Output (the "result" field) is an url URL and should be embedded into an <iframe> with the following template: http://dashboard.portal:9999/URL 
+            """
+            try:
+                executor_instance.logger.info(f"Executing production_monthly_data_table with wells: {wells}")
+                result = executor_instance._execute_mcp_tool('production_monthly_data_table', wells)
+                print("RESULT:", result)
+                return {"status": "success", "result": result}
+            except Exception as e:
+                traceback.print_exc()
+                executor_instance.logger.error(f"Error in production_monthly_data_table {e}")
+                return {"status": "error", "message": str(e)}
+            
+
+        tools.append(production_monthly_data_table)
+
         def buildCRMInput(production_wells:str, injection_wells:str, store: str = 'default'):
             """Build CRM input file from production wells and injection wells
 
@@ -616,6 +642,68 @@ class ToolExecutingAgentExecutor:
                 return {"status": "error", "result": result}
         tools.append(trainCRMModel)
 
+        def production_crossplot(params: list[str], wells: list[str], xparam: str):
+            """Plot production params by oilcum for wells from production data file
+
+            Args:
+                params: list of production parameters
+                wells: list of wells
+
+            Returns:
+                dict: results
+            """
+            try:
+                fname = inspect.stack()[0][3]
+                print(fname)
+                modes = Context.get_instance().get([fname, 'modes'])
+                if modes is None or len(modes) == 0:
+                    modes = "markers"
+                print(modes)
+                
+                modes = modes.split(",")
+                modes = [m.strip() for m in modes]
+                executor_instance.logger.info(f"Executing production_crossplot with {fname} {params} and {wells} {xparam}")
+                result = executor_instance._execute_mcp_tool('production_crossplot', json.dumps(dict(params=params, 
+                                                                                                     wells=wells, 
+                                                                                                     xparam=xparam,  modes=modes)))
+                return {"status": "success",
+                        "result": result }
+            except Exception as e:
+                traceback.print_exc()
+                executor_instance.logger.error(f"Error in production_crossplot {e}")
+                return {"status": "error", "message": str(e)}
+        tools.append(production_crossplot)
+            
+        def production_by_oilcum(params: list[str], wells: list[str]):
+            """Plot production params by oilcum for wells from production data file
+
+            Args:
+                params: list of production parameters
+                wells: list of wells
+
+            Returns:
+                dict: results
+            """
+            try:
+                fname = inspect.stack()[0][3]
+                print(fname)
+                modes = Context.get_instance().get([fname, 'modes'])
+                if modes is None or len(modes) == 0:
+                    modes = "markers"
+                print(modes)
+                
+                modes = modes.split(",")
+                modes = [m.strip() for m in modes]
+                executor_instance.logger.info(f"Executing production_by_oilcum with {fname} {params} and {wells}")
+                executor_instance.logger.info(f"Executing production_by_oilcum with {params} and {wells}")
+                result = executor_instance._execute_mcp_tool('production_by_oilcum', json.dumps(dict(params=params, wells=wells, modes=modes)))
+                return {"status": "success",
+                        "result": result }
+            except Exception as e:
+                executor_instance.logger.error(f"Error in production_by_oilcum {e}")
+                return {"status": "error", "message": str(e)}
+        tools.append(production_by_oilcum)
+
         def production_by_time(params: list[str], wells: list[str]):
             """Plot production params by time for wells from production data file
 
@@ -627,8 +715,15 @@ class ToolExecutingAgentExecutor:
                 dict: results
             """
             try:
+                fname = inspect.stack()[0][3]
+                modes = Context.get_instance().get( [fname, 'modes'] )
+                if not modes:
+                    modes = "markers"
+                print(modes)
+                modes = modes.split(",")
+                modes = [m.strip() for m in modes]
                 executor_instance.logger.info(f"Executing production_by_time with {params} and {wells}")
-                result = executor_instance._execute_mcp_tool('production_by_time', json.dumps(dict(params=params, wells=wells)))
+                result = executor_instance._execute_mcp_tool('production_by_time', json.dumps(dict(params=params, wells=wells, modes=modes)))
                 return {"status": "success",
                         "result": "result is created. Output is in attachment field",
                         "attachment": result}
@@ -910,6 +1005,28 @@ class ToolExecutingAgentExecutor:
                 return {"status": "error", "message": str(e)}
         tools.append(summarize_marker_data)
 
+        def set_context_for_tool_function(tool_function:str, context_param:str, context_value: str) -> dict:
+            """ Set context parameter value for tool function
+
+            Args:
+                tool_function: the tool function name
+                context_param: context parameter name
+                context_value: the value to set to context_param
+
+            Returns:
+                this function save context_value to context_param for the tool_function and return result as a dictionary.
+            
+            Show "result" field in return value of this function AS IS to user
+            """
+            try:
+                executor_instance.logger.info(f"Executing set_context_for_tool_function: {tool_function} {context_param}={context_value}")
+                Context.get_instance().put([tool_function, context_param], context_value)
+                return {"status": "success", "result": f"*{context_param}* of *{tool_function}* is set to *{context_value}*"}
+            except Exception as e:
+                traceback.print_exc()
+                return {"status": "error", "message": str(e)}
+        tools.append(set_context_for_tool_function)
+
         self.logger.info(f"Created {len(tools)} tool functions (no default parameters)")
         return tools
 
@@ -996,6 +1113,31 @@ class ToolExecutingAgentExecutor:
     "CV.WellProd",
     "CV.WellInj".
 
+- User asks "Plot [params] of wells [wells] by [xparam] from production file" or "View production crossplot of wells [wells]",
+    then IMMEDIATELY call production_crossplot with params as list[str] if user provided or else params=["CV.WaterProdCum/1000","CV.WaterInjCum/1000","CV.WaterRate", "CV.WaterInj_Rate","CV.Watercut"]
+    and wells as list[str] if user provided or else wells=[]
+    and xparam as str if user provided or else xparam="CV.Oilcum/1000"
+    **ALWAYS call using these standardized param names from user provided params, DO NOT use monthly params if user not provided explicitly:
+    "CV.OilRate",              # Oil rate
+    "Monthlyprod.Qoil/1000",   # Monthly oil rate in thousands
+    "CV.Oilcum/1000",          # Oilcum in thousands
+    "CV.LiqRate",              # Liquid rate (oil + water)
+    "CV.WaterRate",            # Water rate, calculated by CV.LiqRate - CV.OilRate
+    "Monthlyprod.Qwater/1000",
+    "CV.WaterProdCum/1000",
+    "Monthlyprod.Qgas/1000",
+    "CV.GasCum/1000",
+    "CV.WaterInj_Rate",
+    "Monthlyinj.Qwater/1000",
+    "CV.WaterInjCum/1000",
+    "CV.Watercut",
+    "Monthlyprod.Qwater/1000+Monthlyprod.Qoil/1000",
+    "Monthlyprod.Qgas/Monthlyprod.Qoil*1000",
+    "Monthlyprod.Gor",
+    "Monthlyprod.Dayon",
+    "CV.WellProd",
+    "CV.WellInj".
+
 ## For generating plots
 - User asks "generate TRACK_TEMPLATES logplot for WELL  → IMMEDIATELY call build_logplot with well=WELL and track_templates=TRACK_TEMPLATES
 
@@ -1047,9 +1189,12 @@ Then: Present the results
 Available tools: list_files, system_status, health_check, directory_info,
 las_parser, las_analysis, formation_evaluation, well_correlation, segy_parser, segy_classify, segy_qc,
 quick_segy_summary, dump_content, plot_las, build_logplot, plot_histogram_las, show_sheets, show_columns,
-unique_from_column, marker4well, zone4well, productiondata4well, summarize_marker_data,
-buildCRMInput, trainCRMModel, production_by_time,
-plt_table, well_checklist_table, well_checklist_curves, create_wells_tvdss, create_pseudo_log, view_training_result
+unique_from_column, marker4well, zone4well, productiondata4well, production_monthly_data_table, summarize_marker_data,
+buildCRMInput, trainCRMModel, production_by_time, production_crossplot,
+plt_table, well_checklist_table, well_checklist_curves, create_wells_tvdss, create_pseudo_log, view_training_result,
+set_context_for_tool_function
+
+Available context_params: modes, marker_file, file_path
 """
 
     async def _execute_with_google_adk(self, query: str) -> str:
@@ -1119,7 +1264,7 @@ plt_table, well_checklist_table, well_checklist_curves, create_wells_tvdss, crea
 
     def _minimal_fallback(self, query: str) -> str:
         """Minimal fallback when Google ADK fails"""
-        import re
+        #import re
 
         query_lower = query.lower()
 

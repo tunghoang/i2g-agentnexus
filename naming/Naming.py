@@ -4,12 +4,15 @@ import os, shutil
 
 def ensure_path(inpath):
     path_to_ensure = inpath
-    if inpath.endswith((".html", ".json", ".js", ".css")):
+    if inpath.endswith((".html", ".json", ".js", ".css", ".xlsx")):
         path_to_ensure = os.path.dirname(inpath)
     Path(path_to_ensure).mkdir(parents=True, exist_ok=True)
 
 
 class Naming:
+    @classmethod
+    def context_path(cls):
+        return 'context.json'
     @classmethod
     def sanitize_filename(cls, filename: str) -> str:
         """Sanitize filename by keeping only alphanumeric characters and safe symbols."""
@@ -37,17 +40,20 @@ class Naming:
         return f"{lasname}.histogram.html"
 
     @classmethod
-    def dest_path(cls, inpath, category="", format='html'):
+    def dest_path(cls, inpath, category="", format='html', create_dir=True):
         CHART_DIR = "/tmp"
         outpath = f"{CHART_DIR}/{category}/{inpath}" if category else f"{CHART_DIR}/{inpath}"
         if format:
             outpath = outpath + f".{format}"
-        ensure_path(outpath)
+        if create_dir:
+            ensure_path(outpath)
         return outpath
 
     @classmethod
     def publish_path(cls, inpath, category="", format="html"):
-        outpath = f"{category}/{inpath}.{format}" if category else f"{inpath}.{format}"
+        outpath = f"{category}/{inpath}" if category else f"{inpath}"
+        if format:
+            outpath = f"{outpath}.{format}"
         return outpath
 
     @classmethod
@@ -55,29 +61,38 @@ class Naming:
         return f"{prefix}/{inpath}"
 
     @classmethod
-    def default_marker_file(cls, category="store"):
+    def __path_classifier(cls, default_path, category="raw", format=None):
         if category == "store":
-            return cls.data_path("misc/Marker.xlsx")
+            return cls.data_path(default_path)
         elif category == "raw":
-            return "misc/Marker.xlsx"
+            return default_path
         elif category == "publish":
-            return cls.publish_path("misc/Marker.xlsx")
+            return cls.publish_path(default_path)
+        elif category == 'temp':
+            return cls.dest_path(default_path, format=format)
         else:
-            return cls.data_path("misc/Marker.xlsx")
+            return cls.data_path(default_path)
+        
     @classmethod
-    def default_perforation_file(cls, category="store"):
-        if category == "store":
-            return cls.data_path("misc/perforation.xlsx")
-        elif category == "raw":
-            return "misc/perforation.xlsx"
-        elif category == "publish":
-            return cls.publish_path("misc/perforation.xlsx")
-        else:
-            return cls.data_path("misc/perforation.xlsx")
+    def default_marker_file(cls, category="store"):
+        default_path = "misc/Marker.xlsx"
+        return cls.__path_classifier(default_path, category=category)
 
     @classmethod
-    def elevation_file(cls):
-        return cls.data_path("misc/elevation.xlsx")
+    def default_perforation_file(cls, category="store"):
+        default_path = "misc/perforation.xlsx"
+        return cls.__path_classifier(default_path, category = category)
+
+    @classmethod
+    def default_production_monthly_file(cls, category='raw'):
+        #default_path = "production/monthly_production_data.xlsx"
+        default_path = "production/PVT_WellTest_Perforation_WaterAnalysis.xlsx"
+        return cls.__path_classifier(default_path, category = category)
+
+    @classmethod
+    def elevation_file(cls, category='store'):
+        default_path = "misc/elevation.xlsx"
+        return cls.__path_classifier(default_path, category = category)
 
     @classmethod
     def well_path(cls, well: str | None = None):
@@ -108,10 +123,10 @@ class Naming:
                     ensure_path(destPath)
                     shutil.copyfile(f'templates/{fpath}.{ext}', destPath)
             elif ext == 1:
-                destPath = Naming.dest_path(fpath, format='')
+                destPath = Naming.dest_path(fpath, format='', create_dir=False)
                 print(destPath)
                 if not os.path.isdir(destPath):
-                    #ensure_path(destPath)
-                    #shutil.rmtree(destPath)
+                    ensure_path(destPath)
+                    shutil.rmtree(destPath)
                     print('Copytree', 'public/excel-viewer', destPath)
                     shutil.copytree('public/excel-viewer', destPath)

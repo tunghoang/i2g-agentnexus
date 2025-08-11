@@ -18,7 +18,7 @@ import mlflow
 from calendar import monthrange
 from pywaterflood import CRM
 from tools.plot_tools import getColor
-from utils.plot_utils import multi_chart, production_by_time_chart
+from utils.plot_utils import multi_chart, production_by_time_chart, production_by_oilcum_chart
 from xlsx_utils import XLSX
 
 _cACHE = dict()
@@ -299,6 +299,7 @@ def create_vsp_tools(mcp_server, data_config: DataConfig) -> List[str]:
             input_data = json.loads(input)
             wells: list[str] = [*set(input_data["wells"])]
             params: set[str] = set(input_data.get("params"))
+            modes: set[str] = set(input_data.get("modes"))
             # Metrics
             PARAMS = {  # base Idx = 6
                 "CV.OilRate": 0,  # Oil rate
@@ -341,78 +342,141 @@ def create_vsp_tools(mcp_server, data_config: DataConfig) -> List[str]:
             if not len(wells):
                 wells = [str(w) for w, _ in df_wells]
 
-            '''
-            from plotly.subplots import make_subplots
-            import plotly.graph_objects as go
-            fig = make_subplots(
-                rows=len(df_wells),
-                cols=1,
-                subplot_titles=[f"{w} Production" for w, _ in df_wells],
-                vertical_spacing=0.1 / len(df_wells),
-            )
-            num_params = len(cols)
-            X_START_POS = 0.2
-            for well_idx, (well, df_well) in enumerate(df_wells):
-                row=well_idx + 1
-                x_suffix = str(well_idx + 1)
-                xaxis_key = f"xaxis{x_suffix}"
-                fig.update_layout({
-                    xaxis_key: dict(
-                        domain=[X_START_POS, 1],
-                    )
-                })
-                fig.update_xaxes(
-                    domain=[X_START_POS, 1],
-                    row=row,
-                    col=1,
-                )
-                if x_suffix == "1":
-                    x_suffix = ""
-                xaxis_name = f"x{x_suffix}"
-                overlaying_y = "y" if well_idx == 0 else f"y{well_idx*num_params+1}"
-                for param_idx, param in enumerate(cols):
-                    y_suffix = str(well_idx * num_params + param_idx + 1)
-                    if y_suffix == "1":
-                        y_suffix = ""
-                    yaxis_name = f"y{y_suffix}"
-
-                    color = COLORS[param] if param in COLORS else getColor(param)
-                    fig.append_trace(
-                        go.Scatter(
-                            x=df_well[all_cols[DATE_COL]],
-                            y=df_well[param],
-                            name=f"{param}",
-                            mode="lines",
-                            line=dict(color=color),
-                            xaxis=xaxis_name,
-                            yaxis=yaxis_name,
-                        ),
-                        row=row,
-                        col=1,
-                    )
-                    yaxis_key = f"yaxis{y_suffix}"
-                    fig.update_layout(
-                        {
-                            yaxis_key: dict(
-                                title=dict(
-                                    text=param,
-                                    font=dict(color=color),
-                                ),
-                                tickfont=dict(color=color),
-                                anchor="free",
-                                overlaying=(None if param_idx == 0 else overlaying_y),
-                                position=param_idx / num_params * X_START_POS,
-                            )
-                        }
-                    )
-
-            fig.update_layout(height=500 * len(df_wells))
-            '''
-            fig = production_by_time_chart(df_wells, all_cols)
+            fig = production_by_time_chart(df_wells, all_cols, modes=modes)
             out_file = Naming.sanitize_filename(f"{'-'.join(wells)}{'-'.join(params)}")
             dest_path = Naming.dest_path(out_file, "production-time-chart")
             fig.write_html(dest_path)
             return {'text': Naming.publish_path(out_file, "production-time-chart")}
+        except Exception as e:
+            traceback.print_exc()
+            return dict(text=str(e))
+    @mcp_server.tool(
+        name="production_crossplot",
+        description="Plot production crossplot for wells from production data file with specified xparam",
+    )
+    def production_crossplot(input: str) -> dict:
+        try:
+            input_data = json.loads(input)
+            wells: list[str] = [*set(input_data["wells"])]
+            params: set[str] = set(input_data.get("params"))
+            xparam: str = input_data.get("xparam")
+            modes: set[str] = set(input_data.get("modes"))
+            if not len(wells):
+                wells = [str(w) for w, _ in df_wells]
+            # Metrics
+            PARAMS = {  # base Idx = 6
+                "CV.OilRate": 0,  # Oil rate
+                "Monthlyprod.Qoil/1000": 1,  # Monthly oil rate in thousands
+                "CV.Oilcum/1000": 2,  # Oilcum in thousands
+                "CV.LiqRate": 3,  # Liquid rate (oil + water)
+                "Monthlyprod.Qwater/1000": 4,  # Monthly
+                "CV.WaterProdCum/1000": 5,
+                "Monthlyprod.Qgas/1000": 6,
+                "CV.GasCum/1000": 7,
+                "CV.WaterInj_Rate": 8,
+                "Monthlyinj.Qwater/1000": 9,
+                "CV.WaterInjCum/1000": 10,
+                "CV.Watercut": 11,
+                "Monthlyprod.Qwater/1000+Monthlyprod.Qoil/1000": 12,
+                "Monthlyprod.Qgas/Monthlyprod.Qoil*1000": 13,
+                "Monthlyprod.Gor": 14,
+                "Monthlyprod.Dayon": 15,
+                "CV.WellProd": 16,
+                "CV.WellInj": 17,
+                "CV.WaterRate": 19 #25 - 6
+            }
+            COLORS = {
+                "CV.OilRate": "#ff0000",
+                "CV.LiqRate": "#008000",
+                "CV.Watercut": "#0000ff",
+                "CV.Oilcum/1000": "#800000",
+            }
+            params_indices = [PARAMS[p] + 6 for p in params]
+            WELL_COL = 1
+            df = XLSX.parse_well_production()
+            if len(wells) > 0:
+                df = df[df[df.columns[WELL_COL]].isin(wells)]
+            df['CV.WaterRate'] = df['CV.LiqRate'] - df['CV.OilRate']
+            df = df[[xparam] + [df.columns[c] for c in [WELL_COL, *params_indices]]]
+            all_cols = df.columns
+            cols = all_cols[2:]
+
+            df_wells = [*df.groupby(all_cols[WELL_COL])]
+            if not len(df_wells):
+                raise Exception(f"Failed to find {wells} in production data file")
+
+            fig = production_by_oilcum_chart(df_wells, all_cols, modes=modes)
+            out_file = Naming.sanitize_filename(f"{'-'.join(wells)}{'-'.join(params)}")
+            print(out_file)
+            dest_path = Naming.dest_path(out_file, "production-crossplot")
+            fig.write_html(dest_path)
+            print(Naming.publish_path(out_file, "production-crossplot"))
+            return {'text': Naming.publish_path(out_file, "production-crossplot")}
+        except Exception as e:
+            traceback.print_exc()
+            return dict(text=str(e))
+    @mcp_server.tool(
+        name="production_by_oilcum",
+        description="Plot production params by oilcum for wells from production data file",
+    )
+    def production_by_oilcum(input: str) -> dict:
+        try:
+            input_data = json.loads(input)
+            wells: list[str] = [*set(input_data["wells"])]
+            params: set[str] = set(input_data.get("params"))
+            modes: set[str] = set(input_data.get("modes"))
+            if not len(wells):
+                wells = [str(w) for w, _ in df_wells]
+            # Metrics
+            PARAMS = {  # base Idx = 6
+                "CV.OilRate": 0,  # Oil rate
+                "Monthlyprod.Qoil/1000": 1,  # Monthly oil rate in thousands
+                "CV.Oilcum/1000": 2,  # Oilcum in thousands
+                "CV.LiqRate": 3,  # Liquid rate (oil + water)
+                "Monthlyprod.Qwater/1000": 4,  # Monthly
+                "CV.WaterProdCum/1000": 5,
+                "Monthlyprod.Qgas/1000": 6,
+                "CV.GasCum/1000": 7,
+                "CV.WaterInj_Rate": 8,
+                "Monthlyinj.Qwater/1000": 9,
+                "CV.WaterInjCum/1000": 10,
+                "CV.Watercut": 11,
+                "Monthlyprod.Qwater/1000+Monthlyprod.Qoil/1000": 12,
+                "Monthlyprod.Qgas/Monthlyprod.Qoil*1000": 13,
+                "Monthlyprod.Gor": 14,
+                "Monthlyprod.Dayon": 15,
+                "CV.WellProd": 16,
+                "CV.WellInj": 17,
+                "CV.WaterRate": 19 #25 - 6
+            }
+            COLORS = {
+                "CV.OilRate": "#ff0000",
+                "CV.LiqRate": "#008000",
+                "CV.Watercut": "#0000ff",
+                "CV.Oilcum/1000": "#800000",
+            }
+            params_indices = [PARAMS[p] + 6 for p in params]
+            WELL_COL = 1
+            OILCUM_COL = 8
+            df = XLSX.parse_well_production()
+            if len(wells) > 0:
+                df = df[df[df.columns[WELL_COL]].isin(wells)]
+            df['CV.WaterRate'] = df['CV.LiqRate'] - df['CV.OilRate']
+            df = df[[df.columns[c] for c in [OILCUM_COL, WELL_COL, *params_indices]]]
+            all_cols = df.columns
+            cols = all_cols[2:]
+
+            df_wells = [*df.groupby(all_cols[WELL_COL])]
+            if not len(df_wells):
+                raise Exception(f"Failed to find {wells} in production data file")
+
+            fig = production_by_oilcum_chart(df_wells, all_cols, modes=modes)
+            out_file = Naming.sanitize_filename(f"{'-'.join(wells)}{'-'.join(params)}")
+            print(out_file)
+            dest_path = Naming.dest_path(out_file, "production-oilcum-chart")
+            fig.write_html(dest_path)
+            print(Naming.publish_path(out_file, "production-oilcum-chart"))
+            return {'text': Naming.publish_path(out_file, "production-oilcum-chart")}
         except Exception as e:
             traceback.print_exc()
             return dict(text=str(e))
@@ -455,13 +519,34 @@ def create_vsp_tools(mcp_server, data_config: DataConfig) -> List[str]:
         except Exception as e:
             traceback.print_exc()
             return dict(text=str(e))
+    @mcp_server.tool(
+        name="production_monthly_data_table",
+        description="Show table of production monthly data",
+    )
+    def production_monthly_data_table(input: str) -> dict:
+        try:
+            wells = input.split(',')
+            wells = [w.strip() for w in wells]
+            df = XLSX.extract_production_data(wells)
+            _path = Naming.default_production_monthly_file(category='temp')
+            XLSX.save_dataframe(df, _path)
+            Naming.gen_site()
+            return {"text": f"{Naming.publish_path('excel-viewer', format=None)}/?file=/{Naming.default_production_monthly_file(category='raw')}"}
+        except Exception as e:
+            traceback.print_exc()
+            return dict(text=str(e))
+        
+
     tool_names = [
         "marker4well",
         "productiondata4well",
         "buildCRMInput",
         "trainCRMModel",
+        "production_crossplot",
         "production_by_time",
-        "summarize_marker_data"
+        "production_by_oilcum",
+        "summarize_marker_data",
+        "production_monthly_data_table"
     ]
 
     return tool_names

@@ -1,5 +1,6 @@
 import os, json
 import pandas as pd
+from naming import Naming
 from pathlib import Path
 class Store:
     def __init__(self, **kwargs):
@@ -7,7 +8,8 @@ class Store:
         self.store = kwargs.get('store', 'default')
 
     def context_path(self):
-        return 'context.json'
+        #return 'context.json'
+        return Naming.context_path()
     def store_path(self, filepath: str):
         return os.path.join(self.store_root, self.store, filepath)
     def prepare_dir(self, filepath):
@@ -17,7 +19,7 @@ class Store:
     def save(self, data, filepath):
         self.prepare_dir(filepath)
         if type(data) == dict:
-            with open(self.store_path(filepath)) as f:
+            with open(self.store_path(filepath), 'w') as f:
                 json.dump(data, f)
         elif isinstance(data, pd.DataFrame):
             data.to_csv(self.store_path(filepath))
@@ -44,4 +46,6 @@ class Store:
         
     def context_load(self):
         filepath = self.context_path()
+        if not self.exists(filepath):
+            self.context_save({})
         return self.load(filepath)

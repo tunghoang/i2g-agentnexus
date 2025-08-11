@@ -146,3 +146,41 @@ class XLSX:
         layers = df.iloc[:, 5].unique()
         print(type(layers), layers)
         return layers
+    @classmethod
+    def extract_production_data(cls, wells=None, file_path=None, sheet=4):
+        _file_path = file_path or Naming.default_production_monthly_file(category='raw')
+        xlsx_file = MemoryCache.get_instance().get(_file_path)
+        if xlsx_file is None:
+            xlsx_file = pd.ExcelFile(Naming.data_path(_file_path), engine='openpyxl')
+            MemoryCache.get_instance().put(_file_path, xlsx_file)
+        df = xlsx_file.parse(sheet, header=0)
+        retrieved_cols = {
+            "Date": 0, 
+            "Well": 1, 
+            "Platform": 4, 
+            "CV.OilRate": 6, 
+            "Qoil/1000": 7, 
+            "CV.LiquidRate": 9, 
+            "Qwater/1000": 10, 
+            "WaterProdCum": 11, 
+            "CV.WaterInj_Rate": 14, 
+            "CV.WaterCut": 17
+        }
+        ori_cols = [str(df.columns[c]) for c in retrieved_cols.values()]
+        print(ori_cols)
+        new_cols = list(retrieved_cols.keys())
+        col_mapping = { c: new_cols[idx] for idx,c in enumerate(ori_cols) }
+        print(col_mapping)
+        
+        df = df[ori_cols]
+        df = df.rename( columns=col_mapping )
+        df["Well"] = df["Well"].astype(str)
+        print(df)
+        print(wells)
+        if wells and len(wells) > 0:
+            df = df[df["Well"].isin(wells)]
+        return df
+
+    @classmethod
+    def save_dataframe(cls, df, dest):
+        df.to_excel(dest, index=False)
