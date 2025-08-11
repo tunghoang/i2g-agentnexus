@@ -247,7 +247,7 @@ class RobustLASFile:
         target = mnemonic.upper()
 
         for key, values in mapping.items():
-            if target == key.upper() or key in values:
+            if target == key.upper() or target in values:
                 for value in values:
                     data = self.get_curve_data(value)
                     if data is not None and len(data) > 0:

@@ -1,19 +1,22 @@
 import os
-import numpy as np
 import json
 import time
+import lasio
 import traceback
+import numpy as np
+import pandas as pd
 from glob import glob, iglob
 from datetime import datetime
 from typing import List, Dict, Any
-from config.settings import DataConfig
+from multiprocessing import Process, Event
+
 from store import Store
 from naming import Naming
 from cache import MemoryCache
-import pandas as pd
-import lasio
 from calendar import monthrange
 from pywaterflood import CRM
+from xlsx_utils import XLSX
+from config.settings import DataConfig
 from utils.missing_pay_utils import get_well_checklist, get_well_checklist_curves,\
     make_pseudo_log, get_training_result, remove_training_result
 from utils.plot_utils import multi_chart, advLogplot, logplot, write_json
@@ -329,16 +332,40 @@ def create_missingpay_tools(mcp_server, data_config: DataConfig) -> List[str]:
             wells: list[str] = input_data.get("wells")
             model_type: str = input_data.get("model_type")
             model_params: dict = input_data.get("model_params")
+            wells_dir = Naming.well_path()
 
+            available_wells = [entry.name for entry in os.scandir(wells_dir) if entry.is_dir()]
+            selected_wells = [name for name in available_wells if name in wells] if wells else []
+            selected_wells.sort()
+
+            if not selected_wells:
+                raise Exception(f"No valid wells found")
+            
+            if target_well not in available_wells:
+                raise Exception(f"Well '{target_well}' does not exist")
+            
+            if not curves:
+                raise Exception(f"No valid curves found")
+                    
+            started_event = Event()
+            
             # start training
             process = Process(
                 target=make_pseudo_log,
-                args=(target_curve, target_well, curves, wells, model_type, model_params)
+                args=(
+                    target_curve, 
+                    target_well, 
+                    curves, 
+                    selected_wells, 
+                    model_type, 
+                    model_params, 
+                    started_event,
+                )
             )
             process.start()
 
-            # trick: wait for the training process to init
-            time.sleep(1)
+            # wait for the training process to init
+            started_event.wait()
             
             # view training result
             out_file_relative_path = get_training_result(target_curve, target_well, model_type)

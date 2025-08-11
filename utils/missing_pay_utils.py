@@ -1,14 +1,15 @@
 import os
 import json
+import uuid
 import lasio
 import numpy as np
 import pandas as pd
 
+from multiprocessing import Event
 from datetime import datetime, timedelta, timezone
 from naming import Naming
 from robust_las_parser import load_las_file
 from xlsx_utils import XLSX
-
 
 import mlflow
 from mlflow.tracking import MlflowClient
@@ -230,16 +231,16 @@ def get_well_checklist_curves(
     )
 
 
-def read_curves_from_las(well_name: str, curves: list[str], wells_dir: str) -> np.ndarray | None:
-    las_dir = os.path.join(wells_dir, well_name, "GIS", "Las")
-    las_files = [
+def read_curves_from_las(well_name: str, curves: list[str]) -> np.ndarray | None:
+    las_dir = Naming.las_path(well_name)
+    las_file_paths = [
         f.path for f in os.scandir(las_dir)
         if f.is_file() and f.name.lower().endswith(".las")
     ]
-    if not las_files:
+    if not las_file_paths:
         raise FileNotFoundError(f"No las files found")
     
-    las_file_path = las_files[0]
+    las_file_path = las_file_paths[0]
     las, error = load_las_file(las_file_path)
     if las is None:
         raise Exception(f"Error parsing las file {las_file_path}: {error}")
@@ -262,18 +263,17 @@ def write_curve_to_las(
         curves: list[str], 
         curve_name: str, 
         curve_data: np.ndarray, 
-        wells_dir: str
-    ) -> bool:
+    ) -> str | None:
 
-    las_dir = os.path.join(wells_dir, well_name, "GIS", "Las")
-    las_files = [
+    las_dir = Naming.las_path(well_name)
+    las_file_paths = [
         f.path for f in os.scandir(las_dir)
         if f.is_file() and f.name.lower().endswith(".las")
     ]
-    if not las_files:
+    if not las_file_paths:
         raise FileNotFoundError(f"No las files found")
 
-    las_file_path = las_files[0]
+    las_file_path = las_file_paths[0]
     las, error = load_las_file(las_file_path)
     if las is None:
         raise Exception(f"Error parsing las file {las_file_path}: {error}")
@@ -285,7 +285,7 @@ def write_curve_to_las(
             data.append(curve_data)
 
     if len(data) != len(curves) or len(data) == 0:
-        return False
+        return None
 
     stacked = np.vstack(data).T
     masks = ~np.isnan(stacked).any(axis=1)
@@ -301,7 +301,7 @@ def write_curve_to_las(
         j += 1
 
     if not las.las_obj:
-        return False
+        return None
 
     las_obj = las.las_obj
     
@@ -310,15 +310,14 @@ def write_curve_to_las(
     else:
         las_obj.curves.append(lasio.CurveItem(mnemonic=curve_name, data=full_curve_data, descr="Predicted curve"))
 
-    output_path = os.path.join(las_dir, "pseudo_log", f"{curve_name}.las")
-    os.makedirs(os.path.dirname(output_path), exist_ok=True)
-    las_obj.write(output_path)
-    return True
+    las_file = f"{uuid.uuid4().hex[:8]}.las"
+    las_obj.write(las_file)
+    return las_file 
 
-def prepare_las_training_data(wells: list[str], curves: list[str], wells_dir: str) -> np.ndarray:
+def prepare_las_training_data(wells: list[str], curves: list[str]) -> np.ndarray:
     all_data = []
     for well in wells:
-        data = read_curves_from_las(well, curves, wells_dir)
+        data = read_curves_from_las(well, curves)
         if data is not None:
             all_data.append(data)
 
@@ -392,43 +391,33 @@ def make_pseudo_log(
         wells: list[str] = [],
         model_type: str = "random_forest",
         model_params: dict = {},
-        wells_dir: str = "data/wells",
+        started_event: Event = None,
+        exp_name: str = "pseudo_logs",
     ):
-
-    available_wells = [entry.name for entry in os.scandir(wells_dir) if entry.is_dir()]
-    selected_wells = [name for name in available_wells if name in wells] if wells else available_wells
-    selected_wells.sort()
-
-    if len(selected_wells) == 0:
-        raise Exception(f"No wells {wells} found")
     
-    if target_well not in available_wells:
-        raise Exception(f"No well {target_well} found")
-    
-    if len(curves) == 0:
-        raise Exception(f"No curves {curves} found")
-    
+    client = MlflowClient()
+    experiment = get_mlflow_experiment(client, name=exp_name)
     model_name = f"{target_curve}_{target_well}_{model_type}"
 
-    with mlflow.start_run(run_name=model_name):
+    with mlflow.start_run(experiment_id=experiment.experiment_id, run_name=model_name):
         mlflow.log_param("target_curve", target_curve)
         mlflow.log_param("target_well", target_well)
         mlflow.log_param("model_type", model_type)
         mlflow.log_param("input_curves", json.dumps(curves))
-        mlflow.log_param("input_wells", json.dumps(selected_wells))
+        mlflow.log_param("input_wells", json.dumps(wells))
         mlflow.log_param("model_params", json.dumps(model_params))
 
+        if started_event:
+            started_event.set()
+
         all_curves = [c for c in curves if c != target_curve] + [target_curve]
-        data = prepare_las_training_data(selected_wells, all_curves, wells_dir) 
-        if len(data) == 0:
-            raise ValueError(f"No valid data found for curves {input_curves} in wells {selected_wells}")
+        dataset = prepare_las_training_data(wells, all_curves) 
+        if len(dataset) == 0:
+            raise ValueError(f"No valid data found for curves {curves} in wells {wells}")
         
-        if len(data) < 10:
-            raise ValueError(f"Insufficient data to train a model: only {len(data)} samples found")
-        
+        # training
         from sklearn.model_selection import train_test_split
-        train_data, test_data = train_test_split(data, test_size=0.2, random_state=42, shuffle=True)
-        
+        train_data, test_data = train_test_split(dataset, test_size=0.2, random_state=42, shuffle=True)
         x_train = train_data[:, :-1]
         y_train = train_data[:, -1]
         model = train_model(x_train, y_train, model_type, **model_params)
@@ -463,18 +452,21 @@ def make_pseudo_log(
         mlflow.log_metric("explained_variance", ev)
 
         # write to las file
-        write_success = False
-        target_input = prepare_las_training_data([target_well], curves, wells_dir)
-        if len(target_input) > 0:
-            target_curve_data = model.predict(target_input)
-            write_success = write_curve_to_las(target_well, curves, target_curve, target_curve_data, wells_dir)
-        mlflow.log_metric("saved_las_file", int(write_success))
-        
+        tmp_las = None
+        input_data = prepare_las_training_data([target_well], curves)
+        if len(input_data) > 0:
+            predicted_curve_data = model.predict(input_data)
+            tmp_las = write_curve_to_las(target_well, curves, target_curve, predicted_curve_data)
+            mlflow.log_artifact(tmp_las, artifact_path="las")
+            os.remove(tmp_las)
+        mlflow.log_param("las_file", tmp_las)
+    
         # evaluation
-        fig = visualize_training_result(model, data)
-        out_html = os.path.join("/tmp", "plot.html")
-        fig.write_html(out_html)
-        mlflow.log_artifact(out_html, artifact_path="plots")
+        fig = visualize_training_result(model, dataset)
+        tmp_html = "plot.html"
+        fig.write_html(tmp_html)
+        mlflow.log_artifact(tmp_html, artifact_path="plots")
+        os.remove(tmp_html)
 
 def visualize_training_result(model, data: np.ndarray):
     from sklearn.model_selection import learning_curve
@@ -512,7 +504,6 @@ def visualize_training_result(model, data: np.ndarray):
         template='plotly_white'
     )
     return fig
-
 
 def normalize_filter_expr(expr: str) -> str:
     import re
@@ -561,6 +552,59 @@ def make_filter_params(
     
     return " and ".join(filter_params)
         
+def parse_json_param(param: str):
+    if not param:
+        return "N/A"
+    try:
+        result = json.loads(param)
+        if type(result) == list:
+            return ", ".join(result)
+        elif type(result) == dict:
+            return ", ".join(f"{k}: {v}" for k, v in result.items())
+        return result
+    except:
+        return param
+
+def parse_float_param(param: float | int):
+    if param is None:
+        return "N/A"
+    return f"{param:.2f}"
+
+def get_mlflow_experiment(client: MlflowClient, name: str):
+    experiment = client.get_experiment_by_name(name)
+    if not experiment:
+        experiment_id = client.create_experiment(name)
+        experiment = client.get_experiment(experiment_id)
+    return experiment
+
+def get_mlflow_artifact_path(
+        experiment_id: str,
+        run_id: str,
+        artifact_path: str,
+        allow_remote: bool = False,
+    ) -> str | None:
+
+    mlflow_path = Naming.data_path(f"{experiment_id}/{run_id}/artifacts", prefix="./mlartifacts")
+    local_file_path = os.path.join(mlflow_path, artifact_path)
+
+    if os.path.isfile(local_file_path):
+        return local_file_path 
+
+    # MLflow is running on a different host
+    if allow_remote:
+        try:
+            os.makedirs(dest_path, exist_ok=True)
+            from mlflow.artifacts import download_artifacts
+            downloaded_path = download_artifacts(
+                run_id=run_id,
+                artifact_path=artifact_path,
+                dst_path=dest_path
+            )
+            return downloaded_path
+        except Exception:
+            return None
+
+    return None
 
 def get_training_result(
         target_curve: str = '',
@@ -568,11 +612,11 @@ def get_training_result(
         model_type: str = '',
         seconds: int = 0,
         filter_expr: str = '',
+        exp_name="pseudo_logs",
     ):
+
     client = MlflowClient()
-    experiment = client.get_experiment_by_name("Default")
-    if not experiment:
-        raise ValueError("MLflow experiment 'Default' not found.")
+    experiment = get_mlflow_experiment(client, name=exp_name)
 
     filter_params = make_filter_params(target_curve, target_well, model_type, seconds, filter_expr)
     runs = client.search_runs(
@@ -585,6 +629,8 @@ def get_training_result(
     model_names: list[str] = []
     curve_list: list[str] = []
     well_list: list[str] = []
+    mapes: list[str] = []
+    rmses: list[str] = []
     r2_scores: list[str] = []
     time_status: list[str] = []
     status_list: list[str] = []
@@ -592,26 +638,8 @@ def get_training_result(
     details: list[str] = []
 
     template_path = "templates/training_result_report_tpl.html"
-    with open(template_path, "r", encoding="utf-8") as tpl_file:
+    with open(template_path, "r") as tpl_file:
         template = tpl_file.read()
-
-    def parse_json_param(param: str):
-        if not param:
-            return "N/A"
-        try:
-            result = json.loads(param)
-            if type(result) == list:
-                return ", ".join(result)
-            elif type(result) == dict:
-                return ", ".join(f"{k}: {v}" for k, v in result.items())
-            return result
-        except:
-            return param
-
-    def parse_float_param(param: float | int):
-        if param is None:
-            return "N/A"
-        return f"{param:.2f}"
 
     for idx, run in enumerate(runs):
         data = run.data
@@ -632,9 +660,11 @@ def get_training_result(
         mape = parse_float_param(data.metrics.get("mape"))
         rmse = parse_float_param(data.metrics.get("rmse"))
         r2 = parse_float_param(data.metrics.get("r2_score"))
-        download_path = Naming.data_path("pseudo_log")
-        las_saved = f"<a href='{download_path}'>Download</a>" if data.metrics.get("saved_las_file") == 1 else "No"
+        las_file = data.params.get("las_file") 
+        las_file_path = get_mlflow_artifact_path(experiment.experiment_id, run_id, artifact_path=f"las/{las_file}")
+        las_file_link = f"<a href='{las_file_path}'>Download</a>" if las_file else "N/A"
 
+        # generate table
         df = pd.DataFrame([{
             "ID": run_id[:8],
             "Model Name": run_name,
@@ -647,58 +677,59 @@ def get_training_result(
             "MAPE (%)": mape,
             "RMSE": rmse,
             "R² Score": r2,
-            "Las File Saved": las_saved
+            "Las File": las_file_link
         }])
         table = df.to_html(index=False, escape=False)
-        plot_path = f"mlartifacts/0/{run_id}/artifacts/plots/plot.html"
-        if os.path.isfile(plot_path):
+        
+        # generate plot
+        plot_path = get_mlflow_artifact_path(experiment.experiment_id, run_id, artifact_path="plots/plot.html")
+        if plot_path:
             with open(plot_path, "r") as f:
                 plot = f.read()
         else:
             plot = "Evaluating..."
 
-        out_file = f"{idx}_training_result_report.html"
-        result = template.replace("{{TABLE}}", table).replace("{{PLOT}}", plot)
-        with open(os.path.join("/tmp", out_file), "w") as output_file:
-            output_file.write(result)
+        each_report_html = template.replace("{{TABLE}}", table).replace("{{PLOT}}", plot)
+        each_report_file = f"{idx}_training_result_report.html"
+        each_report_path = Naming.dest_path(each_report_file, format="")
+        each_report_link = f'<a href="{each_report_file}" target="_blank">{run_id[:8]}</a>'
+        with open(each_report_path, "w") as f:
+            f.write(each_report_html)
 
-        run_ids.append(f'<a href="{out_file}" target="_blank">{run_id[:8]}</a>')
+        run_ids.append(each_report_link)
         model_names.append(run_name)
         curve_list.append(input_curves)
         well_list.append(input_wells)
+        mapes.append(mape)
+        rmses.append(rmse)
         r2_scores.append(r2)
         time_status.append(time_since_run)
         status_list.append(run_status)
-
-    out_file_relative_path = os.path.join(
-        f"training_result_report.html"
-    )
-    out_file_path = os.path.join("/tmp", out_file_relative_path)
 
     df = pd.DataFrame(data={
         "ID": run_ids,
         "Model Name": model_names,
         "From Curves": curve_list,
         "From Wells": well_list,
+        "MAPE (%)": mapes,
+        "RMSE": rmses,
         "R² Score": r2_scores,
         "Created": time_status,
         "Status": status_list,
     })
     table = df.to_html(index=False, escape=False)
-    with open("templates/training_result_report_tpl.html", "r") as tpl_file:
-        template = tpl_file.read()
+    
+    report_html = template.replace("{{TABLE}}", table).replace("{{PLOT}}", "")
+    report_file = "training_result_report.html"
+    report_path = Naming.dest_path(report_file, format="")
+    with open(report_path, "w") as f:
+        f.write(report_html)
 
-    result = template.replace("{{TABLE}}", table).replace("{{PLOT}}", "")
-    with open(out_file_path, "w") as output_file:
-        output_file.write(result)
+    return report_file 
 
-    return out_file_relative_path
-
-def remove_training_result(run_id_prefix: str) -> bool:
+def remove_training_result(run_id_prefix: str, exp_name="pseudo_logs") -> bool:
     client = MlflowClient()
-    experiment = client.get_experiment_by_name("Default")
-    if not experiment:
-        raise ValueError("MLflow experiment 'Default' not found.")
+    experiment = get_mlflow_experiment(client, name=exp_name)
 
     runs = client.search_runs(experiment_ids=[experiment.experiment_id])
     matched_runs = [run for run in runs if run.info.run_id.startswith(run_id_prefix)]
