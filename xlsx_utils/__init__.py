@@ -40,30 +40,52 @@ class XLSX:
 
     @classmethod
     def extract_perforation(cls, well):
-        PERFORATION_SHEET = 3 # sheet index = 3 (sheet 4)
-        WELL_COLUMN = 1
-        MD_TOP = 7
-        MD_BOTTOM = 8
-
-        xlsx_file = MemoryCache.get_instance().get(cls.PRODUCTION_FILEPATH)
+        PERFORATION_SHEET = "BH"
+        well_number = well
+        tokens = well.split("-")
+        if len(tokens) > 1:
+            well_number = tokens[1]
+            PERFORATION_SHEET = tokens[0]
+        
+        WELL_COLUMN = 2
+        MD_TOP = 8
+        MD_BOTTOM = 9
+        perforation_file = Naming.default_perforation_file(category='raw')
+        xlsx_file = MemoryCache.get_instance().get(perforation_file)
         if xlsx_file is None:
-           xlsx_file = pd.ExcelFile(Naming.data_path(cls.PRODUCTION_FILEPATH), engine='openpyxl')
-           MemoryCache.get_instance().put(cls.PRODUCTION_FILEPATH, xlsx_file)
+           xlsx_file = pd.ExcelFile(Naming.data_path(perforation_file), engine='openpyxl')
+           MemoryCache.get_instance().put(perforation_file, xlsx_file)
 
-        sheetDF = xlsx_file.parse(PERFORATION_SHEET, skiprows=2, header=None)
-        dataDF = sheetDF.iloc[:, [1, 7, 8]]
-        dataDF.columns.values[0] = 'well'
-        dataDF.columns.values[1] = 'start'
-        dataDF.columns.values[2] = 'stop'
-
-        dataDF = dataDF[dataDF.well == well]
+        sheetDF = xlsx_file.parse(PERFORATION_SHEET, skiprows=3, header=None)
+        dataDF = sheetDF.iloc[:, [WELL_COLUMN, MD_TOP, MD_BOTTOM]]
+        dataDF = dataDF.rename(columns={
+            dataDF.columns[0]: "well", 
+            dataDF.columns[1]: 'start',
+            dataDF.columns[2]: 'stop'
+        })
+        dataDF['well'] = dataDF['well'].astype(str)
+        dataDF = dataDF[dataDF.well == well_number]
         if dataDF.empty:
             raise Exception(f'Well {well} does not exist in perforation file')
+        dataDF = dataDF.sort_values(by="start", ascending=True)
 
-        wellx2 = np.column_stack((dataDF['well'], dataDF['well']))
-        startx2 = np.column_stack((dataDF['start'], dataDF['start']))
-        stopx2 = np.column_stack((dataDF['stop'], dataDF['stop']))
-        md = np.column_stack((dataDF['start'], dataDF['stop']))
+        # merge adjacent zones
+        rows = []
+        prev_start = None
+        prev_stop = None
+        for idx,row in dataDF.iterrows():
+            if row['start'] != prev_stop:
+                rows.append(row)
+                prev_stop = row['stop']
+            else:
+                rows[-1]['stop'] = row['stop']
+
+        dataDF = pd.DataFrame(rows)
+
+        wellx2 = np.column_stack((dataDF['well'], dataDF['well'])).flatten()
+        startx2 = np.column_stack((dataDF['start'], dataDF['start'])).flatten()
+        stopx2 = np.column_stack((dataDF['stop'], dataDF['stop'])).flatten()
+        md = np.column_stack((dataDF['start'], dataDF['stop'])).flatten()
 
         df = pd.DataFrame({'well': wellx2, 'md': md, 'start': startx2, 'stop': stopx2})
         return df
@@ -131,8 +153,6 @@ class XLSX:
                         ( zoneDF[columns[1]].str.startswith('T-') & zoneDF[ f"{columns[1]}-1" ].str.startswith('SH') ) |
                         ( zoneDF[columns[1]].str.startswith('SH') & zoneDF[ f"{columns[1]}-1" ].str.startswith('B-') ) ]
         
-        print(keyZoneDF)                
-        print(zoneDF)
         return keyZoneDF, zoneDF
     @classmethod
     def extract_layers(cls, file_path=None):

@@ -13,7 +13,7 @@ GR:
         range: [-100., 100.]
     - name: PERF
       mode: markers
-      marker_size: 6
+      marker_size: 12
       marker_symbol: square
       marker_color: red
       xaxis: 

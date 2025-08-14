@@ -6,7 +6,6 @@ def __do_get(d, key):
     return d.get(f'{key}')
 
 def recursive_get(tree:dict, path: list):
-    print("recursive_get", id(tree), path)
     if type(tree) not in [dict, list]:
         return None
     subtree = __do_get(tree, path[0])
@@ -15,7 +14,6 @@ def recursive_get(tree:dict, path: list):
     return recursive_get(subtree, path[1:])
 
 def recursive_put(tree: dict, path: list, value):
-    print("recursive_put", id(tree), path, value)
     _tree = tree
     for p in path[:-1]:
         if p not in _tree:

@@ -470,7 +470,7 @@ def advLogplot(df, curves, track_styles, title = None, keyZoneDF = None, zoneDF 
             fig.add_trace(trace)
             # Curve label
             fig.add_annotation(
-                text=f"{c}({curves[c].unit})",
+                text=f"{c}({curves[c]['unit']})",
                 font=dict(color="white", size=10),
                 bgcolor=curveSpec.get('line_color', curveSpec.get('marker_color')),
                 showarrow=False,
@@ -595,11 +595,12 @@ def multi_chart(chart_titles, data1, data2, data3):
     return fig
 
 def production_by_oilcum_chart(df_wells, all_cols, modes=["lines"]):
+    PLOT_WIDTH = 960
     X_COL = 0 # xparam
     xparam = all_cols[0]
     COLORS = {
-        "CV.WaterProdCum/1000": "cyan",
-        "CV.WaterInjCum/1000": 'lime',
+        "CV.WaterProdCum/1000": "#008B8B", # darkcyan
+        "CV.WaterInjCum/1000": '#8FBC8F', # dark lime
         "CV.WaterRate": 'red', 
         "CV.WaterInj_Rate": 'green',
         "CV.Watercut": 'blue',
@@ -617,10 +618,16 @@ def production_by_oilcum_chart(df_wells, all_cols, modes=["lines"]):
     }
     cols = all_cols[2:]
     fig = go.Figure()
-
+    fig.update_layout(title=dict(
+        text=f"Production crossplot for {",".join([w[0] for w in  df_wells ])}",
+        x=0.5, xanchor='center'
+    ))
     num_params = len(cols)
+    half_num_params = round(num_params / 2)
+    AXIS_WIDTH = 60
     WELLS = len(df_wells)
-    X_START_POS = 0.3
+    #X_START_POS = 0.3
+    X_START_POS = AXIS_WIDTH * half_num_params / PLOT_WIDTH
     Y_DOMAIN = lambda well_idx: [well_idx  / WELLS, (well_idx + 0.85) / WELLS ] if WELLS > 1 else [0, 1]
     yaxis_idx = 0
     overlaying_idx = 0
@@ -632,7 +639,7 @@ def production_by_oilcum_chart(df_wells, all_cols, modes=["lines"]):
         xaxis_name = f"x{x_suffix}"
         if well_idx > 0:
             fig.update_layout({
-                xaxis_key: dict(domain=[X_START_POS, 1], 
+                xaxis_key: dict(domain=[X_START_POS, 1 - X_START_POS], 
                                 title_text=f"Well {well} {xparam} ({UNITS.get(xparam, 'NA')})", showticklabels=True, 
                                 #showgrid=True, gridcolor='#ccc', 
                                 showgrid=True, 
@@ -641,7 +648,7 @@ def production_by_oilcum_chart(df_wells, all_cols, modes=["lines"]):
             })
         else:
             fig.update_layout({
-                xaxis_key: dict(domain=[X_START_POS, 1], 
+                xaxis_key: dict(domain=[X_START_POS, 1 - X_START_POS], 
                                 title_text=f"Well {well} {xparam} ({UNITS.get(xparam, 'NA')})", showticklabels=True, 
                                 #showgrid=True, gridcolor='#ccc',
                                 showgrid=True,
@@ -656,23 +663,62 @@ def production_by_oilcum_chart(df_wells, all_cols, modes=["lines"]):
             y_suffix = '' if yaxis_idx == 0 else str(yaxis_idx + 1)
             yaxis_name = f"y{y_suffix}"
             yaxis_key = f"yaxis{y_suffix}"
-            fig.update_layout(
-                {
-                    yaxis_key: dict( title=None,
-                        tickfont=dict(color=color),
-                        zeroline=False,
-                        showline=True, linecolor=color, linewidth=0.5, side='right',
-                        domain=Y_DOMAIN(well_idx),
-                        range=[0, None],
-                        #showgrid=True, 
-                        #gridcolor='#ccc', gridwidth=0.5,
-                        showgrid=(param_idx == 0),
-                        anchor="free",
-                        overlaying=(None if param_idx == 0 else overlaying_y(overlaying_idx)),
-                        position=param_idx / num_params * X_START_POS,
-                    )
-                }
-            )
+            
+            if param_idx % 2 == 0:
+                yaxis_props = dict(
+                    side='left',
+                    anchor="free",
+                    overlaying=(None if param_idx == 0 else overlaying_y(overlaying_idx)),
+                    position=(half_num_params - param_idx / 2) / half_num_params * X_START_POS
+                )
+                fig.update_layout(
+                    {
+                        yaxis_key: dict( title=None,
+                            tickfont=dict(color=color),
+                            zeroline=False,
+                            showline=True, linecolor=color, linewidth=0.5,
+                            domain=Y_DOMAIN(well_idx),
+                            range=[0, None],
+                            #showgrid=True, 
+                            #gridcolor='#ccc', gridwidth=0.5,
+                            showgrid=(param_idx == 0),
+                            **yaxis_props
+                        )
+                    }
+                )
+                fig.add_annotation(text=f"{param_idx}-{param} ({UNITS.get(param, 'NA')})", textangle=-90, font=dict(color=color),
+                    x=(half_num_params - param_idx / 2) / half_num_params * X_START_POS, 
+                    xref='paper', xanchor='right', align = 'center', xshift=-20,
+                    showarrow=False,
+                    y=0.5, yref=f"{yaxis_name} domain", yanchor='middle')
+            else:
+                yaxis_props = dict(
+                    side='right',
+                    anchor="free",
+                    overlaying=(None if param_idx == 0 else overlaying_y(overlaying_idx)),
+                    position= 1 - X_START_POS + (param_idx - 1) / 2 / half_num_params * X_START_POS
+                )
+                fig.update_layout(
+                    {
+                        yaxis_key: dict( title=None,
+                            tickfont=dict(color=color),
+                            zeroline=False,
+                            showline=True, linecolor=color, linewidth=0.5,
+                            domain=Y_DOMAIN(well_idx),
+                            range=[0, None],
+                            #showgrid=True, 
+                            #gridcolor='#ccc', gridwidth=0.5,
+                            showgrid=(param_idx == 0),
+                            **yaxis_props
+                        )
+                    }
+                )
+                fig.add_annotation(text=f"{param_idx}-{param} ({UNITS.get(param, 'NA')})", textangle=-90, font=dict(color=color),
+                    x=1 - X_START_POS + (param_idx - 1) / 2 / half_num_params * X_START_POS, 
+                    xref='paper', xanchor='right', align = 'center', xshift=40,
+                    showarrow=False,
+                    y=0.5, yref=f"{yaxis_name} domain", yanchor='middle')
+
             fig.add_trace(
                 go.Scattergl(
                     x=df_well[all_cols[X_COL]],
@@ -685,16 +731,13 @@ def production_by_oilcum_chart(df_wells, all_cols, modes=["lines"]):
                     legendgroup=well
                 )
             )
-            fig.add_annotation(text=f"{param} ({UNITS.get(param, 'NA')})", textangle=-90, font=dict(color=color),
-                x=param_idx / num_params * X_START_POS, xref='paper', xanchor='center', align = 'center',
-                y=0.5, yref=f"{yaxis_name} domain", yanchor='middle')
             yaxis_idx = yaxis_idx + 1
         if well_idx > 0:
             fig.update_layout({
                 xaxis_key: dict(anchor=f"y{overlaying_idx + 1}")
             })
 
-    fig.update_layout(height=500 * len(df_wells), 
+    fig.update_layout(height=500 * len(df_wells), width = PLOT_WIDTH,
                         #plot_bgcolor='#fff',
                         showlegend=False,
                         legend_tracegroupgap=260,
@@ -702,6 +745,7 @@ def production_by_oilcum_chart(df_wells, all_cols, modes=["lines"]):
     return fig
 
 def production_by_time_chart(df_wells, all_cols, modes = ['lines']):
+    PLOT_WIDTH = 960
     DATE_COL = 0
     COLORS = {
         "CV.OilRate": "#ff0000",
@@ -717,11 +761,17 @@ def production_by_time_chart(df_wells, all_cols, modes = ['lines']):
     }
     cols = all_cols[2:]
     fig = go.Figure()
-    fig.update_layout(dict(margin=dict(t=20,b=0)))    
+    fig.update_layout(title=dict(text=f"Production time chart for {",".join([w[0] for w in  df_wells ])}", 
+                                 x=0.5, xanchor='center'),
+                      margin=dict(t=30,b=0))    
 
     num_params = len(cols)
+    half_num_params = round(num_params / 2)
+    AXIS_WIDTH = 60
     WELLS = len(df_wells)
-    X_START_POS = 0.3
+
+    #X_START_POS = 0.3
+    X_START_POS = AXIS_WIDTH * half_num_params / PLOT_WIDTH
     Y_DOMAIN = lambda well_idx: [well_idx  / WELLS, (well_idx + 0.85) / WELLS ] if WELLS > 1 else [0, 1]
     yaxis_idx = 0
     overlaying_idx = 0
@@ -733,14 +783,14 @@ def production_by_time_chart(df_wells, all_cols, modes = ['lines']):
         xaxis_name = f"x{x_suffix}"
         if well_idx > 0:
             fig.update_layout({
-                xaxis_key: dict(domain=[X_START_POS, 1], 
+                xaxis_key: dict(domain=[X_START_POS, 1 - X_START_POS], 
                                 title_text=f"Well {well}", showticklabels=True, showgrid=True, #gridcolor='#ccc', 
                                 matches='x',
                                 showline=True, mirror=True,linewidth=1, linecolor='#888')
             })
         else:
             fig.update_layout({
-                xaxis_key: dict(domain=[X_START_POS, 1], 
+                xaxis_key: dict(domain=[X_START_POS, 1 - X_START_POS], 
                                 title_text=f"Well {well}", showticklabels=True, showgrid=True, #gridcolor='#ccc',
                                 showline=False, linewidth=1, linecolor='#888',
                                 anchor="y")
@@ -753,22 +803,51 @@ def production_by_time_chart(df_wells, all_cols, modes = ['lines']):
             y_suffix = '' if yaxis_idx == 0 else str(yaxis_idx + 1)
             yaxis_name = f"y{y_suffix}"
             yaxis_key = f"yaxis{y_suffix}"
-            fig.update_layout(
-                {
-                    yaxis_key: dict( title=None,
-                        tickfont=dict(color=color),
-                        zeroline=False,
-                        showline=True, linecolor=color, linewidth=0.5, side='right',
-                        domain=Y_DOMAIN(well_idx),
-                        range=[0, None],
-                        #gridcolor='#ccc', gridwidth=0.5,
-                        showgrid=(param_idx == 0),
-                        anchor="free",
-                        overlaying=(None if param_idx == 0 else overlaying_y(overlaying_idx)),
-                        position=param_idx / num_params * X_START_POS,
-                    )
-                }
-            )
+            if param_idx % 2 == 0:
+                fig.update_layout(
+                    {
+                        yaxis_key: dict( title=None,
+                            tickfont=dict(color=color),
+                            zeroline=False,
+                            showline=True, linecolor=color, linewidth=0.5,
+                            domain=Y_DOMAIN(well_idx),
+                            range=[0, None],
+                            #gridcolor='#ccc', gridwidth=0.5,
+                            showgrid=(param_idx == 0),
+                            anchor="free", side='left',
+                            overlaying=(None if param_idx == 0 else overlaying_y(overlaying_idx)),
+                            position=(half_num_params - param_idx / 2) / half_num_params * X_START_POS
+                        )
+                    }
+                )
+                fig.add_annotation(text=f"{param_idx}-{param} ({UNITS.get(param, 'NA')})", textangle=-90, font=dict(color=color),
+                    x=(half_num_params - param_idx / 2) / half_num_params * X_START_POS, 
+                    xref='paper', xanchor='right', align = 'center', xshift=-20,
+                    showarrow=False,
+                    y=0.5, yref=f"{yaxis_name} domain", yanchor='middle')
+            else:
+                fig.update_layout(
+                    {
+                        yaxis_key: dict( title=None,
+                            tickfont=dict(color=color),
+                            zeroline=False,
+                            showline=True, linecolor=color, linewidth=0.5,
+                            domain=Y_DOMAIN(well_idx),
+                            range=[0, None],
+                            #gridcolor='#ccc', gridwidth=0.5,
+                            showgrid=(param_idx == 0),
+                            anchor="free", side='right',
+                            overlaying=(None if param_idx == 0 else overlaying_y(overlaying_idx)),
+                            position=1 - X_START_POS + (param_idx - 1) / 2 / half_num_params * X_START_POS
+                        )
+                    }
+                )
+                fig.add_annotation(text=f"{param_idx}-{param} ({UNITS.get(param, 'NA')})", textangle=-90, font=dict(color=color),
+                    x=1 - X_START_POS + (param_idx - 1) / 2 / half_num_params * X_START_POS, 
+                    xref='paper', xanchor='right', align = 'center', xshift=40,
+                    showarrow=False,
+                    y=0.5, yref=f"{yaxis_name} domain", yanchor='middle')
+
             fig.add_trace(
                 go.Scattergl(
                     x=df_well[all_cols[DATE_COL]],
@@ -781,16 +860,13 @@ def production_by_time_chart(df_wells, all_cols, modes = ['lines']):
                     legendgroup=well
                 )
             )
-            fig.add_annotation(text=f"{param} ({UNITS.get(param, 'NA')})", textangle=-90, font=dict(color=color),
-                x=param_idx / num_params * X_START_POS, xref='paper', xanchor='center', align = 'center',
-                y=0.5, yref=f"{yaxis_name} domain", yanchor='middle')
             yaxis_idx = yaxis_idx + 1
         if well_idx > 0:
             fig.update_layout({
                 xaxis_key: dict(anchor=f"y{overlaying_idx + 1}")
             })
 
-    fig.update_layout(height=500 * len(df_wells), 
+    fig.update_layout(height=500 * len(df_wells), width=PLOT_WIDTH,
                         #plot_bgcolor='#fff',
                         showlegend=False,
                         legend_tracegroupgap=260,

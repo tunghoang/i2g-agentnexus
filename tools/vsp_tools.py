@@ -21,6 +21,7 @@ from tools.plot_tools import getColor
 from utils.plot_utils import multi_chart, production_by_time_chart, production_by_oilcum_chart
 from xlsx_utils import XLSX
 
+PUBLISH_BASE='http://dashboard.portal:9999'
 _cACHE = dict()
 
 def getdaysofmonth(datestr:str):
@@ -397,7 +398,12 @@ def create_vsp_tools(mcp_server, data_config: DataConfig) -> List[str]:
             if len(wells) > 0:
                 df = df[df[df.columns[WELL_COL]].isin(wells)]
             df['CV.WaterRate'] = df['CV.LiqRate'] - df['CV.OilRate']
-            df = df[[xparam] + [df.columns[c] for c in [WELL_COL, *params_indices]]]
+            
+            col_set = {df.columns[c] for c in [*params_indices]}
+            col_set = col_set - {xparam}
+            col_list = list(col_set)
+
+            df = df[ [xparam, df.columns[WELL_COL], *col_list] ]
             all_cols = df.columns
             cols = all_cols[2:]
 
@@ -411,7 +417,7 @@ def create_vsp_tools(mcp_server, data_config: DataConfig) -> List[str]:
             dest_path = Naming.dest_path(out_file, "production-crossplot")
             fig.write_html(dest_path)
             print(Naming.publish_path(out_file, "production-crossplot"))
-            return {'text': Naming.publish_path(out_file, "production-crossplot")}
+            return {'text': f'<iframe style="width: 100%;height: 800px" src=\'{PUBLISH_BASE}/{Naming.publish_path(out_file, "production-crossplot")}\'</iframe>'}
         except Exception as e:
             traceback.print_exc()
             return dict(text=str(e))

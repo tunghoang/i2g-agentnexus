@@ -10,6 +10,7 @@ from datetime import datetime
 from typing import List, Dict, Any
 from multiprocessing import Process, Event
 
+from df_utils import fill_zones
 from store import Store
 from naming import Naming
 from cache import MemoryCache
@@ -60,10 +61,14 @@ def create_missingpay_tools(mcp_server, data_config: DataConfig) -> List[str]:
                 MemoryCache.get_instance().put(logDF_path, las)
 
             df = las.df().reset_index()
-            print(list(df.columns))
             if track_templates:
                 keyZoneDF, zoneDF = XLSX.extract_zones1(well)
-                fig = advLogplot(df, las.curves, track_styles=track_templates, title=f"Well {well} Logplot", keyZoneDF = keyZoneDF, zoneDF=zoneDF)
+                perforationDF = XLSX.extract_perforation(well)
+                perforationDF = fill_zones(perforationDF, 'md', df[df.columns[0]])
+                df['PERF'] = perforationDF['PERF']
+                las_curves = dict(las.curves)
+                las_curves['PERF'] = dict(unit='N/A')
+                fig = advLogplot(df, las_curves, track_styles=track_templates, title=f"Well {well} Logplot", keyZoneDF = keyZoneDF, zoneDF=zoneDF)
             else:
                 fig = logplot(df, las.curves)
 

@@ -423,7 +423,8 @@ class ToolExecutingAgentExecutor:
                     },
                 )
                 return {"status": "success",
-                        "result": result }
+                        "skip_summarization": True,
+                        "result": f"http://dashboard.portal:9999/{result}" }
             except Exception as e:
                 executor_instance.logger.error(f"Error in build_logplot: {e}")
                 return {"status": "error", "message": str(e)}
@@ -667,6 +668,7 @@ class ToolExecutingAgentExecutor:
                                                                                                      wells=wells, 
                                                                                                      xparam=xparam,  modes=modes)))
                 return {"status": "success",
+                        "skip_summarization": True,
                         "result": result }
             except Exception as e:
                 traceback.print_exc()
@@ -789,7 +791,7 @@ class ToolExecutingAgentExecutor:
                 return {"status": "error", "message": str(e)}
         tools.append(create_wells_tvdss)
 
-        def plt_table() -> dict:
+        def plt_table(tool_context: ToolContext) -> dict:
             """View PLT table
 
             Returns:
@@ -798,9 +800,12 @@ class ToolExecutingAgentExecutor:
             try:
                 executor_instance.logger.info(f"Executing plt_table")
                 Naming.gen_site()
-                url = urllib.parse.urljoin(AGENT_URL, "excel-viewer/?file=/data/misc/plt.xlsx")
+                url = urllib.parse.urljoin("http://dashboard.portal:9999", "excel-viewer/?file=/data/misc/plt.xlsx")
+                #url = "excel-viewer/?file=/data/misc/plt.xlsx"
+                #tool_context.actions().skip_summarization()
                 return {"status": "success",
-                        "result": f"PLOT_URL={url}"}
+                        "skip_summarization": True,
+                        "result": f"[View PLT Table]({url})"}
             except Exception as e:
                 executor_instance.logger.error(f"Error in plt_table {e}")
                 return {"status": "error", "message": str(e)}
