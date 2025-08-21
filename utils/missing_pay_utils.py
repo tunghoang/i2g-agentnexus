@@ -22,6 +22,7 @@ def get_well_checklist(
     wells_dir: str = "data/wells",
     marker_path: str = "data/misc/Marker.xlsx",
 ):
+    print("wellllllls:", wells)
     if not os.path.isdir(wells_dir):
         raise Exception(f"Directory {wells_dir} does not exist")
 
@@ -29,6 +30,8 @@ def get_well_checklist(
     if wells is not None and len(wells) > 0:
         well_names = [f for f in well_names if f in wells]
     well_names.sort()
+    if len(well_names) > 5:
+        well_names = well_names[:5]
     count = len(well_names)
     if count == 0:
         raise Exception(f"No wells found for {wells}")
@@ -146,6 +149,8 @@ def get_well_checklist_curves(
     if wells is not None and len(wells) > 0:
         well_names = [f for f in well_names if f in wells]
     well_names.sort()
+    if len(well_names) > 5:
+        well_names = well_names[:5]
     count = len(well_names)
     if count == 0:
         raise Exception(f"No wells found for {wells}")

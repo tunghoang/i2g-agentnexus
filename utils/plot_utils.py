@@ -1,5 +1,6 @@
 import os
 import json
+import math
 import numpy as np
 import hashlib
 import yaml
@@ -599,22 +600,24 @@ def production_by_oilcum_chart(df_wells, all_cols, modes=["lines"]):
     X_COL = 0 # xparam
     xparam = all_cols[0]
     COLORS = {
-        "CV.WaterProdCum/1000": "#008B8B", # darkcyan
-        "CV.WaterInjCum/1000": '#8FBC8F', # dark lime
-        "CV.WaterRate": 'red', 
-        "CV.WaterInj_Rate": 'green',
-        "CV.Watercut": 'blue',
-        "CV.Oilcum/1000": "brown",
-        "CV.OilRate": "pink"
+        "CV.WaterProdCum/1000": "magenta", # darkcyan
+        "CV.WaterInjCum/1000": '#00FF00', # dark lime
+        "CV.WaterInj_Rate": 'brown',
+        "CV.WaterRate": '#008080', 
+        "CV.LiqRate": "#008000",
+        "CV.Watercut": "#0000ff",
+        "CV.Oilcum/1000": "#800000",
+        "CV.OilRate": "#ff0000",
     }
     UNITS = {
         "CV.WaterProdCum/1000": "thous,m3",
         "CV.WaterInjCum/1000": 'thous,m3',
         "CV.WaterRate": 'm3/d', 
+        "CV.LiqRate": "ton/d",
         "CV.WaterInj_Rate": 'm3/d',
         "CV.Watercut": '%',
-        "CV.Oilcum/1000": 'thous,m3',
-        "CV.OilRate": "m3/d"
+        "CV.Oilcum/1000": 'thous,ton',
+        "CV.OilRate": "ton/d"
     }
     cols = all_cols[2:]
     fig = go.Figure()
@@ -747,6 +750,7 @@ def production_by_oilcum_chart(df_wells, all_cols, modes=["lines"]):
 def production_by_time_chart(df_wells, all_cols, modes = ['lines']):
     PLOT_WIDTH = 960
     DATE_COL = 0
+    '''
     COLORS = {
         "CV.OilRate": "#ff0000",
         "CV.LiqRate": "#008000",
@@ -758,6 +762,27 @@ def production_by_time_chart(df_wells, all_cols, modes = ['lines']):
         "CV.LiqRate": "m3/month",
         "CV.Watercut": "%",
         "CV.Oilcum/1000": "thous,m3",
+    }
+    '''
+    COLORS = {
+        "CV.WaterProdCum/1000": "magenta", # darkcyan
+        "CV.WaterInjCum/1000": '#00FF00', # dark lime
+        "CV.WaterInj_Rate": 'brown',
+        "CV.WaterRate": '#008080', 
+        "CV.LiqRate": "#008000",
+        "CV.Watercut": "#0000ff",
+        "CV.Oilcum/1000": "#800000",
+        "CV.OilRate": "#ff0000",
+    }
+    UNITS = {
+        "CV.WaterProdCum/1000": "thous,m3",
+        "CV.WaterInjCum/1000": 'thous,m3',
+        "CV.WaterRate": 'm3/d', 
+        "CV.LiqRate": "ton/d",
+        "CV.WaterInj_Rate": 'm3/d',
+        "CV.Watercut": '%',
+        "CV.Oilcum/1000": 'thous,ton',
+        "CV.OilRate": "ton/d"
     }
     cols = all_cols[2:]
     fig = go.Figure()
@@ -873,3 +898,113 @@ def production_by_time_chart(df_wells, all_cols, modes = ['lines']):
                         legend_traceorder="grouped+reversed")
     return fig
 
+def plot_charts(dfs, modes = ['lines+markers']):
+    fig = make_subplots(cols = 1, rows = len(dfs), subplot_titles=list(dfs.keys()))
+    for idx,(key,df) in enumerate(dfs.items()):
+        columns = df.columns
+        xcol = columns[0]
+        ycols = columns[1:]
+        for ycol in ycols:
+            _df = df[[xcol, ycol]].dropna(how='any')
+            trace = go.Scattergl(x=_df[xcol], y=_df[ycol], name=f"{key}-{ycol}", mode="+".join(modes))
+            fig.append_trace(trace, row=idx+1, col=1)
+        fig.update_xaxes(title_text="Date", row=idx+1, col=1)
+        fig.update_yaxes(title_text="Pressure", row=idx+1, col=1)
+
+    fig.update_layout(title=dict(text=f"Welltest data", 
+                                 x=0.5, xanchor='center'))
+
+    return fig
+
+def __scatter_pie(radius, x, y, sectors, colors = ["rgba(255, 0, 255, 0.7)","rgba(0,0, 128, 0.7)"]):
+    print("__scatter_pie", radius, sectors)
+    angles = [360 * val for val in sectors]
+    if len(angles) == 0:
+        angles = [360, 0]
+    if all([math.isnan(a) for a in angles]):
+        print("skip", angles)
+        return None
+    angles = [math.radians(x) for x in angles]
+    
+    nop = 70 #number of points
+
+    start_angle = 0
+    
+    pie_segments = []
+    
+    for i,j in zip(angles,colors):
+
+        end_angle = start_angle + i
+
+        d_theta = (end_angle - start_angle) / (nop - 1)
+
+        theta = [start_angle + i * d_theta for i in range(nop)]
+        x_segment = [x + radius * math.cos(t) for t in theta]
+        y_segment = [y + radius * math.sin(t) for t in theta]
+
+        # Add the center coordinates to close the circle segment
+        x_segment.append(x)
+        y_segment.append(y)
+
+
+        trace = go.Scatter(x=x_segment,
+                           y=y_segment,
+                           mode='lines',
+                           fill="toself",
+                           fillcolor=j,
+                           line=dict(color='blue', width=0),
+                           hoverinfo='skip'
+                           )
+
+        pie_segments.append(trace)
+        start_angle = end_angle
+        
+    return pie_segments
+
+def pie_map(df, groups, key_col=0, x_col=1, y_col=2, radius_cols = None, hovertemplate=None, color_palettes=None):
+    xSeries = df.iloc[:, x_col]
+    minV = xSeries.min()
+    maxV = xSeries.max()
+    count = len(df.index)
+    min_radius = (maxV - minV) / count * 0.1
+    #min_radius = 0
+    max_radius = (maxV - minV) / count * 1.2
+
+    data = []
+    radius = (maxV - minV) / count 
+    for idx,group in enumerate(groups):
+        for row in df.itertuples(index=False):
+            if radius_cols and radius_cols[idx]:
+                radius = min_radius + (max_radius - min_radius) * row[radius_cols[idx]]
+            if radius_cols:
+                if math.isnan(row[radius_cols[idx]]) or row[radius_cols[idx]] < 1e-5:
+                    continue
+            pie = None
+            if color_palettes and color_palettes[idx] and len(color_palettes[idx]):
+                pie = __scatter_pie(radius, row[x_col], row[y_col], [row[i] for i in group], colors=color_palettes[idx])
+            else:
+                pie = __scatter_pie(radius, row[x_col], row[y_col], [row[i] for i in group])
+            if pie:
+                data = data + pie
+
+    #columns = df.columns
+    #hoverdata = df[["Well", *df.columns[3:]]]
+    #summation = hoverdata[hcolumns[1]] + hoverdata[hcolumns[2]]
+    #hoverdata['%Pro'] = hoverdata[hcolumns[1]] / summation * 100
+    #hoverdata['%Inj'] = hoverdata[hcolumns[2]] / summation * 100
+    fig = go.Figure( data, {} )
+    #hovertemplate=(
+    #    '%{customdata[3]:,.0f}%   -   %{customdata[4]:,.0f}%<br>'+
+    #    '%{customdata[1]:,.1f}   -   %{customdata[2]:,.1f}'))
+    fig.add_trace(
+        go.Scatter(name='', x=df.iloc[:, x_col], y = df.iloc[:, y_col], 
+            mode="markers+text", 
+            marker=dict(size=16, symbol='x', color='green'),
+            text=df[df.columns[key_col]], textposition='bottom center', textfont={'color': 'lime'},
+            customdata=df, 
+            hovertemplate=hovertemplate)
+    )
+    fig.update_xaxes(showticklabels=False)
+    fig.update_yaxes(scaleanchor='x', showticklabels=False)
+    fig.update_layout(showlegend=False, title=dict(text="Water Production-Injection map", x=0.5, xanchor='center'))
+    return fig

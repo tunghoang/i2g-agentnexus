@@ -24,6 +24,9 @@ from utils.plot_utils import multi_chart, advLogplot, logplot, write_json
 from xlsx_utils import XLSX
 from multiprocessing import Process
 
+from base_utils import iframe, link
+
+PUBLISH_BASE='http://dashboard.portal:9999'
 
 def create_missingpay_tools(mcp_server, data_config: DataConfig) -> List[str]:
     WELLS_DIR_PATH = "wells"
@@ -84,7 +87,7 @@ def create_missingpay_tools(mcp_server, data_config: DataConfig) -> List[str]:
             prefix = f"{data_config.data_dir}/"
             relative_path = f"/logplot/{logDF_path.removeprefix(prefix)}.json"
             return {
-                "text": f'PLOT_URL=\'{Naming.publish_path("view_plot")}?plot={relative_path}\''
+                "text": f'<iframe width="100%" height="1200px" src=\'{PUBLISH_BASE}/{Naming.publish_path("view_plot")}?plot={relative_path}\'></iframe>'
             }
             #return {
             #    "text": Naming.publish_path(
@@ -158,7 +161,7 @@ def create_missingpay_tools(mcp_server, data_config: DataConfig) -> List[str]:
             with open(out_file_path, "w") as f:
                 f.write(result)
 
-            return {"text": out_file_relative_path}
+            return {"text": iframe(out_file_relative_path)}
         except Exception as e:
             traceback.print_exc()
             return {"text": f"Tool failed: {str(e)}"}

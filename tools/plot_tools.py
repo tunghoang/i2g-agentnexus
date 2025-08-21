@@ -15,6 +15,7 @@ from config.settings import DataConfig
 
 from utils.plot_utils import logplot, advLogplot, histogram
 from naming import Naming
+from base_utils import iframe, link
 
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
@@ -105,7 +106,7 @@ def create_plot_tools(mcp_server: FastMCP, data_config: DataConfig) -> List[str]
                 os.path.exists(dest_path)
                 and (datetime.now().timestamp() - os.path.getmtime(dest_path)) < 3 * 60
             ):
-                return {"text": f"{ori_file_path}.html"}
+                return {"text": iframe(f"{ori_file_path}.html")}
 
             print(containing_dir, dest_path)
             Path(containing_dir).mkdir(parents=True, exist_ok=True)
@@ -120,7 +121,7 @@ def create_plot_tools(mcp_server: FastMCP, data_config: DataConfig) -> List[str]
             else:
                 fig = logplot(df, las.curves)
             html_code = fig.write_html(dest_path)
-            return {"text": f"{ori_file_path}.html"}
+            return {"text": iframe(f"{ori_file_path}.html")}
         except Exception as e:
             traceback.print_exc()
             return {"text": f"Ploting las failed: {str(e)}", "isError": True}
@@ -143,7 +144,7 @@ def create_plot_tools(mcp_server: FastMCP, data_config: DataConfig) -> List[str]
                 os.path.exists(dest_path)
                 and (datetime.now().timestamp() - os.path.getmtime(dest_path)) < 3 * 60
             ):
-                return {"text": f"{ori_file_path}.html"}
+                return {"text": iframe(f"{ori_file_path}.html")}
 
             print(containing_dir, dest_path)
             Path(containing_dir).mkdir(parents=True, exist_ok=True)
@@ -155,7 +156,7 @@ def create_plot_tools(mcp_server: FastMCP, data_config: DataConfig) -> List[str]
             df = las.df().reset_index()
             fig = advLogplot(df, las.curves, track_styles=["INTERP", "FLAGS"], title="My Log plot")
             html_code = fig.write_html(dest_path)
-            return {"text": f"{ori_file_path}.html"}
+            return {"text": iframe(f"{ori_file_path}.html")}
         except Exception as e:
             traceback.print_exc()
             return {"text": f"Ploting las failed: {str(e)}", "isError": True}
@@ -196,7 +197,7 @@ def create_plot_tools(mcp_server: FastMCP, data_config: DataConfig) -> List[str]
             num_bins = input_data.get("num_bins", 10)
             fig = histogram(df, curve_names, num_bins, file_path=file_path)
             fig.write_html(dest_path)
-            return {"text": f"{out_file_path}.html"}
+            return {"text": iframe(f"{out_file_path}.html")}
         except Exception as e:
             traceback.print_exc()
             return {"text": "Ploting histogram las failed: {str(e)}"}
@@ -243,7 +244,7 @@ def create_plot_tools(mcp_server: FastMCP, data_config: DataConfig) -> List[str]
             fig = histogram(df, curves, num_bins, file_path=well)
             dest_path = Naming.dest_path(logDF_path.removeprefix(f"{data_config.data_dir}/"), category='histogram')
             fig.write_html(dest_path)
-            return {"text": Naming.publish_path(logDF_path.removeprefix(f"{data_config.data_dir}/"), category='histogram')}
+            return {"text": iframe(Naming.publish_path(logDF_path.removeprefix(f"{data_config.data_dir}/"), category='histogram'))}
         except Exception as e:
             traceback.print_exc()
             return {"text": "Ploting histogram las failed: {str(e)}"}

@@ -85,9 +85,19 @@ class Naming:
 
     @classmethod
     def default_production_monthly_file(cls, category='raw'):
-        #default_path = "production/monthly_production_data.xlsx"
-        default_path = "production/PVT_WellTest_Perforation_WaterAnalysis.xlsx"
+        default_path = "production/monthly_production_data.xlsx"
+        #default_path = "production/PVT_WellTest_Perforation_WaterAnalysis.xlsx"
         return cls.__path_classifier(default_path, category = category)
+
+    @classmethod
+    def default_welltest_file(cls, category='raw'):
+        default_path = "production/welltest.xlsx"
+        return cls.__path_classifier(default_path, category=category)
+
+    @classmethod
+    def default_wellpos_file(cls, category='raw'):
+        default_path = 'misc/Toa_do.utf8.txt'
+        return cls.__path_classifier(default_path, category=category)
 
     @classmethod
     def elevation_file(cls, category='store'):

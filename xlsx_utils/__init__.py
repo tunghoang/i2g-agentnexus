@@ -6,7 +6,8 @@ from naming import Naming
 
 class XLSX:
     PRODUCTION_FILEPATH="production/PVT_WellTest_Perforation_WaterAnalysis.xlsx"
-    PRODUCTION_MONTHLY_SHEET=4
+    #PRODUCTION_MONTHLY_SHEET=4
+    PRODUCTION_MONTHLY_SHEET=0
 
     @classmethod
     def parse_excel(cls, file_path: str, sheet: int = 0):
@@ -23,7 +24,8 @@ class XLSX:
     @classmethod
     def parse_well_production(cls, sheet: int = PRODUCTION_MONTHLY_SHEET):
         PROD_WELL_COL = 1
-        df = cls.parse_excel(Naming.data_path(cls.PRODUCTION_FILEPATH), sheet)
+        #df = cls.parse_excel(Naming.data_path(cls.PRODUCTION_FILEPATH), sheet)
+        df = cls.parse_excel(Naming.default_production_monthly_file(category='store'), sheet)
         #df['Date'] = pd.to_datetime(df['Date'], unit='D', origin='1899-12-30')
         df['Date'] = pd.to_datetime(df['Date'])
         # convert well number to string
@@ -167,7 +169,7 @@ class XLSX:
         print(type(layers), layers)
         return layers
     @classmethod
-    def extract_production_data(cls, wells=None, file_path=None, sheet=4):
+    def extract_production_data(cls, wells=None, file_path=None, sheet=PRODUCTION_MONTHLY_SHEET):
         _file_path = file_path or Naming.default_production_monthly_file(category='raw')
         xlsx_file = MemoryCache.get_instance().get(_file_path)
         if xlsx_file is None:
@@ -202,5 +204,44 @@ class XLSX:
         return df
 
     @classmethod
+    def extract_welltest(cls, wells:list[str]):
+        _filekey = Naming.default_welltest_file(category="raw")
+        _filepath = Naming.default_welltest_file(category="store")
+
+        PRO_SHEET = "Mio_production"        
+        INJ_SHEET = "Mio_injection"        
+
+        xlsx_file = MemoryCache.get_instance().get(_filekey)
+        if xlsx_file is None:
+            xlsx_file = pd.ExcelFile(_filepath, engine='openpyxl')
+            MemoryCache.get_instance().put(_filekey, xlsx_file)
+        pro_df = xlsx_file.parse(PRO_SHEET, header=0)
+        pro_df = pro_df.rename(columns={pro_df.columns[0]: "Date"})
+        pro_df.columns = pro_df.columns.astype(str)
+        pro_df = pro_df[ ['Date'] + [ w for w in wells if w in list(pro_df.columns) ] ]
+        pro_df = pro_df.set_index('Date')
+        pro_df = pro_df.dropna(how='all').reset_index()
+
+        inj_df = xlsx_file.parse(INJ_SHEET, header=0)
+        inj_df = inj_df.rename(columns={inj_df.columns[0]: "Date"})
+        inj_df.columns = inj_df.columns.astype(str)
+        inj_df = inj_df[ ['Date'] + [ w for w in wells if w in list(inj_df.columns) ] ]
+        inj_df = inj_df.set_index('Date')
+        inj_df = inj_df.dropna(how='all').reset_index()
+        print(inj_df)
+        return {"production": pro_df, "injection": inj_df}
+
+    @classmethod
     def save_dataframe(cls, df, dest):
         df.to_excel(dest, index=False)
+
+    @classmethod
+    def write_excel(cls, dfs: dict[pd.DataFrame], filepath:str, index=True):
+        with pd.ExcelWriter(filepath, engine='openpyxl') as writer:
+            for key,df in dfs.items():
+                df.to_excel(writer, sheet_name=key, index=index)
+
+    @classmethod
+    def extract_wellpos(cls, wells: list[str]):
+        df = pd.read_csv(Naming.default_wellpos_file(category='store'), header=0, sep=" ")
+        return df[df['Well'].isin(wells)]

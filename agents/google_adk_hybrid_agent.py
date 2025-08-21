@@ -21,7 +21,8 @@ try:
     from google.adk.runners import Runner
     from google.adk.sessions import InMemorySessionService
     from google.adk.models.lite_llm import LiteLlm
-    from google.adk.tools import FunctionTool, ToolContext
+    from google.adk.tools import FunctionTool, BaseTool, ToolContext
+    from google.adk.events import Event
     from google.genai import types
     GOOGLE_ADK_AVAILABLE = True
 except ImportError as e:
@@ -30,12 +31,17 @@ except ImportError as e:
 from config.settings import AgentConfig
 from servers.mcp_server import MCPClient
 from naming import Naming
-from base_utils import recursive_get, recursive_put
+from base_utils import recursive_get, recursive_put, iframe, link
 from context import Context
 logger = logging.getLogger(__name__)
 
 AGENT_URL = os.getenv("AGENT_URL") or "http://localhost:8990"
 
+def my_after_tool_callback(tool: BaseTool, args: Dict[str, Any], tool_context: ToolContext, tool_response: Dict[str, Any]):
+    tool_context.actions.skip_summarization = True
+    print(tool_response)
+    return tool_response
+    
 class ToolExecutingAgentExecutor:
     """
     Google ADK Agent that properly executes MCP tools
@@ -333,11 +339,12 @@ class ToolExecutingAgentExecutor:
                 return {"status": "error", "message": str(e)}
         tools.append(dump_content)
 
-        def plot_las(file_path: str, templates:str) -> dict:
+        def plot_las(tool_context:ToolContext, file_path: str, templates:str = '') -> dict:
             """Plot a las file
 
             Args:
                 file_path: Path to las file
+                templates: templates for tracks
 
             Returns:
                 dict: las log plot
@@ -345,10 +352,11 @@ class ToolExecutingAgentExecutor:
             try:
                 executor_instance.logger.info(f"Executing plot_las with file: {file_path} and templates")
                 result = executor_instance._execute_mcp_tool( "plot_las", json.dumps(dict(file_path=file_path, templates=templates)) )
-                print(type(result), len(result))
+                print("MMM", type(result), len(result), result)
+                tool_context.actions.skip_summarization = True
                 return {"status": "success",
-                        "result": "output is created, information about resulting plot is in attachment field",
-                        "attachment": result}
+                        "skip_summarization": True,
+                        "result": result}
             except Exception as e:
                 executor_instance.logger.error(f"Error in plot_las: {e}")
                 return {"status": "error", "message": str(e)}
@@ -374,8 +382,8 @@ class ToolExecutingAgentExecutor:
                     },
                 )
                 return {"status": "success",
-                        "result": "output is created, information about resulting plot is in attachment field",
-                        "attachment": result}
+                        "skip_summarization": True,
+                        "result": result}
             except Exception as e:
                 executor_instance.logger.error(f"Error in plot_histogram_las: {e}")
                 return {"status": "error", "message": str(e)}
@@ -397,7 +405,7 @@ class ToolExecutingAgentExecutor:
                                                                                      "curves": curves,
                                                                                      "num_bins": num_bins })
                 print(result)
-                return {"status": "success", "result": result}
+                return {"status": "success", "skip_summarization": True, "result": result}
             except Exception as e:
                 traceback.print_exc()
                 return {"status": "error", "message": str(e) }
@@ -412,6 +420,8 @@ class ToolExecutingAgentExecutor:
 
             Returns:
                 dict: results
+
+            Output (the "result" field) is an url URL and should be embedded into an <iframe> with the following template: http://dashboard.portal:9999/URL 
             """
             try:
                 executor_instance.logger.info(f"Executing build_logplot with well: {well} and track_templates {track_templates}")
@@ -422,9 +432,11 @@ class ToolExecutingAgentExecutor:
                         "track_templates": track_templates or ''
                     },
                 )
+
+                print("MMM", result, type(result))
                 return {"status": "success",
                         "skip_summarization": True,
-                        "result": f"http://dashboard.portal:9999/{result}" }
+                        "result": f"{result}" }
             except Exception as e:
                 executor_instance.logger.error(f"Error in build_logplot: {e}")
                 return {"status": "error", "message": str(e)}
@@ -482,6 +494,8 @@ class ToolExecutingAgentExecutor:
                 dict: results
             """
             try:
+                if not file_path:
+                    file_path = Naming.default_production_monthly_file(category='raw')
                 executor_instance.logger.info(f"Executing unique_from_column with file: {file_path} and sheet { sheet} and column {column}")
                 result = executor_instance._execute_mcp_tool("unique_from_column", json.dumps(dict(file_path=file_path, sheet=sheet, header_rows=header, column=column)))
                 return {"status": "success",
@@ -509,7 +523,7 @@ class ToolExecutingAgentExecutor:
                     _marker_file = marker_file
                 executor_instance.logger.info(f"Executing marker4well with well: {well}, marker_file: {_marker_file}")
                 result = executor_instance._execute_mcp_tool('marker4well', json.dumps(dict(well=well,marker_file=marker_file, store=store)))
-                return {"status": "success", "result": result}
+                return {"status": "success", "skip_summarization": True, "result": result}
             except Exception as e:
                 executor_instance.logger.error(f"Error in marker4well {e}")
                 return dict(status="error", message=str(e))
@@ -555,30 +569,51 @@ class ToolExecutingAgentExecutor:
                 return dic(status="error", message=str(e))
         tools.append(discover_wells_in_prodmonthly)
 
-        def productiondata4well(tool_context: ToolContext, well: str, file_path: str='', store: str='default') -> dict:
-            """Get production data for well from a production file
+#        def productiondata4well(tool_context: ToolContext, well: str, file_path: str='', store: str='default') -> dict:
+#            """Get production data for well from a production file
+#
+#            Args:
+#                well: well
+#                file_path: production file
+#
+#            Returns:
+#                dict: results
+#            """
+#            try:
+#                fname = inspect.stack()[0][3]
+#                _file_path = recursive_get(tool_context.state, [fname, 'file_path']) or ''
+#                if file_path:
+#                    recursive_put(tool_context.state, [fname, 'file_path'], file_path)
+#                    _file_path = file_path
+#                executor_instance.logger.info(f"Executing productiondata4well with well: {well}, _file_path")
+#                result = executor_instance._execute_mcp_tool('productiondata4well', json.dumps(dict(well=well,file_path=_file_path, store=store)))
+#                return {"status": "success", "result": result}
+#            except Exception as e:
+#                traceback.print_exc()
+#                executor_instance.logger.error(f"Error in productiondata4well {e}")
+#                return {"status": "error", "message": str(e)}
+#        tools.append(productiondata4well)
+#
+
+        def describe_production_data(wells: list[str]):
+            """Describe production data for input wells
 
             Args:
-                well: well
-                file_path: production file
+                wells: input wells to describe production data
 
             Returns:
-                dict: results
+                dict: result
             """
             try:
-                fname = inspect.stack()[0][3]
-                _file_path = recursive_get(tool_context.state, [fname, 'file_path']) or ''
-                if file_path:
-                    recursive_put(tool_context.state, [fname, 'file_path'], file_path)
-                    _file_path = file_path
-                executor_instance.logger.info(f"Executing productiondata4well with well: {well}, _file_path")
-                result = executor_instance._execute_mcp_tool('productiondata4well', json.dumps(dict(well=well,file_path=_file_path, store=store)))
-                return {"status": "success", "result": result}
+                executor_instance.logger.info(f"Executing describe_production_data with wells: {wells}")
+                result = executor_instance._execute_mcp_tool('describe_production_data', json.dumps(wells))
+                return {"status": "success", "skip_summarization": True,
+                        "result": result}
             except Exception as e:
                 traceback.print_exc()
-                executor_instance.logger.error(f"Error in productiondata4well {e}")
+                executor_instance.logger.error(f"Error in describe_production_data {e}")
                 return {"status": "error", "message": str(e)}
-        tools.append(productiondata4well)
+        tools.append(describe_production_data)
 
         def production_monthly_data_table(wells:str = ""):
             """Build and show production monthly data table for wells
@@ -588,19 +623,16 @@ class ToolExecutingAgentExecutor:
 
             Returns:
                 dict: result
-
-            Output (the "result" field) is an url URL and should be embedded into an <iframe> with the following template: http://dashboard.portal:9999/URL 
             """
             try:
                 executor_instance.logger.info(f"Executing production_monthly_data_table with wells: {wells}")
                 result = executor_instance._execute_mcp_tool('production_monthly_data_table', wells)
                 print("RESULT:", result)
-                return {"status": "success", "result": result}
+                return {"status": "success", "skip_summarization": True, "result": result}
             except Exception as e:
                 traceback.print_exc()
                 executor_instance.logger.error(f"Error in production_monthly_data_table {e}")
                 return {"status": "error", "message": str(e)}
-            
 
         tools.append(production_monthly_data_table)
 
@@ -700,6 +732,7 @@ class ToolExecutingAgentExecutor:
                 executor_instance.logger.info(f"Executing production_by_oilcum with {params} and {wells}")
                 result = executor_instance._execute_mcp_tool('production_by_oilcum', json.dumps(dict(params=params, wells=wells, modes=modes)))
                 return {"status": "success",
+                        "skip_summarization": True,
                         "result": result }
             except Exception as e:
                 executor_instance.logger.error(f"Error in production_by_oilcum {e}")
@@ -727,8 +760,8 @@ class ToolExecutingAgentExecutor:
                 executor_instance.logger.info(f"Executing production_by_time with {params} and {wells}")
                 result = executor_instance._execute_mcp_tool('production_by_time', json.dumps(dict(params=params, wells=wells, modes=modes)))
                 return {"status": "success",
-                        "result": "result is created. Output is in attachment field",
-                        "attachment": result}
+                        "skip_summarization": True,
+                        "result": result}
             except Exception as e:
                 executor_instance.logger.error(f"Error in production_by_time {e}")
                 return {"status": "error", "message": str(e)}
@@ -1032,6 +1065,84 @@ class ToolExecutingAgentExecutor:
                 return {"status": "error", "message": str(e)}
         tools.append(set_context_for_tool_function)
 
+        def welltest_table(tool_context: ToolContext, wells: list[str], test: str) -> dict:
+            """ Show welltest table for input wells
+        
+            Args:
+                wells: input wells
+                test: is a string and can be either "production" or "injection" or "all"
+
+            Returns:
+                dict: result
+            """
+            try:
+                executor_instance.logger.info(f"Executing welltest_table for wells {wells}")
+                result = executor_instance._execute_mcp_tool("welltest_table", json.dumps(dict(wells=wells, test=test)))
+                tool_context.actions.skip_summarization = True
+                return {"status": "success", "result": result }
+            except Exception as e:
+                traceback.print_exc()
+                return {"status": "error", "message": str(e)}
+        tools.append(welltest_table)
+
+        def welltest_chart(tool_context: ToolContext, wells: list[str], test: str) -> dict:
+            """ Show welltest chart for input wells
+        
+            Args:
+                wells: input wells
+                test: is a string and can be either "production" or "injection" or "all"
+
+            Returns:
+                dict: result
+            """
+            try:
+                executor_instance.logger.info(f"Executing welltest_chart for wells {wells}")
+                result = executor_instance._execute_mcp_tool("welltest_chart", json.dumps(dict(wells=wells, test=test)))
+                tool_context.actions.skip_summarization = True
+                return {"status": "success", "result": result }
+            except Exception as e:
+                traceback.print_exc()
+                return {"status": "error", "message": str(e)}
+        tools.append(welltest_chart)
+
+        def water_io_ratio_map(tool_context: ToolContext, wells: list[str]) -> dict:
+            """Show cum water / cum water injection ratio map
+            
+            Args:
+                wells: input wells
+
+            Returns:
+                dict: result
+            """
+            try:
+                executor_instance.logger.info(f"Executing water_io_ratio_map for wells {wells}")
+                result = executor_instance._execute_mcp_tool("water_io_ratio_map", json.dumps(dict(wells=wells)))
+                tool_context.actions.skip_summarization = True
+                return {"status": "success", "result": result }
+            except Exception as e:
+                traceback.print_exc()
+                return {"status": "error", "message": str(e)}
+        tools.append(water_io_ratio_map)
+
+        def production_map(tool_context: ToolContext, wells: list[str]) -> dict:
+            """Show production map for input wells
+            
+            Args:
+                wells: input wells
+
+            Returns:
+                dict: result
+            """
+            try:
+                executor_instance.logger.info(f"Executing production_map for wells {wells}")
+                result = executor_instance._execute_mcp_tool("production_map", json.dumps(dict(wells=wells)))
+                tool_context.actions.skip_summarization = True
+                return {"status": "success", "result": result }
+            except Exception as e:
+                traceback.print_exc()
+                return {"status": "error", "message": str(e)}
+        tools.append(production_map)
+
         self.logger.info(f"Created {len(tools)} tool functions (no default parameters)")
         return tools
 
@@ -1051,6 +1162,7 @@ class ToolExecutingAgentExecutor:
             model=LiteLlm(model="openai/gpt-4o-mini"),
             description="Subsurface data analyst with tool execution capabilities",
             instruction=self._create_tool_execution_instruction(),
+            #after_tool_callback=my_after_tool_callback,
             tools=tools  # Pass Python functions directly - ADK handles the wrapping
         )
 
@@ -1091,10 +1203,9 @@ class ToolExecutingAgentExecutor:
 - User asks "get unique values from column 0 in file.xlsx sheet 0" → IMMEDIATELY call unique_from_column with column=0 file_path="file.xlsx" and sheet=0
 
 ## For CRM analysis:
-- User asks "build production data for WELL", then IMMEDIATELY call productiondata4well with well=WELL and file_path if provided
 - User asks "build CRM input using production wells and injection wells" → IMMEDIATELY call buildCRMInput with corresponding production_wells and injection_wells
 - User asks "show wells in marker file", then IMMEDIATELY call unique_from_column with column=0 file_path="misc/Marker.xlsx" and sheet=0
-- User asks "show wells in production monthly file", then IMMEDIATELY call unique_from_column with column=1 file_path="production/PVT_WellTest_Perforation_WaterAnalysis.xlsx" and sheet=4
+- User asks "show wells in production monthly file", then IMMEDIATELY call unique_from_column with column=1 file_path="" and sheet=0
 - User asks "Plot [params] of wells [wells] by time from production file" or "View production chart of wells [wells]",
     then IMMEDIATELY call production_by_time with params as list[str] if user provided or else params=["CV.OilRate","CV.LiqRate","CV.Watercut","CV.Oilcum/1000"]
     and wells as list[str] if user provided or else wells=[]
@@ -1194,8 +1305,8 @@ Then: Present the results
 Available tools: list_files, system_status, health_check, directory_info,
 las_parser, las_analysis, formation_evaluation, well_correlation, segy_parser, segy_classify, segy_qc,
 quick_segy_summary, dump_content, plot_las, build_logplot, plot_histogram_las, show_sheets, show_columns,
-unique_from_column, marker4well, zone4well, productiondata4well, production_monthly_data_table, summarize_marker_data,
-buildCRMInput, trainCRMModel, production_by_time, production_crossplot,
+unique_from_column, marker4well, zone4well, production_monthly_data_table, describe_production_data, summarize_marker_data,
+buildCRMInput, trainCRMModel, production_by_time, production_crossplot,welltest_chart, welltest_table,water_io_ratio_map, production_map,
 plt_table, well_checklist_table, well_checklist_curves, create_wells_tvdss, create_pseudo_log, view_training_result,
 set_context_for_tool_function
 
@@ -1214,6 +1325,7 @@ Available context_params: modes, marker_file, file_path
 
         tool_calls_made = []
         final_response = ""
+        tool_response = ""
 
         try:
             # Execute through Google ADK runner
@@ -1227,6 +1339,11 @@ Available context_params: modes, marker_file, file_path
                 # Track tool calls and get response
                 if hasattr(event, 'content') and event.content and event.content.parts:
                     final_response = event.content.parts[0].text
+                    if hasattr(event.content.parts[0], 'function_response') and event.content.parts[0].function_response:
+                        tool_response = event.content.parts[0].function_response.response['result']
+                        tool_response = json.loads(tool_response)
+                        tool_response = tool_response['text']
+                        print("GGGGGGG", event.content.parts[0].function_response.response)
                 elif hasattr(event, 'text') and event.text:
                     final_response = event.text
 
@@ -1247,7 +1364,7 @@ Available context_params: modes, marker_file, file_path
                         'arguments': getattr(event.tool_call, 'parameters', {})
                     })
                     self.logger.info(f"Direct tool call detected: {event.tool_call.name}")
-
+                print("FFFFFFFFF", event, final_response)
             # Update statistics
             self.stats["tool_executions"] += len(tool_calls_made)
 
@@ -1260,8 +1377,7 @@ Available context_params: modes, marker_file, file_path
                     self.stats["tool_executions"] += 1
                 else:
                     self.logger.warning("No tools were executed - agent may need stronger instructions")
-
-            return final_response or "Analysis completed."
+            return final_response or tool_response # "Analysis completed."
 
         except Exception as e:
             self.logger.error(f"Google ADK execution error: {e}")
@@ -1493,10 +1609,6 @@ class ToolExecutingAgentFactory:
                 return json.dumps(result) if isinstance(result, dict) else str(result)
             elif command_lower == "health check":
                 result = mcp_client.call_tool("health_check", "")
-                return json.dumps(result) if isinstance(result, dict) else str(result)
-            elif command_lower.startswith("plot "):
-                file_path = command.split(" ")[1]
-                result = mcp_client.call_tool("plot_las", file_path)
                 return json.dumps(result) if isinstance(result, dict) else str(result)
 
             return None
