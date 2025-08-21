@@ -218,9 +218,12 @@ class XLSX:
         pro_df = xlsx_file.parse(PRO_SHEET, header=0)
         pro_df = pro_df.rename(columns={pro_df.columns[0]: "Date"})
         pro_df.columns = pro_df.columns.astype(str)
+        print('production_df 1', pro_df)
+        print(pro_df.columns, wells)
         pro_df = pro_df[ ['Date'] + [ w for w in wells if w in list(pro_df.columns) ] ]
         pro_df = pro_df.set_index('Date')
         pro_df = pro_df.dropna(how='all').reset_index()
+        print('production_df', pro_df)
 
         inj_df = xlsx_file.parse(INJ_SHEET, header=0)
         inj_df = inj_df.rename(columns={inj_df.columns[0]: "Date"})

@@ -20,9 +20,8 @@ from pywaterflood import CRM
 from tools.plot_tools import getColor
 from utils.plot_utils import multi_chart, production_by_time_chart, production_by_oilcum_chart, plot_charts, pie_map
 from xlsx_utils import XLSX
-from base_utils import iframe, link, normalize
+from base_utils import iframe, link, normalize, PUBLISH_BASE
 
-PUBLISH_BASE='http://dashboard.portal:9999'
 _cACHE = dict()
 
 def getdaysofmonth(datestr:str):
@@ -724,7 +723,7 @@ def create_vsp_tools(mcp_server, data_config: DataConfig) -> List[str]:
 
             print(result_df)
             hovertemplate = [
-                'LiqRate & Watercut: %{customdata[4]:,.0f}   -   %{customdata[5]:,.0%}',
+                'LiqRate & Watercut: %{customdata[4]:,.0f}   -   %{customdata[5]:,.0f}%',
                 'Water Injection Rate: %{customdata[6]:,.0f}'
             ]
             hovertemplate = "<br>".join(hovertemplate)

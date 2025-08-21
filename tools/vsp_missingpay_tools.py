@@ -24,9 +24,7 @@ from utils.plot_utils import multi_chart, advLogplot, logplot, write_json
 from xlsx_utils import XLSX
 from multiprocessing import Process
 
-from base_utils import iframe, link
-
-PUBLISH_BASE='http://dashboard.portal:9999'
+from base_utils import iframe, link, PUBLISH_BASE
 
 def create_missingpay_tools(mcp_server, data_config: DataConfig) -> List[str]:
     WELLS_DIR_PATH = "wells"

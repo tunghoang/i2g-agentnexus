@@ -31,7 +31,7 @@ except ImportError as e:
 from config.settings import AgentConfig
 from servers.mcp_server import MCPClient
 from naming import Naming
-from base_utils import recursive_get, recursive_put, iframe, link
+from base_utils import recursive_get, recursive_put, iframe, link, PUBLISH_BASE
 from context import Context
 logger = logging.getLogger(__name__)
 
@@ -420,8 +420,6 @@ class ToolExecutingAgentExecutor:
 
             Returns:
                 dict: results
-
-            Output (the "result" field) is an url URL and should be embedded into an <iframe> with the following template: http://dashboard.portal:9999/URL 
             """
             try:
                 executor_instance.logger.info(f"Executing build_logplot with well: {well} and track_templates {track_templates}")
@@ -833,7 +831,7 @@ class ToolExecutingAgentExecutor:
             try:
                 executor_instance.logger.info(f"Executing plt_table")
                 Naming.gen_site()
-                url = urllib.parse.urljoin("http://dashboard.portal:9999", "excel-viewer/?file=/data/misc/plt.xlsx")
+                url = urllib.parse.urljoin(PUBLISH_BASE, "excel-viewer/?file=/data/misc/plt.xlsx")
                 #url = "excel-viewer/?file=/data/misc/plt.xlsx"
                 #tool_context.actions().skip_summarization()
                 return {"status": "success",
@@ -1279,7 +1277,6 @@ class ToolExecutingAgentExecutor:
 
 # FORMAT OUTPUT FILE:
 Format any html file in output (e.g.: /path/to/file.html) with the following template: http://dashboard.portal:9999/path/to/file.html. Also embed it into an <iframe>
-Format any PLOT_URL in output with the following template: http://dashboard.portal:9999/PLOT_URL. Also embed it into an <iframe>
 
 # EXAMPLES OF CORRECT BEHAVIOR:
 User: "list files *.las"
