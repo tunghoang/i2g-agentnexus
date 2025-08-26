@@ -353,6 +353,7 @@ def read_curves_from_las(well_name: str, curves: list[str]) -> pd.DataFrame | No
         #las_file_path = las_file_paths[0]
         df = _read_curves_from_las_file(las_file_path, curves)
         dfs.append(df)
+        print(">>>", df)
     df = pd.concat(dfs, axis=1)
     df = __rename_dup_columns(df)
     print("--------", df.columns)
@@ -406,9 +407,9 @@ def write_curve_to_las( well_name: str, curve_name: str, curves:list[str], curve
     new_las.well = las.well
     new_las.params = las.params
     new_las.other = las.other
-    new_las.append_curve(las.curves[0].mnemonic, merge_df[merge_df.columns[0]], unit=las.curves[0].unit)
+    new_las.append_curve(las.curves[0].mnemonic, merge_df.index, unit=las.curves[0].unit)
     new_las.append_curve(curve_name, merge_df[curve_name], unit=getUnit(curve_name))
-    out_las_path = run_id if run_id else uuid.uuid4().hex[:8] + '.las'
+    out_las_path = (run_id if run_id else uuid.uuid4().hex[:8]) + '.las'
     new_las.write(out_las_path)
     return out_las_path
 

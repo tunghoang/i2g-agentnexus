@@ -22,3 +22,30 @@ SW:
     - IC5
     - NC5
     - TGAS
+GR:
+    - NPHI
+    - DT
+    - RHOB
+    - LLD
+RT:
+    - GR
+    - RHOB
+    - NPHI
+    - DT
+    - LLS
+    - MSFL
+RHOB:
+    - GR
+    - LLD
+    - NPHI
+    - DT
+NPHI:
+    - GR
+    - LLD
+    - RHOB
+    - DT
+DT:
+    - GR
+    - LLD
+    - NPHI
+    - RT
