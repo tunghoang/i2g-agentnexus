@@ -1,0 +1,71 @@
+VSHALE:
+    - VSHALE
+    - VCLAY
+    - VCLAV
+    - VSH
+    - VCL
+PHIE:
+    - PHIE
+    - PHI_E
+    - PHIT
+    - PHIEFF
+SW:
+    - SW
+GR:
+    - GR
+    - GRC
+    - GK
+    - SGR
+    - GR_R1
+    - GRN
+DT:
+    - DT
+    - DTC
+    - AK
+NPHI:
+    - NPHI
+    - NPHIC
+    - NPHI_CO
+    - TNPH
+    - NNK
+    - NGK
+    - CNL
+RHOB:
+    - RHOB
+    - RHOBC
+    - ROBB
+    - ROBB_DH
+    - GGK
+RT:
+    - RT
+    - LLDC
+    - LLD
+    - BK
+    - IK
+    - PH40
+    - P40H
+    - P40H_UNC
+C1:
+    - C1
+    - C1 MAIN
+C2:
+    - C2
+    - C2 MAIN
+C3:
+    - C3
+    - C3 MAIN
+IC4:
+    - IC4
+    - IC4 MAIN
+NC4:
+    - NC4
+    - NC4 MAIN
+IC5:
+    - IC5
+    - IC5 MAIN
+NC5:
+    - NC5
+    - NC5 MAIN
+TGAS:
+    - TGAS
+    - T GAS MAIN

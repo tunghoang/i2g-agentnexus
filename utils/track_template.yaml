@@ -28,6 +28,16 @@ LLD:
         range: [0.2, 20.]
         nticks: 10
         ticks: [0.4, 0.6, 0.8, 1.0, 2.0, 4.0, 6.0, 8.0, 10.0]
+LLD200:
+  curves:
+    - name: LLD
+      mode: lines
+      line_color: red
+      xaxis:
+        scale: log
+        range: [0.2, 200.]
+        nticks: 10
+        ticks: [0.4, 0.6, 0.8, 1.0, 2.0, 4.0, 6.0, 8.0, 10.0, 20.0, 40.0, 60.0, 80.0, 100.0]
 NPHI:
   curves:
     - name: NPHI

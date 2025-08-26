@@ -1,21 +1,49 @@
 import os
+import re
 import json
 import uuid
 import lasio
+import yaml
 import numpy as np
 import pandas as pd
 
+from glob import glob, iglob
 from multiprocessing import Event
 from datetime import datetime, timedelta, timezone
+from cache import MemoryCache
 from naming import Naming
-from robust_las_parser import load_las_file
+from robust_las_parser import load_las_file, load_las_file_1
 from xlsx_utils import XLSX
+from store import Store
 
 import mlflow
 from mlflow.tracking import MlflowClient
+from mlflow.entities import ViewType
+
+from sklearn.tree import DecisionTreeRegressor
+from sklearn.linear_model import HuberRegressor, Lasso, LinearRegression
+from sklearn.ensemble import RandomForestRegressor
+from sklearn.svm import SVR
+from sklearn.neural_network import MLPRegressor
+from xgboost import XGBRegressor
+
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import (
+    mean_squared_error, r2_score,
+    mean_absolute_percentage_error,
+    mean_absolute_error, max_error,
+    explained_variance_score,
+)
+
+from sklearn.model_selection import learning_curve
+import plotly.graph_objects as go
+from mlflow.artifacts import download_artifacts
+
+from utils.plot_utils import logplot
+from base_utils import aliases_of_curve, standard_curve_name, find_similar_curves, getUnit
+
 mlflow_uri = "http://localhost:5000"
 mlflow.set_tracking_uri(mlflow_uri)
-
 
 def get_well_checklist(
     wells: list[str] = [],
@@ -30,8 +58,8 @@ def get_well_checklist(
     if wells is not None and len(wells) > 0:
         well_names = [f for f in well_names if f in wells]
     well_names.sort()
-    if len(well_names) > 5:
-        well_names = well_names[:5]
+    #if len(well_names) > 5:
+    #    well_names = well_names[:5]
     count = len(well_names)
     if count == 0:
         raise Exception(f"No wells found for {wells}")
@@ -149,8 +177,8 @@ def get_well_checklist_curves(
     if wells is not None and len(wells) > 0:
         well_names = [f for f in well_names if f in wells]
     well_names.sort()
-    if len(well_names) > 5:
-        well_names = well_names[:5]
+    #if len(well_names) > 5:
+    #    well_names = well_names[:5]
     count = len(well_names)
     if count == 0:
         raise Exception(f"No wells found for {wells}")
@@ -172,11 +200,17 @@ def get_well_checklist_curves(
         las_file_paths = [
             f.path
             for f in os.scandir(las_dir)
-            if f.is_file() and f.name.lower().endswith(".las")
+            if f.is_file() and ( not os.path.islink(f.path) ) and f.name.lower().endswith(".las")
         ]
+        las_file_paths.sort()
         for las_file_path in las_file_paths:
             try:
-                las, error = load_las_file(las_file_path)
+                key_path = Naming.to_raw_path(las_file_path)
+                _las = MemoryCache.get_instance().get(key_path)
+                if _las is None:
+                    _las = lasio.read(las_file_path)
+                    MemoryCache.get_instance().put(key_path, _las)
+                las, error = load_las_file_1(_las, las_file_path)
                 if las is None:
                     raise Exception(f"Error parsing las file {las_file_path}: {error}")
                 curve_names = [str.upper(c) for c in las.get_curve_names()]
@@ -234,14 +268,103 @@ def get_well_checklist_curves(
         sonic_result,
         pe_result,
     )
+def _read_curves_from_las_file(las_file_path, curves: list[str]):
+    ori_file_path = Naming.to_raw_path(las_file_path)
+    las = MemoryCache.get_instance().get(ori_file_path)
+    if las is None:
+        las = lasio.read(las_file_path)
+        MemoryCache.get_instance().put(ori_file_path, las)
 
+    #df = las.df().reset_index()
+    df = las.df()
+    all_cols = df.columns
+    if len(curves) > 0:
+        selected_curves = []
+        for c in curves:
+            if c.startswith('$'): # exact match
+                for c1 in all_cols:
+                    if c1[1:] == c :
+                        selected_curves.append(c1)
+                        break
+            else: 
+                for c1 in all_cols:
+                    if standard_curve_name(c1) == c:
+                        selected_curves.append(c1)
+                        break
+        df = df[ selected_curves ]
+        #df = df[ [all_cols[0]] + selected_curves ]
+    #df = df.set_index(all_cols[0])
+    print(las_file_path, df.columns)
+    return df
 
-def read_curves_from_las(well_name: str, curves: list[str]) -> np.ndarray | None:
+def read_curves_meta_data_from_las(well_name: str):
     las_dir = Naming.las_path(well_name)
     las_file_paths = [
         f.path for f in os.scandir(las_dir)
-        if f.is_file() and f.name.lower().endswith(".las")
+        if f.is_file() and ( not os.path.islink(f.path) ) and f.name.lower().endswith(".las")
     ]
+    las_file_paths.sort()
+    if not las_file_paths:
+        raise FileNotFoundError(f"No las files found")
+
+    curves = lasio.las_items.SectionItems()
+    first_file = True
+    for las_file_path in las_file_paths:
+        ori_file_path = Naming.to_raw_path(las_file_path)
+        las = MemoryCache.get_instance().get(ori_file_path)
+        if las is None:
+            las = lasio.read(las_file_path)
+            MemoryCache.get_instance().put(ori_file_path, las)
+        first_curve = True
+        for c in las.curves:
+            if (not first_curve) or (first_curve and first_file):
+                curves.append(c)
+            first_curve = False
+        first_file = False
+    return curves
+
+def __rename_dup_columns(df):
+    columns = pd.Series(df.columns)
+    dup_names = columns[columns.duplicated()].tolist()
+    counters = { n: 0 for n in dup_names }
+    new_columns = []
+    for c in columns:
+        if c in dup_names:
+            cnt = counter[c] + 1
+            counters[c] = cnt
+            new_columns.append(f"{c}:{cnt}")
+        else:
+            new_columns.append(c)
+
+    df.columns = new_columns
+    return df
+    
+def read_curves_from_las(well_name: str, curves: list[str]) -> pd.DataFrame | None:
+    las_dir = Naming.las_path(well_name)
+    las_file_paths = [
+        f.path for f in os.scandir(las_dir)
+        if f.is_file() and ( not os.path.islink(f.path) ) and f.name.lower().endswith(".las")
+    ]
+    las_file_paths.sort()
+    if not las_file_paths:
+        raise FileNotFoundError(f"No las files found")
+    dfs = []
+    for las_file_path in las_file_paths:
+        #las_file_path = las_file_paths[0]
+        df = _read_curves_from_las_file(las_file_path, curves)
+        dfs.append(df)
+    df = pd.concat(dfs, axis=1)
+    df = __rename_dup_columns(df)
+    print("--------", df.columns)
+    return df
+
+def read_curves_from_las_(well_name: str, curves: list[str]) -> np.ndarray | None:
+    las_dir = Naming.las_path(well_name)
+    las_file_paths = [
+        f.path for f in os.scandir(las_dir)
+        if f.is_file() and ( not os.path.islink(f.path) ) and f.name.lower().endswith(".las")
+    ]
+    las_file_paths.sort()
     if not las_file_paths:
         raise FileNotFoundError(f"No las files found")
     
@@ -263,7 +386,33 @@ def read_curves_from_las(well_name: str, curves: list[str]) -> np.ndarray | None
     valid_mask = ~np.isnan(stacked).any(axis=1)
     return stacked[valid_mask]
 
-def write_curve_to_las(
+def write_curve_to_las( well_name: str, curve_name: str, curves:list[str], curve_data: np.ndarray, run_id='' ) -> str | None:
+    df = read_curves_from_las(well_name, curves)
+    df_cleaned = df.dropna()
+    df_cleaned[curve_name] = curve_data
+    merge_df = pd.concat([df, df_cleaned[curve_name]], axis=1)
+
+    las_dir_path = Naming.las_path(well_name)
+    las_file_paths = glob(f"{las_dir_path}/*.las")
+    las_file_path = las_file_paths[0]
+    ori_file_path = Naming.to_raw_path(las_file_path)
+    las = MemoryCache.get_instance().get(ori_file_path)
+    if las is None:
+        las = lasio.read(las_file_path)
+        MemoryCache.get_instance().put(ori_file_path, las)
+
+    new_las = lasio.LASFile()
+    new_las.version = las.version
+    new_las.well = las.well
+    new_las.params = las.params
+    new_las.other = las.other
+    new_las.append_curve(las.curves[0].mnemonic, merge_df[merge_df.columns[0]], unit=las.curves[0].unit)
+    new_las.append_curve(curve_name, merge_df[curve_name], unit=getUnit(curve_name))
+    out_las_path = run_id if run_id else uuid.uuid4().hex[:8] + '.las'
+    new_las.write(out_las_path)
+    return out_las_path
+
+def write_curve_to_las_(
         well_name: str, 
         curves: list[str], 
         curve_name: str, 
@@ -273,8 +422,9 @@ def write_curve_to_las(
     las_dir = Naming.las_path(well_name)
     las_file_paths = [
         f.path for f in os.scandir(las_dir)
-        if f.is_file() and f.name.lower().endswith(".las")
+        if f.is_file() and ( not os.path.islink(f.path) ) and f.name.lower().endswith(".las")
     ]
+    las_file_paths.sort()
     if not las_file_paths:
         raise FileNotFoundError(f"No las files found")
 
@@ -322,19 +472,15 @@ def write_curve_to_las(
 def prepare_las_training_data(wells: list[str], curves: list[str]) -> np.ndarray:
     all_data = []
     for well in wells:
-        data = read_curves_from_las(well, curves)
+        df = read_curves_from_las(well, curves)
+        df_cleaned = df.dropna()
+        data = df_cleaned.values
         if data is not None:
             all_data.append(data)
 
     return np.vstack(all_data) if all_data else np.empty(0)
 
 def train_model(x_train: np.ndarray, y_train: np.ndarray, model_type: str, **kwargs):
-    from sklearn.tree import DecisionTreeRegressor
-    from sklearn.linear_model import HuberRegressor, Lasso, LinearRegression
-    from sklearn.ensemble import RandomForestRegressor
-    from sklearn.svm import SVR
-    from sklearn.neural_network import MLPRegressor
-    from xgboost import XGBRegressor
 
     models = {
         "decision_tree": DecisionTreeRegressor,
@@ -404,7 +550,7 @@ def make_pseudo_log(
     experiment = get_mlflow_experiment(client, name=exp_name)
     model_name = f"{target_curve}_{target_well}_{model_type}"
 
-    with mlflow.start_run(experiment_id=experiment.experiment_id, run_name=model_name):
+    with mlflow.start_run(experiment_id=experiment.experiment_id, run_name=model_name) as run:
         mlflow.log_param("target_curve", target_curve)
         mlflow.log_param("target_well", target_well)
         mlflow.log_param("model_type", model_type)
@@ -421,7 +567,6 @@ def make_pseudo_log(
             raise ValueError(f"No valid data found for curves {curves} in wells {wells}")
         
         # training
-        from sklearn.model_selection import train_test_split
         train_data, test_data = train_test_split(dataset, test_size=0.2, random_state=42, shuffle=True)
         x_train = train_data[:, :-1]
         y_train = train_data[:, -1]
@@ -429,12 +574,6 @@ def make_pseudo_log(
         mlflow.sklearn.log_model(model, name=model_name, input_example=x_train[:5])
 
         # log metrics
-        from sklearn.metrics import (
-            mean_squared_error, r2_score,
-            mean_absolute_percentage_error,
-            mean_absolute_error, max_error,
-            explained_variance_score,
-        )
         x_test = test_data[:, :-1]
         y_test = test_data[:, -1]
         y_pred = model.predict(x_test)
@@ -456,16 +595,35 @@ def make_pseudo_log(
         mlflow.log_metric("r2_score", r2)
         mlflow.log_metric("explained_variance", ev)
 
-        # write to las file
+        # write to las file and comparison logplot
         tmp_las = None
-        input_data = prepare_las_training_data([target_well], curves)
+        #input_data = prepare_las_training_data([target_well], curves)
+        input_df = read_curves_from_las(target_well, curves)
+        input_df = input_df.dropna()
+        input_data = input_df.values
+
         if len(input_data) > 0:
+            print(input_data.shape)
             predicted_curve_data = model.predict(input_data)
-            tmp_las = write_curve_to_las(target_well, curves, target_curve, predicted_curve_data)
+            print(predicted_curve_data.shape)
+            tmp_las = write_curve_to_las(target_well, target_curve, curves, predicted_curve_data, run_id=run.info.run_id)
             mlflow.log_artifact(tmp_las, artifact_path="las")
             os.remove(tmp_las)
-        mlflow.log_param("las_file", tmp_las)
-    
+            mlflow.log_param("las_file", os.path.basename(tmp_las))
+
+            # Comparison logplot
+            input_df[f"{target_curve}:*"] = predicted_curve_data
+            plot_df = read_curves_from_las(target_well, [target_curve])
+            plot_df[f'{target_curve}:*'] = input_df[f"{target_curve}:*"]
+            las_curves = read_curves_meta_data_from_las(target_well)
+            las_curves.append(lasio.las_items.CurveItem(mnemonic=f'{target_curve}:*', unit="v/v"))
+            print(plot_df)
+            fig = logplot(plot_df,las_curves)
+            tmp_plot = 'visualization.html'
+            fig.write_html(tmp_plot)
+            mlflow.log_artifact(tmp_plot, artifact_path='plots')
+            os.remove(tmp_plot)
+
         # evaluation
         fig = visualize_training_result(model, dataset)
         tmp_html = "plot.html"
@@ -474,9 +632,6 @@ def make_pseudo_log(
         os.remove(tmp_html)
 
 def visualize_training_result(model, data: np.ndarray):
-    from sklearn.model_selection import learning_curve
-    import plotly.graph_objects as go
-
     x, y = data[:, :-1], data[:, -1]
     train_sizes, train_scores, val_scores = learning_curve(
         model, x, y,
@@ -511,7 +666,6 @@ def visualize_training_result(model, data: np.ndarray):
     return fig
 
 def normalize_filter_expr(expr: str) -> str:
-    import re
     alias_map = {
         "loss": "mape",
         "accuracy": "r2",
@@ -589,9 +743,8 @@ def get_mlflow_artifact_path(
         allow_remote: bool = False,
     ) -> str | None:
 
-    mlflow_path = Naming.data_path(f"{experiment_id}/{run_id}/artifacts", prefix="./mlartifacts")
+    mlflow_path = Naming.mlflow_path(f"{experiment_id}/{run_id}/artifacts")
     local_file_path = os.path.join(mlflow_path, artifact_path)
-
     if os.path.isfile(local_file_path):
         return local_file_path 
 
@@ -599,7 +752,6 @@ def get_mlflow_artifact_path(
     if allow_remote:
         try:
             os.makedirs(dest_path, exist_ok=True)
-            from mlflow.artifacts import download_artifacts
             downloaded_path = download_artifacts(
                 run_id=run_id,
                 artifact_path=artifact_path,
@@ -624,6 +776,7 @@ def get_training_result(
     experiment = get_mlflow_experiment(client, name=exp_name)
 
     filter_params = make_filter_params(target_curve, target_well, model_type, seconds, filter_expr)
+    print(filter_params)
     runs = client.search_runs(
         experiment_ids=[experiment.experiment_id], 
         filter_string=filter_params,
@@ -665,9 +818,17 @@ def get_training_result(
         mape = parse_float_param(data.metrics.get("mape"))
         rmse = parse_float_param(data.metrics.get("rmse"))
         r2 = parse_float_param(data.metrics.get("r2_score"))
-        las_file = data.params.get("las_file") 
-        las_file_path = get_mlflow_artifact_path(experiment.experiment_id, run_id, artifact_path=f"las/{las_file}")
-        las_file_link = f"<a href='{las_file_path}'>Download</a>" if las_file else "N/A"
+        las_file_link = 'N/A'
+        visualization_link = "N/A"
+        try:
+            las_file = os.path.basename(data.params.get("las_file"))
+            las_file_path = get_mlflow_artifact_path(experiment.experiment_id, run_id, artifact_path=f"las/{las_file}")
+            las_file_link = f"<a href='{las_file_path}'>Download</a>" if las_file else "N/A"
+
+            visualization_path = get_mlflow_artifact_path(experiment.experiment_id, run_id, artifact_path="plots/visualization.html")
+            visualization_link = f"<a href='{visualization_path}'>View</a>" if visualization_path else "N/A"
+        except:
+            pass
 
         # generate table
         df = pd.DataFrame([{
@@ -682,7 +843,8 @@ def get_training_result(
             "MAPE (%)": mape,
             "RMSE": rmse,
             "R² Score": r2,
-            "Las File": las_file_link
+            "Las File": las_file_link,
+            "Logplot": visualization_link
         }])
         table = df.to_html(index=False, escape=False)
         
@@ -732,15 +894,57 @@ def get_training_result(
 
     return report_file 
 
-def remove_training_result(run_id_prefix: str, exp_name="pseudo_logs") -> bool:
+def get_runs(run_id_prefix: str, exp_name="pseudo_logs"):
     client = MlflowClient()
-    experiment = get_mlflow_experiment(client, name=exp_name)
-
-    runs = client.search_runs(experiment_ids=[experiment.experiment_id])
+    experiment = get_mlflow_experiment(client, name = exp_name)
+    runs = client.search_runs( experiment_ids=[experiment.experiment_id])
     matched_runs = [run for run in runs if run.info.run_id.startswith(run_id_prefix)]
+    return matched_runs
 
+def remove_training_result(run_id_prefix: str, exp_name="pseudo_logs") -> bool:
+    #client = MlflowClient()
+    #experiment = get_mlflow_experiment(client, name=exp_name)
+
+    #runs = client.search_runs(experiment_ids=[experiment.experiment_id])
+    #matched_runs = [run for run in runs if run.info.run_id.startswith(run_id_prefix)]
+    matched_runs = get_runs(run_id_prefix, exp_name=exp_name)
+    print(matched_runs)
     for run in matched_runs:
+        client = MlflowClient()
         client.delete_run(run.info.run_id)
     
     return True
     
+def get_curves_in_well(well:str):
+    storage = Store()
+    curves = storage.get_curves_in_well(well)
+    if curves is None:
+        las_files = Naming.las_path(well) + "/*.las"
+        all_curves = []
+        for f in glob(las_files):
+            if os.path.islink(f):
+                continue
+            las_f = lasio.read(f)
+            curves = [{'curve': c.mnemonic, 'path': f, 'ref': None} for c in las_f.curves]
+            all_curves += curves
+        if len(all_curves):
+            storage = Store()
+            storage.save_curves_in_well(all_curves, well)
+        return list(set([c['curve'] for c in all_curves]))
+    return curves
+
+def __get_all_wells():
+    base_dir = Naming.well_path()
+    return [os.path.basename(f) for f in iglob(f'{base_dir}/*')]
+
+def get_wells_has_curve(curve: str):
+    storage = Store()
+    all_wells = __get_all_wells()
+    matched_wells = []
+    for w in all_wells:
+        curves = get_curves_in_well(w)
+        sim_curves = find_similar_curves(curve, curves)
+        if len(sim_curves):
+            matched_wells.append({'well': w, 'curves': sim_curves, 'all_curves': curves})
+
+    return matched_wells

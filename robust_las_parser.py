@@ -284,6 +284,40 @@ class RobustLASFile:
 
         return (0, 0)
 
+def load_las_file_1(las, file_path):
+    # Check if data was parsed correctly (numeric)
+    try:
+        # Check if at least one numeric column exists
+        is_numeric = False
+        for curve in las.curves:
+            if np.issubdtype(curve.data.dtype, np.number):
+                is_numeric = True
+                break
+
+        if is_numeric:
+            # Standard parsing worked
+            print("Standard parsing successful - data is numeric")
+            return RobustLASFile.from_lasio(las, file_path), None
+        else:
+            print("Standard parsing produced non-numeric data, trying direct parsing")
+    except Exception as e:
+        print(f"Error checking numeric data: {str(e)}")
+
+    # If standard parsing failed or produced non-numeric data, try direct parsing
+    try:
+        print("Attempting direct parsing")
+        las = RobustLASFile.from_direct_parsing(file_path)
+
+        # Check if we got any data
+        if las.df is not None and len(las.df) > 0:
+            print(f"Direct parsing successful - found {len(las.df)} rows")
+            return las, None
+        else:
+            return None, "Direct parsing failed to extract any data"
+    except Exception as e:
+        error_details = traceback.format_exc()
+        return None, f"All parsing methods failed: {str(e)}\n{error_details}"
+    
 
 def load_las_file(file_path: str) -> Tuple[Optional[RobustLASFile], Optional[str]]:
     """

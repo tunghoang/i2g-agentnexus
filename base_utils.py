@@ -1,4 +1,8 @@
-PUBLISH_BASE="http://dashboard.portal:9999"
+import yaml
+import re
+from naming import Naming
+#PUBLISH_BASE="http://dashboard.portal:9999"
+PUBLISH_BASE="http://dashboard.portal:8990"
 def __do_get(d, key):
     if type(key) == int and type(d) == list:
         return d[key]
@@ -34,6 +38,9 @@ def iframe(url, height='960px'):
 def link(url, label = 'result'):
     return f'[{label}]({PUBLISH_BASE}/{url})'
 
+def excel_link(publish_path, label='result'):
+    return link(f'{Naming.publish_path("excel-viewer", format=None)}/?file=/{publish_path}', label=label)
+
 def normalize(s):
     minV = s.min()
     maxV = s.max()
@@ -41,3 +48,61 @@ def normalize(s):
     if maxV - minV == 0:
         s1[:] = 1.0
     return s1
+
+_allCurveRules = None
+_allCurveReversedRules = None
+_allLogRules = None
+_allCurveUnits = None
+def getUnit(curve = None):
+    global _allCurveUnits
+    if _allCurveUnits is None:
+        with open('utils/curve.units.yaml') as file:
+            _allCurveUnits = yaml.safe_load(file)
+    if curve:
+        return _allCurveUnits.get(curve)
+    return _allCurveUnits
+
+def getCurveRules(curve = None):
+    global _allCurveRules
+    if _allCurveRules is None:
+        with open('utils/curve.rules.yaml') as file:
+            _allCurveRules = yaml.safe_load(file)
+    if curve:
+        return _allCurveRules.get(curve)
+    return _allCurveRules
+
+def getCurveReversedRules(curve = None):
+    global _allCurveReversedRules
+    if _allCurveReversedRules is None:
+        allCurveRules = getCurveRules()
+        _allCurveReversedRules = {}
+        for c, aliases in allCurveRules.items():
+            for alias in aliases:
+                _allCurveReversedRules[alias] = c
+    if curve:
+        return _allCurveReversedRules.get(curve, None)
+    return _allCurveReversedRules
+
+def _trim_curve_index(curve_name):
+    return re.sub(":.*$", "", curve_name)
+
+def standard_curve_name(curve):
+    return getCurveReversedRules(_trim_curve_index(curve))
+
+def aliases_of_curve(curve):
+    return getCurveRules(curve)
+
+def getLogRules(curve):
+    global _allLogRules
+    if _allLogRules is None:
+        with open('utils/log.rules.yaml') as file:
+            _allLogRules = yaml.safe_load(file)
+    return _allLogRules.get(curve)
+
+def find_similar_curves(curve, curves):
+    scurve = standard_curve_name(curve)
+    aliases = aliases_of_curve(scurve)
+    ret_curves = [ c for c in curves if c == curve or c in aliases ]
+    return ret_curves
+ 
+

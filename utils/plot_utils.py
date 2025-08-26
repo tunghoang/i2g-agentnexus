@@ -8,8 +8,9 @@ import pandas as pd
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 from plotly.io import write_json as __write_json
-from base_utils import recursive_get, update_dict
+from base_utils import recursive_get, update_dict, standard_curve_name
 _allTrackConfigs = None
+_allCurveSpecs = None
 
 __COLOR_PALETTE = (
     "#e6194b",
@@ -55,10 +56,8 @@ def getLineConfig(curveName):
 def getColor(curveName):
     return getLineConfig(curveName)["color"]
 
-
 def borderColor():
     return "#444"
-
 
 def headerFillColor():
     return "#eee"
@@ -73,8 +72,12 @@ def getTrackConfig(trackstyle):
             _allTrackConfigs = yaml.safe_load(file)
     return _allTrackConfigs.get(trackstyle)
 
-def __depth_track():
-    pass
+def getCurveSpec(curve):
+    global _allCurveSpecs
+    if _allCurveSpecs is None:
+        with open('utils/curve.specs.yaml') as f:
+            _allCurveSpecs = yaml.safe_load(f)
+    return _allCurveSpecs.get(curve)
 
 def __track_header(fig, TRACK_HEADER, yanchor=1, TRACK_TITLE=20, xdomain='', colIdx = None, curve=None, unit=None):
     if xdomain:
@@ -219,6 +222,8 @@ def __track_body(fig, TRACK_HEADER, trackbodyheight, xdomain='', colIdx=None ):
     return fig
 
 def logplot(df, curves, title=None):
+    print("LOGPLOTTTTTT", list(df.columns))
+    
     PLOT_HEADER = 60
     TRACK_HEADER = 180
     PLOT_HEIGHT = 1000
@@ -236,8 +241,8 @@ def logplot(df, curves, title=None):
                                                       yshift=(TRACK_HEADER - TRACK_TITLE - (inTrackPos + 1)*CURVE_HEADER + 2))
 
 
-    curveNames = df.columns[1:]
-    refCurveName = df.columns[0]
+    curveNames = df.columns
+    refCurveName = df.index.name
     fig = make_subplots(
             rows=1, 
             cols=len(curveNames) + 1, 
@@ -245,34 +250,52 @@ def logplot(df, curves, title=None):
             horizontal_spacing=0 
     )
 
-    fig.append_trace(go.Scattergl(x=[0,0], y = df[refCurveName], name="depth"), 1, 1)
-    __track_header(fig, TRACK_HEADER, colIdx=0)
+    fig.append_trace(go.Scattergl(x=[0,0], y = df.index, name="depth"), 1, 1)
+    __track_header(fig, TRACK_HEADER, colIdx=0, curve=df.index.name, unit=curves[df.index.name].unit)
     __track_body(fig, TRACK_HEADER, PLOT_HEIGHT - TRACK_HEADER - PLOT_HEADER, colIdx=0)
     for idx, c in enumerate(curveNames):
+        curveSpec = getCurveSpec(standard_curve_name(c))
+        curveProperties = {}
+        curveLimitProperties = {}
+        if curveSpec:
+            curveProperties = {**curveSpec}
+            if 'xaxis' in curveProperties:
+                del curveProperties['xaxis']
+                
+                logType = curveSpec.get('xaxis', {}).get('scale', 'linear')
+                limits = curveSpec.get('xaxis', {}).get('range', None)
+                curveLimitProperties = dict(type=logType)
+                if limits:
+                    limits = np.array(limits)
+                    limits = np.log10(limits) if logType == 'log' else limits
+                    curveLimitProperties = dict(type=logType, range=list(limits))
         __track_header(fig, TRACK_HEADER, colIdx=idx + 1)
+        print(curveSpec, c)
         fig.update_xaxes(
             title = None,
             showline=True,
-            nticks=4, tickfont_color=getColor(c), linecolor=getColor(c), 
+            nticks=4, tickfont_color=curveSpec.get('line_color') or curveSpec.get('marker_color'), 
+            linecolor=curveSpec.get('line_color') or curveSpec.get('marker_color'), 
             mirror=False,
             showticklabels=True,
             gridcolor=gridcolor(),
             linewidth=1,
             **curveXAxisPositionProps(0), 
+            **curveLimitProperties,
             row=1, col=idx + 2
         )
         fig.add_annotation(
             text=f"{c}({curves[c].unit})",
             font=dict(color="white", size=10),
-            bgcolor=getColor(c),
+            bgcolor=curveSpec.get('line_color') or curveSpect.get('marker_color'),
             showarrow=False,
             align="center",
             visible=True,
             **curveLabelPositionProps(0),
             row=1, col=idx + 2,
         )
-        trace = go.Scatter(
-            x=df[c], y=df[refCurveName], name=c, line=getLineConfig(c)
+        trace = go.Scattergl(
+            x=df[c], y=df.index, name=c, line=getLineConfig(c), **curveProperties
         )
         fig.append_trace(trace, 1, idx + 2)
         __track_body(fig, TRACK_HEADER, PLOT_HEIGHT - TRACK_HEADER - PLOT_HEADER, colIdx=idx + 1)
@@ -286,7 +309,7 @@ def logplot(df, curves, title=None):
         gridcolor=gridcolor(),
         domain=Y_DOMAIN
     )
-    fig.update_yaxes(position=0.65/(1 + len(curveNames)), showline=False, anchor='free', row=1, col=1)
+    fig.update_yaxes(position=0.65/(1 + len(curveNames)), showline=False, showgrid=False, anchor='free', row=1, col=1)
 
     plot_title=title or f"Logplot for {','.join(curveNames)}"
     fig.update_layout(
@@ -312,10 +335,12 @@ def advLogplot(df, curves, track_styles, title = None, keyZoneDF = None, zoneDF 
     refCurveName = df.columns[0]
 
     PLOT_HEADER = 60
-    TRACK_HEADER = 180
+    #TRACK_HEADER = 180
+    TRACK_HEADER = 150
     PLOT_HEIGHT = 1000
     columnWidth = 150
-    CURVE_HEADER = 47
+    #CURVE_HEADER = 47
+    CURVE_HEADER = 40
     TRACK_TITLE = 20
     Y_DOMAIN = [0, (PLOT_HEIGHT - TRACK_HEADER) / PLOT_HEIGHT]
     #STATIC_TRACKS = lambda : 1 + (0 if zoneDF is None or zoneDF.empty else 1)
@@ -916,8 +941,7 @@ def plot_charts(dfs, modes = ['lines+markers']):
 
     return fig
 
-def __scatter_pie(radius, x, y, sectors, colors = ["rgba(255, 0, 255, 0.7)","rgba(0,0, 128, 0.7)"]):
-    print("__scatter_pie", radius, sectors)
+def __scatter_pie(radius, x, y, sectors, colors = ["rgba(255, 0, 255, 0.7)","rgba(0,0, 128, 0.7)"], names=['',''], showlegend=False):
     angles = [360 * val for val in sectors]
     if len(angles) == 0:
         angles = [360, 0]
@@ -926,13 +950,13 @@ def __scatter_pie(radius, x, y, sectors, colors = ["rgba(255, 0, 255, 0.7)","rgb
         return None
     angles = [math.radians(x) for x in angles]
     
-    nop = 70 #number of points
+    nop = 50 #number of points
 
     start_angle = 0
     
     pie_segments = []
     
-    for i,j in zip(angles,colors):
+    for i,j,name in zip(angles,colors, names):
 
         end_angle = start_angle + i
 
@@ -946,14 +970,14 @@ def __scatter_pie(radius, x, y, sectors, colors = ["rgba(255, 0, 255, 0.7)","rgb
         x_segment.append(x)
         y_segment.append(y)
 
-
-        trace = go.Scatter(x=x_segment,
+        trace = go.Scattergl(name = name, x=x_segment,
                            y=y_segment,
                            mode='lines',
                            fill="toself",
                            fillcolor=j,
                            line=dict(color='blue', width=0),
-                           hoverinfo='skip'
+                           hoverinfo='skip',
+                           showlegend=showlegend and (name is not None) and (len(name) > 0)
                            )
 
         pie_segments.append(trace)
@@ -961,18 +985,22 @@ def __scatter_pie(radius, x, y, sectors, colors = ["rgba(255, 0, 255, 0.7)","rgb
         
     return pie_segments
 
-def pie_map(df, groups, key_col=0, x_col=1, y_col=2, radius_cols = None, hovertemplate=None, color_palettes=None):
+def pie_map(df, groups, names, key_col=0, x_col=1, y_col=2, radius_cols = None, hovertemplate=None, color_palettes=None, plot_title='Pie map'):
     xSeries = df.iloc[:, x_col]
     minV = xSeries.min()
     maxV = xSeries.max()
     count = len(df.index)
-    min_radius = (maxV - minV) / count * 0.1
+    #min_radius = (maxV - minV) / count * 0.1
     #min_radius = 0
-    max_radius = (maxV - minV) / count * 1.2
+    #max_radius = (maxV - minV) / count * 1.2
+    min_radius = 80
+    max_radius = 300
 
     data = []
-    radius = (maxV - minV) / count 
+    #radius = (maxV - minV) / count 
+    radius = 150
     for idx,group in enumerate(groups):
+        first_row = True
         for row in df.itertuples(index=False):
             if radius_cols and radius_cols[idx]:
                 radius = min_radius + (max_radius - min_radius) * row[radius_cols[idx]]
@@ -981,30 +1009,35 @@ def pie_map(df, groups, key_col=0, x_col=1, y_col=2, radius_cols = None, hoverte
                     continue
             pie = None
             if color_palettes and color_palettes[idx] and len(color_palettes[idx]):
-                pie = __scatter_pie(radius, row[x_col], row[y_col], [row[i] for i in group], colors=color_palettes[idx])
+                pie = __scatter_pie(radius, row[x_col], row[y_col], 
+                            [row[i] for i in group], 
+                            names=names[idx], 
+                            colors=color_palettes[idx],
+                            showlegend=first_row)
             else:
-                pie = __scatter_pie(radius, row[x_col], row[y_col], [row[i] for i in group])
+                pie = __scatter_pie(radius, row[x_col], row[y_col], 
+                            [row[i] for i in group],
+                            names=names[idx],
+                            showlegend=first_row)
             if pie:
                 data = data + pie
+            first_row = False
 
-    #columns = df.columns
-    #hoverdata = df[["Well", *df.columns[3:]]]
-    #summation = hoverdata[hcolumns[1]] + hoverdata[hcolumns[2]]
-    #hoverdata['%Pro'] = hoverdata[hcolumns[1]] / summation * 100
-    #hoverdata['%Inj'] = hoverdata[hcolumns[2]] / summation * 100
     fig = go.Figure( data, {} )
-    #hovertemplate=(
-    #    '%{customdata[3]:,.0f}%   -   %{customdata[4]:,.0f}%<br>'+
-    #    '%{customdata[1]:,.1f}   -   %{customdata[2]:,.1f}'))
     fig.add_trace(
-        go.Scatter(name='', x=df.iloc[:, x_col], y = df.iloc[:, y_col], 
-            mode="markers+text", 
-            marker=dict(size=16, symbol='x', color='green'),
-            text=df[df.columns[key_col]], textposition='bottom center', textfont={'color': 'lime'},
+        go.Scattergl(name='Well position', x=df.iloc[:, x_col], y = df.iloc[:, y_col], 
+            mode="markers", 
+            marker=dict(size=16, symbol='hexagram-dot', color='lightgreen', line=dict(color="maroon", width=2)),
+            #text=df[df.columns[key_col]], textposition='bottom center', textfont={'color': 'pink', 'shadow': '2px 2px 1px rgba(0,0,0,0.7)'},
             customdata=df, 
             hovertemplate=hovertemplate)
     )
+    for row in df.itertuples(index=False):
+        fig.add_annotation(text=f'{row[key_col]}', visible=True, showarrow=False,
+                font=dict(color="pink", size=12, shadow='2px 2px 1px rgba(0,0,0,0.7)'),
+                x=row[x_col] , y=row[y_col], xanchor='center', yanchor='top', yshift=-10, xref='x', yref='y')
     fig.update_xaxes(showticklabels=False)
     fig.update_yaxes(scaleanchor='x', showticklabels=False)
-    fig.update_layout(showlegend=False, title=dict(text="Water Production-Injection map", x=0.5, xanchor='center'))
+    fig.update_layout(title=dict(text=plot_title, x=0.5, xanchor='center'), 
+            legend=dict(itemclick=False, itemdoubleclick=False), dragmode='pan')
     return fig

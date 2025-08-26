@@ -10,14 +10,14 @@ class XLSX:
     PRODUCTION_MONTHLY_SHEET=0
 
     @classmethod
-    def parse_excel(cls, file_path: str, sheet: int = 0):
+    def parse_excel(cls, file_path: str, sheet: int = 0, header:int = 0,skiprows=None):
         excel_file = MemoryCache.get_instance().get(file_path)
         if excel_file is None:
             excel_file = pd.ExcelFile(file_path, engine="openpyxl")
             MemoryCache.get_instance().put(file_path, excel_file)
         df = excel_file.parse(
             sheet,
-            header=0,
+            header=header,skiprows=skiprows
         )
         return df
 
@@ -30,6 +30,19 @@ class XLSX:
         df['Date'] = pd.to_datetime(df['Date'])
         # convert well number to string
         df[df.columns[PROD_WELL_COL]] = df[df.columns[PROD_WELL_COL]].astype(str)
+        return df
+
+    @classmethod
+    #def parse_plt(cls, sheet='PLT'):
+    def parse_plt(cls, sheet=0):
+        df = cls.parse_excel(Naming.default_plt_file(category='store'), sheet)
+        return df
+    @classmethod
+    def parse_water_analysis(cls, sheet: int = 0):
+        df = cls.parse_excel(Naming.default_water_analysis_file(category='store'), sheet=sheet, header=1)
+        columns = list(df.columns)
+        df = df.rename(columns={columns[0]:'Well', columns[3]: 'Date', columns[4]: '%WaterProd', columns[5]: '%WaterInj'})
+        df['Well'] = df['Well'].astype(str)
         return df
 
     @classmethod
@@ -246,5 +259,12 @@ class XLSX:
 
     @classmethod
     def extract_wellpos(cls, wells: list[str]):
-        df = pd.read_csv(Naming.default_wellpos_file(category='store'), header=0, sep=" ")
-        return df[df['Well'].isin(wells)]
+        file_path = Naming.default_wellpos_file(category='store')
+        df = MemoryCache.get_instance().get(file_path)
+        if df is None:
+            df = pd.read_csv(file_path, header=0, sep=" ")
+            df['Well1'] = 'BH-' + df['Well'].astype(str)
+            MemoryCache.get_instance().put(file_path, df)
+        if wells and len(wells) > 0:
+            return df[df['Well'].isin(wells) | df['Well1'].isin(wells)]
+        return df

@@ -2,6 +2,8 @@ import uuid
 import traceback
 import json
 from fastapi import FastAPI, Depends, HTTPException
+from fastapi.responses import FileResponse
+from pathlib import Path
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from datetime import datetime
@@ -23,12 +25,48 @@ class Answer(BaseModel):
     mimetype: str = "text/markdown"
 
 
+def verify_token(token: str):
+    if token != TOKEN:
+        raise HTTPException(status_code=401, detail="Invalid token")
+
+
+def get_file_or_404(file_path: Path) -> FileResponse:
+    if not file_path.exists(): 
+        raise HTTPException(status_code=404, detail="File not found")
+    if file_path.is_file():
+        return FileResponse(file_path)
+    if file_path.is_dir():
+        indexPath = Path(str(file_path) + '/index.html')
+        if indexPath.exists() and indexPath.is_file():
+            return FileResponse(indexPath)
+        raise HTTPException(status_code=404, detail="File not found")
+
+
 class QAServer(FastAPI):
+    TOKEN = "SECRET123"
+    route_configs = [
+        {
+            "path": "/data/",
+            "file_path": "./data",
+            "auth": True,
+        },
+        {
+            "path": "/mlartifacts/",
+            "file_path": "./mlartifacts",
+            "auth": False,
+        },
+        {
+            "path": "/",
+            "file_path": "/tmp",
+            "auth": False,
+        },
+    ]
+
     def __init__(self, create_agent_fn):
         super().__init__()
         self.agents = dict()
         self.create_agent_fn = create_agent_fn
-
+        
 
 def clean_response(response: str) -> str:
     """Clean up double-wrapped JSON responses"""
@@ -157,7 +195,25 @@ My image goes here
         qa_server.agents[agentid] = dict(t0=now, tl=now, agent=new_agent, killed=0)
         return dict(agentid=agentid)
 
-    app.mount("/data", StaticFiles(directory="data"), name="data")
-    app.mount("/", StaticFiles(directory="public", html=True), name="public")
+    
+    #app.mount("/data", StaticFiles(directory="data"), name="data")
+    #app.mount("/", StaticFiles(directory="public", html=True), name="public")
 
+    for cfg in QAServer.route_configs:
+        base_path = Path(cfg["file_path"]).resolve()
+        require_auth = cfg.get("auth", False)
+
+        if require_auth:
+            async def serve_file(
+                file_path: str,
+                token: str = Depends(verify_token),
+                base_path=base_path
+            ):
+                return get_file_or_404(base_path / file_path)
+
+        else:
+            async def serve_file(file_path: str, base_path=base_path):
+                return get_file_or_404(base_path / file_path)
+                
+        app.get(f"{cfg['path']}{{file_path:path}}")(serve_file)
     return app

@@ -14,9 +14,10 @@ from python_a2a import FastMCP
 from config.settings import DataConfig
 
 from utils.plot_utils import logplot, advLogplot, histogram
+from utils.missing_pay_utils import read_curves_from_las, read_curves_meta_data_from_las
 from naming import Naming
 from base_utils import iframe, link
-
+from utils.missing_pay_utils import get_curves_in_well, find_similar_curves
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 
@@ -140,14 +141,6 @@ def create_plot_tools(mcp_server: FastMCP, data_config: DataConfig) -> List[str]
             elif not os.path.isfile(file_path):
                 return {"text": f"{file_path} is not a regular file"}
 
-            if (
-                os.path.exists(dest_path)
-                and (datetime.now().timestamp() - os.path.getmtime(dest_path)) < 3 * 60
-            ):
-                return {"text": iframe(f"{ori_file_path}.html")}
-
-            print(containing_dir, dest_path)
-            Path(containing_dir).mkdir(parents=True, exist_ok=True)
             las = (
                 lasio.read(file_path)
                 if not file_path in _LAS_CACHE
@@ -160,6 +153,32 @@ def create_plot_tools(mcp_server: FastMCP, data_config: DataConfig) -> List[str]
         except Exception as e:
             traceback.print_exc()
             return {"text": f"Ploting las failed: {str(e)}", "isError": True}
+
+    @mcp_server.tool(name='well_logplot', description="Plot a logplot for curves of a single well")
+    def well_logplot(input):
+        try:
+            input_data = json.loads(input)
+            well = input_data['well']
+            curves = input_data['curves']
+            df = read_curves_from_las(well, curves)
+            las_curves = read_curves_meta_data_from_las(well)
+            #df = df.reset_index()
+            if len(curves) > 0:
+                selected_curves = [df.columns[0]]
+                for c in curves:
+                    all_curves = get_curves_in_well(well)
+                    sim_curves = find_similar_curves(c, all_curves)
+                    selected_curves += sim_curves
+                selected_curves = list(set(selected_curves))
+                df = df[selected_curves]
+            fig = logplot(df, las_curves)
+            dest_path = Naming.dest_path(f"{well}_curves", category='well_logplot', format='html')
+            publish_path = Naming.publish_path(f"{well}_curves", category='well_logplot', format='html')
+            html_code = fig.write_html(dest_path)
+            return {"text": iframe(publish_path)}
+        except Exception as e:
+            traceback.print_exc()
+            return {"text": f"Ploting well logplot failed: {str(e)}", "isError": True}
 
     @mcp_server.tool(
         name="plot_histogram_las",
@@ -249,6 +268,6 @@ def create_plot_tools(mcp_server: FastMCP, data_config: DataConfig) -> List[str]
             traceback.print_exc()
             return {"text": "Ploting histogram las failed: {str(e)}"}
 
-    tool_names = ["plot_las", "plot_histogram_las", "plot_histogram_well"]
+    tool_names = ["plot_las", "well_logplot", "plot_histogram_las", "plot_histogram_well"]
 
     return tool_names

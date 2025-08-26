@@ -1,4 +1,5 @@
 import os, json
+import traceback
 import pandas as pd
 from naming import Naming
 from pathlib import Path
@@ -49,3 +50,24 @@ class Store:
         if not self.exists(filepath):
             self.context_save({})
         return self.load(filepath)
+
+    def get_curves_in_well(self, well):
+        try:
+            curves_df = self.load(f'wells/{well}.csv')
+            return list(curves_df['curve'].unique())
+        except Exception as e:
+            #traceback.print_exc()
+            print(str(e))
+            return None
+
+    def save_curves_in_well(self, curves: list[dict], well: str):
+        curves_df = pd.DataFrame()
+        try:
+            curves_df = self.load(f'wells/{well}.csv')
+        except:
+            pass
+        new_curves_df = pd.DataFrame(curves)
+        curves_df = pd.concat([curves_df, new_curves_df], ignore_index = True)
+        curves_df = curves_df.drop_duplicates()
+        self.save(curves_df, f'wells/{well}.csv')
+

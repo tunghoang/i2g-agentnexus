@@ -20,7 +20,7 @@ from pywaterflood import CRM
 from tools.plot_tools import getColor
 from utils.plot_utils import multi_chart, production_by_time_chart, production_by_oilcum_chart, plot_charts, pie_map
 from xlsx_utils import XLSX
-from base_utils import iframe, link, normalize, PUBLISH_BASE
+from base_utils import iframe, link, excel_link, normalize, PUBLISH_BASE
 
 _cACHE = dict()
 
@@ -66,7 +66,7 @@ def create_vsp_tools(mcp_server, data_config: DataConfig) -> List[str]:
                 markerDF.to_excel(Naming.dest_path(f"well{well}.marker", category='markers', format='xlsx'))
                 print("++++++++++++++++++++", temp_path)
                 #return {"text":f'<iframe width="100%" height="1200px" src=\'{PUBLISH_BASE}/{Naming.publish_path("view_plot")}?file={publish_temp_path}\'></iframe>' }
-                return { "text": link(f'{Naming.publish_path("excel-viewer/",format=None)}?file=/{publish_temp_path}', label="marker file") }
+                return { "text": excel_link(publish_temp_path, label="marker file") }
                 #return {"text": json.dumps(markerDF.to_dict('records'))}
 
             print(f"marker_file = {marker_file}; store={store}");
@@ -212,7 +212,7 @@ def create_vsp_tools(mcp_server, data_config: DataConfig) -> List[str]:
             dest_path = Naming.dest_path('_'.join(wells), category='describe', format='xlsx')
             publish_path = Naming.publish_path('_'.join(wells), category='describe', format='xlsx')
             XLSX.write_excel(wellDFs, dest_path, index=True)
-            return {"text": link(f'{Naming.publish_path("excel-viewer/", format=None)}?file=/{publish_path})', label="Result")}
+            return {"text": excel_link(publish_path, label="Result")}
         except Exception as e:
             traceback.print_exc()
             return {"text": str(e), "isError": True}
@@ -584,7 +584,7 @@ def create_vsp_tools(mcp_server, data_config: DataConfig) -> List[str]:
             print(resultDF)
             outpath = Naming.dest_path('misc/Marker.xlsx')
             resultDF.to_html(outpath)
-            return {'text': link(Naming.publish_path('misc/Marker.xlsx')) }
+            return {'text': excel_link(Naming.publish_path('misc/Marker.xlsx')) }
         except Exception as e:
             traceback.print_exc()
             return dict(text=str(e))
@@ -600,7 +600,7 @@ def create_vsp_tools(mcp_server, data_config: DataConfig) -> List[str]:
             _path = Naming.default_production_monthly_file(category='temp')
             XLSX.save_dataframe(df, _path)
             Naming.gen_site()
-            return {"text": link(f"{Naming.publish_path('excel-viewer', format=None)}/?file=/{Naming.default_production_monthly_file(category='raw')}")}
+            return {"text": excel_link(Naming.default_production_monthly_file(category='raw'))}
         except Exception as e:
             traceback.print_exc()
             return dict(text=str(e))
@@ -622,7 +622,7 @@ def create_vsp_tools(mcp_server, data_config: DataConfig) -> List[str]:
             elif test == 'injection':
                 del dfs['production']
             XLSX.write_excel(dfs, dest_path, index=False)
-            return {"text": link(f'{Naming.publish_path("excel-viewer", format=None)}/?file=/{publish_path}')}
+            return {"text": excel_link(publish_path)}
         except Exception as e:
             traceback.print_exc()
             return dict(text=str(e))
@@ -650,7 +650,54 @@ def create_vsp_tools(mcp_server, data_config: DataConfig) -> List[str]:
         except Exception as e:
             traceback.print_exc()
             return dict(text=str(e))
-    
+    @mcp_server.tool(
+        name="water_analysis_map",
+        description="Show water analysis map for input wells"
+    )
+    def water_analysis_map(input:str) -> dict:
+        try:
+            input_data = json.loads(input)
+            wells = input_data['wells']
+            wells = [ w.strip() for w in wells ]
+            year = input_data['year']
+
+            wellpos_df = XLSX.extract_wellpos(wells)
+            df = XLSX.parse_water_analysis()
+            #df = XLSX.parse_well_production()
+            prod_df = df
+            if wells and len(wells) > 0:
+                prod_df = prod_df[ prod_df['Well'].isin(wells) ]
+
+            if year:
+                prod_df = prod_df[ prod_df['Date'].dt.year == year ]
+
+            columns = prod_df.columns
+            prod_df = prod_df[['Well', 'Date', "%WaterProd", '%WaterInj']]
+            idx = prod_df.groupby('Well')['Date'].idxmax()
+            prod_df = prod_df.loc[idx]
+
+            result_df = pd.merge(prod_df, wellpos_df, on='Well')
+            result_df = result_df[['Well', 'X', 'Y', "%WaterProd", '%WaterInj']]
+            result_df['%WaterProd'] = result_df['%WaterProd'] / 100
+            result_df['%WaterInj'] = result_df['%WaterInj'] / 100
+
+            hovertemplate = [
+                '%{customdata[3]:,.1%}   -   %{customdata[4]:,.1%}'
+            ]
+            hovertemplate = "<br>".join(hovertemplate)
+            fig = pie_map(result_df, groups = [[3,4]], names=[['Water production', 'Water injection']], 
+                        hovertemplate=hovertemplate, 
+                        plot_title=f'Water analysis {"in " + str(year) if year else ""}')
+
+            dest_path = Naming.dest_path(f'wells_{'_'.join(wells)}', category="water_analysis", format="html")
+            publish_path = Naming.publish_path(f'wells_{'_'.join(wells)}', category="water_analysis", format="html")
+            fig.write_html(dest_path, config={"showTips": False, "scrollZoom": True})
+            return {"text": iframe(f'{publish_path}', height='1200px')}
+
+        except Exception as e:
+            traceback.print_exc()
+            return dict(text=str(e))
+    '''
     @mcp_server.tool(
         name="water_io_ratio_map",
         description="Show cumulative water injection - cumulative water production ratio map for input wells"
@@ -681,17 +728,17 @@ def create_vsp_tools(mcp_server, data_config: DataConfig) -> List[str]:
                 '%{customdata[3]:,.1f}   -   %{customdata[2]:,.1f}'
             ]
             hovertemplate = "<br>".join(hovertemplate)
-            fig = pie_map(result_df, groups = [[5,6]], hovertemplate=hovertemplate)
+            fig = pie_map(result_df, groups = [[5,6]], names=[['Water production', 'Water injection']], hovertemplate=hovertemplate)
 
             dest_path = Naming.dest_path('_'.join(wells), category="water_io_ratio", format="html")
             publish_path = Naming.publish_path('_'.join(wells), category="water_io_ratio", format="html")
-            fig.write_html(dest_path, config={"showTips": False})
+            fig.write_html(dest_path, config={"showTips": False, "scrollZoom": True})
             return {"text": iframe(f'{publish_path}', height='720px')}
 
         except Exception as e:
             traceback.print_exc()
             return dict(text=str(e))
-
+    '''
     @mcp_server.tool(
         name="production_map",
         description="Show production map for input wells"
@@ -701,16 +748,24 @@ def create_vsp_tools(mcp_server, data_config: DataConfig) -> List[str]:
             input_data = json.loads(input)
             wells = input_data['wells']
             wells = [ w.strip() for w in wells ]
+            year = input_data['year']
+
             wellpos_df = XLSX.extract_wellpos(wells)
             df = XLSX.parse_well_production()
-            prod_df = df[ df[df.columns[1]].isin(wells) ]
+            prod_df = df
+            if wells and len(wells):
+                prod_df = prod_df[ prod_df[prod_df.columns[1]].isin(wells) ]
+            if year:
+                prod_df = prod_df[ prod_df[prod_df.columns[0]].dt.year == year ]
+
             columns = prod_df.columns
-            print(columns)
 
             selected_columns = ["CV.OilRate", "CV.LiqRate", "CV.Watercut", "CV.WaterInj_Rate"]
 
             prod_df = prod_df[[columns[0], columns[1], *selected_columns]]
             idx = prod_df.groupby(columns[1])[columns[0]].idxmax()
+            idx = idx.dropna()
+
             prod_df = prod_df.loc[idx]
             prod_df = prod_df.rename(columns={columns[1]: "Well"})
 
@@ -721,24 +776,24 @@ def create_vsp_tools(mcp_server, data_config: DataConfig) -> List[str]:
             result_df['LiqRateNorm'] = normalize(result_df['CV.LiqRate'])
             result_df['WIRNorm'] = normalize(result_df['CV.WaterInj_Rate'])
 
-            print(result_df)
             hovertemplate = [
                 'LiqRate & Watercut: %{customdata[4]:,.0f}   -   %{customdata[5]:,.0f}%',
                 'Water Injection Rate: %{customdata[6]:,.0f}'
             ]
             hovertemplate = "<br>".join(hovertemplate)
 
-            fig = pie_map(result_df, groups = [[7,8], []], radius_cols=[9, 10], hovertemplate=hovertemplate, 
+            fig = pie_map(result_df, groups = [[7,8], []], names=[['Oil rate', 'Water rate'], ['Water inj. rate', '']], radius_cols=[9, 10], hovertemplate=hovertemplate, 
                 color_palettes=[
                     ['rgba(154, 205, 50, 0.7)', 'rgba(255, 215, 181, 0.7)'],
                     ['rgba(0, 54, 119, 0.7)', 'blue']
-                ]
+                ], 
+                plot_title=f'Production map {"in " + str(year) if year else ""}'
             )
 
-            dest_path = Naming.dest_path('_'.join(wells), category="water_io_ratio", format="html")
-            publish_path = Naming.publish_path('_'.join(wells), category="water_io_ratio", format="html")
-            fig.write_html(dest_path, config={"showTips": False})
-            return {"text": iframe(f'{publish_path}', height='720px')}
+            dest_path = Naming.dest_path(f"wells_{'_'.join(wells)}", category="production_map", format="html")
+            publish_path = Naming.publish_path(f"wells_{'_'.join(wells)}", category="production_map", format="html")
+            fig.write_html(dest_path, config={"showTips": False, "scrollZoom": True})
+            return {"text": iframe(f'{publish_path}', height='1200px')}
 
         except Exception as e:
             traceback.print_exc()
@@ -756,6 +811,7 @@ def create_vsp_tools(mcp_server, data_config: DataConfig) -> List[str]:
         "welltest_table",
         "welltest_chart", 
         "water_io_ratio_map",
+        "water_analysis_map",
         "production_map"
     ]
 

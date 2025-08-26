@@ -1,10 +1,11 @@
 from pathlib import Path
 import os, shutil
+import re
 
 
 def ensure_path(inpath):
     path_to_ensure = inpath
-    if inpath.endswith((".html", ".json", ".js", ".css", ".xlsx")):
+    if inpath.endswith((".html", ".json", ".js", ".css", ".xlsx", '.las')):
         path_to_ensure = os.path.dirname(inpath)
     Path(path_to_ensure).mkdir(parents=True, exist_ok=True)
 
@@ -55,11 +56,17 @@ class Naming:
         if format:
             outpath = f"{outpath}.{format}"
         return outpath
+    @classmethod
+    def mlflow_path(cls, inpath, prefix='./mlartifacts'):
+        return cls.data_path(inpath, prefix=prefix)
 
     @classmethod
     def data_path(cls, inpath, prefix="./data"):
         return f"{prefix}/{inpath}"
 
+    @classmethod
+    def to_raw_path(cls, data_path:str, prefix ='./data'):
+        return re.sub('^' + re.escape(prefix) + '/', '', data_path)
     @classmethod
     def __path_classifier(cls, default_path, category="raw", format=None):
         if category == "store":
@@ -98,6 +105,16 @@ class Naming:
     def default_wellpos_file(cls, category='raw'):
         default_path = 'misc/Toa_do.utf8.txt'
         return cls.__path_classifier(default_path, category=category)
+    @classmethod
+    def default_water_analysis_file(cls, category='raw'):
+        default_path = 'production/water_analysis.xlsx'
+        return cls.__path_classifier(default_path, category=category)
+
+    @classmethod
+    def default_plt_file(cls, category='raw'):
+        #default_path = 'misc/plt.xlsm'
+        default_path = 'misc/plt.xlsx'
+        return cls.__path_classifier(default_path, category=category)
 
     @classmethod
     def elevation_file(cls, category='store'):
@@ -105,18 +122,19 @@ class Naming:
         return cls.__path_classifier(default_path, category = category)
 
     @classmethod
-    def well_path(cls, well: str | None = None):
-        if well is None:
-            return cls.data_path("wells")
-        return cls.data_path(f"wells/{well}")
+    def well_path(cls, well: str | None = None, category='store'):
+        default_path = 'wells'
+        if well:
+            default_path = f'wells/{well}'
+        return cls.__path_classifier(default_path, category = category)
 
     @classmethod
     def devi_path(cls, well: str):
         return f"{cls.well_path(well)}/GIS/Devi"
     
     @classmethod
-    def las_path(cls, well: str):
-        return f"{cls.well_path(well)}/GIS/Las"
+    def las_path(cls, well: str, category='store'):
+        return f"{cls.well_path(well, category=category)}/GIS/Las"
 
     @classmethod
     def tvdss_file(cls, well: str):

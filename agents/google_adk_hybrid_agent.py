@@ -11,6 +11,7 @@ import logging
 import inspect
 import asyncio
 from typing import Optional, Dict, Any, List, Union
+from glob import iglob
 
 import urllib
 import urllib.parse
@@ -37,11 +38,6 @@ logger = logging.getLogger(__name__)
 
 AGENT_URL = os.getenv("AGENT_URL") or "http://localhost:8990"
 
-def my_after_tool_callback(tool: BaseTool, args: Dict[str, Any], tool_context: ToolContext, tool_response: Dict[str, Any]):
-    tool_context.actions.skip_summarization = True
-    print(tool_response)
-    return tool_response
-    
 class ToolExecutingAgentExecutor:
     """
     Google ADK Agent that properly executes MCP tools
@@ -106,6 +102,28 @@ class ToolExecutingAgentExecutor:
 
         tools.append(list_files)
 
+        def list_wells(tool_context: ToolContext, pattern: str) -> dict:
+            """List wells matching pattern in the data directory
+
+            Args:
+                pattern: pattern to match 
+
+            Returns:
+                dict: Results containing matched wells
+            """
+            try:
+                basepath = Naming.well_path()
+                wells = [ os.path.basename(d) for d in iglob(f"{basepath}/{pattern or '*'}") ]
+                tool_context.actions.skip_summarization = True
+                result = "No wells found"
+                if len(wells):
+                    result = "Here is the list of wells:\n" + ( "\n- ".join(wells) )
+                return {"status": "success", "result": result}
+            except Exception as e:
+                executor_instance.logger.error(f"Error in list_files: {e}")
+                return {"status": "error", "message": str(e)}
+
+        tools.append(list_wells)
         # System Status Tool Function - NO DEFAULT PARAMETERS
         def system_status(query: str) -> dict:
             """Get comprehensive system health and performance metrics
@@ -362,6 +380,29 @@ class ToolExecutingAgentExecutor:
                 return {"status": "error", "message": str(e)}
         tools.append(plot_las)
 
+        def well_logplot(tool_context:ToolContext, well: str, curves: list[str] = []) -> dict:
+            """Plot a logplot for curves in a single well.
+            
+            Args:
+                well (str): input well
+                curves (list[str]): list of curves to plot. If curves is empty, plot all curves in well
+
+            Return:
+                dict: result
+            """
+            try:
+                executor_instance.logger.info(f"Executing well_logplot with well: {well} and curves {curves}")
+                result = executor_instance._execute_mcp_tool( "well_logplot", json.dumps(dict(well=well, curves=curves)) )
+                tool_context.actions.skip_summarization = True
+                return {"status": "success",
+                        "skip_summarization": True,
+                        "result": result}
+            except Exception as e:
+                executor_instance.logger.error(f"Error in well_logplot: {e}")
+                return {"status": "error", "message": str(e)}
+    
+        tools.append(well_logplot)
+
         def plot_histogram_las(file_path: str, curve_names: list[str], num_bins: int) -> dict:
             """Plot a histogram of a las file
 
@@ -411,7 +452,7 @@ class ToolExecutingAgentExecutor:
                 return {"status": "error", "message": str(e) }
         tools.append(plot_histogram_well)
 
-        def build_logplot(well: str, track_templates: str) -> dict:
+        def build_logplot(well: str, track_templates: str = 'GR,LLD,NPHI') -> dict:
             """Plot a logplot for well
 
             Args:
@@ -824,25 +865,54 @@ class ToolExecutingAgentExecutor:
 
         def plt_table(tool_context: ToolContext) -> dict:
             """View PLT table
+            Args:
+                None
 
             Returns:
                 dict: results
             """
             try:
-                executor_instance.logger.info(f"Executing plt_table")
-                Naming.gen_site()
-                url = urllib.parse.urljoin(PUBLISH_BASE, "excel-viewer/?file=/data/misc/plt.xlsx")
-                #url = "excel-viewer/?file=/data/misc/plt.xlsx"
-                #tool_context.actions().skip_summarization()
-                return {"status": "success",
-                        "skip_summarization": True,
-                        "result": f"[View PLT Table]({url})"}
+                executor_instance.logger.info("Executing plt_table")
+                result = executor_instance._execute_mcp_tool('plt_table', 'notused')
+                tool_context.actions.skip_summarization = True
+                return {"status": "success", "result": result}
             except Exception as e:
                 executor_instance.logger.error(f"Error in plt_table {e}")
                 return {"status": "error", "message": str(e)}
         tools.append(plt_table)
 
+        def suggest_log_creation(tool_context: ToolContext, target_curve:str, target_well: str, wells: list[str]):
+            """
+            Suggest a model for creating a target_curve in target_well using input wells. If input wells is empty, find suitable input wells
+
+            Args:
+                taget_well (str): Target well for curve creation.
+                wells (list[str]): Source wells used for training data. wells is empty means find suitable input wells
+            
+            Returns:
+                dict: Result of the pseudo log creation, or error message if failed.
+            """
+            try:
+                executor_instance.logger.info(f"Executing suggest_log_creation for curve {target_curve} in well '{target_well}' from '{wells}'")
+                result = executor_instance._execute_mcp_tool(
+                    'suggest_log_creation',
+                    json.dumps({
+                        "target_curve": target_curve,
+                        "target_well": target_well,
+                        "wells": wells
+                    })
+                )
+                tool_context.actions.skip_summarization = True
+                return {"status": "success", "result": result}
+
+            except Exception as e:
+                executor_instance.logger.error(f"Error in create_pseudo_log: {e}")
+                return {"status": "error", "message": str(e)}
+
+        tools.append(suggest_log_creation)
+
         def create_pseudo_log(
+            tool_context: ToolContext,
             target_curve: str,
             target_well: str,
             curves: list[str],
@@ -885,6 +955,7 @@ class ToolExecutingAgentExecutor:
                         "model_params": model_params
                     })
                 )
+                tool_context.actions.skip_summarization = True
                 return {"status": "success", "result": result}
 
             except Exception as e:
@@ -892,58 +963,13 @@ class ToolExecutingAgentExecutor:
                 return {"status": "error", "message": str(e)}
         tools.append(create_pseudo_log)
         
-#        def view_training_experiment(
-#            tool_context: ToolContext,
-#            target_curve: str,
-#            target_well: str,
-#            model_type: str, 
-#        ) -> dict:
-#            """
-#            View training results of a created pseudo log for a well 
-#            using a regression model with specific parameters.
-#
-#            Args:
-#                target_curve (str): Name of the curve to evaluate.
-#                target_well (str): The target well to generate pseudo log for.
-#                model_type (str): Name/type of the regression model used.
-#
-#            Returns:
-#                dict: Result of the training visualization or summary.
-#            """
-#            try:
-#                fname = inspect.stack()[0][3]  # Get the current function name for namespacing context
-#                def get_or_update_param(key: str, value):
-#                    existing = recursive_get(tool_context.state, [fname, key]) or None
-#                    if value not in [None, '', [], {}]:
-#                        recursive_put(tool_context.state, [fname, key], value)
-#                        return value
-#                    return existing
-#
-#                _target_curve = get_or_update_param('target_curve', target_curve)
-#                _target_well = get_or_update_param('target_well', target_well)
-#                _model_type = get_or_update_param('model_type', model_type)
-#
-#                executor_instance.logger.info(
-#                    f"Executing view_training_experiment for well: {_target_well}, curve: {_target_curve}, model: {_model_type}"
-#                )
-#                result = executor_instance._execute_mcp_tool(
-#                    'view_training_experiment',
-#                    json.dumps({
-#                        "target_curve": _target_curve,
-#                        "target_well": _target_well,
-#                        "model_type": _model_type,
-#                    })
-#                )
-#                return {"status": "success", "result": result}
-#            except Exception as e:
-#                executor_instance.logger.error(f"Error in view_training_experiment {e}")
-#                return {"status": "error", "message": str(e)}
         def view_training_experiment(
+            tool_context: ToolContext,
             target_curve: str = '',
             target_well: str = '',
             model_type: str = '', 
             seconds: int = 0, 
-            filter_expr: str = '', 
+            filter_expr: str = ''
         ) -> dict:
             """
             View training experiments of a curve for a well using a machine learning model 
@@ -989,6 +1015,7 @@ class ToolExecutingAgentExecutor:
                         "filter_expr": filter_expr,
                     })
                 )
+                tool_context.actions.skip_summarization = True
                 return {"status": "success", "result": result}
             except Exception as e:
                 executor_instance.logger.error(f"Error in view_training_experiment {e}")
@@ -1023,6 +1050,56 @@ class ToolExecutingAgentExecutor:
                 return {"status": "error", "message": str(e)}
         tools.append(delete_training_experiment)
 
+        def suggest_log_creation(tool_context: ToolContext, target_curve: str, target_well: str, wells: list[str] = []):
+            """
+            Suggest how to calculate a target_curve for a target_well from input wells. If input wells is empty. Find suitable input wells from existing data
+
+            Args:
+                target_curve (str): the target curve to create
+                target_well (str): the target_well in which need to create the target_curve
+                wells (list[str]): input wells. If it is empty, find suitable wells in existing data store
+
+            Returns:
+                dict: results
+            """
+            try:
+                executor_instance.logger.info(
+                    f"Executing suggest_log_creation for {target_curve} in {target_well} from wells {wells}"
+                )
+                result = executor_instance._execute_mcp_tool(
+                    'suggest_log_creation',
+                    json.dumps({
+                        "target_curve": target_curve,
+                        "target_well": target_well,
+                        "wells": wells
+                    })
+                )
+                tool_context.actions.skip_summarization = True
+                return {"status": "success", "result": result}
+            except Exception as e:
+                executor_instance.logger.error(f"Error in view_training_experiment {e}")
+                return {"status": "error", "message": str(e)}
+        tools.append(delete_training_experiment)
+
+        def accept_experiment_las_file(tool_context: ToolContext, experiment_id:str):
+            """Accept las file in experiment identified by experiment_id
+
+            Args:
+                experiment_id (str): the experiment id
+
+            Returns:
+                dict: results
+            """
+            try:
+                executor_instance.logger.info( f"Executing accept_experiment_las_file with experiment_id {experiment_id}")
+                result = executor_instance._execute_mcp_tool( 'accept_experiment_las_file', experiment_id )
+                tool_context.actions.skip_summarization = True
+                return {"status": "success", "result": result}
+            except Exception as e:
+                executor_instance.logger.error(f"Error in view_training_experiment {e}")
+                return {"status": "error", "message": str(e)}
+
+        tools.append(accept_experiment_las_file)
         def summarize_marker_data() -> dict:
             """Summarize marker data from marker file
 
@@ -1103,37 +1180,58 @@ class ToolExecutingAgentExecutor:
                 return {"status": "error", "message": str(e)}
         tools.append(welltest_chart)
 
-        def water_io_ratio_map(tool_context: ToolContext, wells: list[str]) -> dict:
-            """Show cum water / cum water injection ratio map
+        #def water_io_ratio_map(tool_context: ToolContext, wells: list[str]) -> dict:
+        #    """Show cum water / cum water injection ratio map
+        #    
+        #    Args:
+        #        wells: input wells
+        #
+        #    Returns:
+        #        dict: result
+        #    """
+        #    try:
+        #        executor_instance.logger.info(f"Executing water_io_ratio_map for wells {wells}")
+        #        result = executor_instance._execute_mcp_tool("water_io_ratio_map", json.dumps(dict(wells=wells)))
+        #        tool_context.actions.skip_summarization = True
+        #        return {"status": "success", "result": result }
+        #    except Exception as e:
+        #        traceback.print_exc()
+        #        return {"status": "error", "message": str(e)}
+        #tools.append(water_io_ratio_map)
+
+        def water_analysis_map(tool_context: ToolContext, wells: list[str] = [], year: int = 0) -> dict:
+            """Show water analysis map for a year. If a list of wells is specified, show the map of those wells. If the well list is empty, show the map for all existing wells
             
             Args:
                 wells: input wells
+                year: year
 
             Returns:
                 dict: result
             """
             try:
-                executor_instance.logger.info(f"Executing water_io_ratio_map for wells {wells}")
-                result = executor_instance._execute_mcp_tool("water_io_ratio_map", json.dumps(dict(wells=wells)))
+                executor_instance.logger.info(f"Executing water_analysis_map for wells {wells}")
+                result = executor_instance._execute_mcp_tool("water_analysis_map", json.dumps(dict(wells=wells, year=year)))
                 tool_context.actions.skip_summarization = True
                 return {"status": "success", "result": result }
             except Exception as e:
                 traceback.print_exc()
                 return {"status": "error", "message": str(e)}
-        tools.append(water_io_ratio_map)
+        tools.append(water_analysis_map)
 
-        def production_map(tool_context: ToolContext, wells: list[str]) -> dict:
-            """Show production map for input wells
+        def production_map(tool_context: ToolContext, wells: list[str] = [], year: int = 0) -> dict:
+            """View production map for input wells in a year. If a list of wells is specified, show the map of those wells. If the well list is empty, show the map for all existing wells
             
             Args:
                 wells: input wells
+                year: year
 
             Returns:
                 dict: result
             """
             try:
                 executor_instance.logger.info(f"Executing production_map for wells {wells}")
-                result = executor_instance._execute_mcp_tool("production_map", json.dumps(dict(wells=wells)))
+                result = executor_instance._execute_mcp_tool("production_map", json.dumps(dict(wells=wells, year=year)))
                 tool_context.actions.skip_summarization = True
                 return {"status": "success", "result": result }
             except Exception as e:
@@ -1160,7 +1258,6 @@ class ToolExecutingAgentExecutor:
             model=LiteLlm(model="openai/gpt-4o-mini"),
             description="Subsurface data analyst with tool execution capabilities",
             instruction=self._create_tool_execution_instruction(),
-            #after_tool_callback=my_after_tool_callback,
             tools=tools  # Pass Python functions directly - ADK handles the wrapping
         )
 
@@ -1258,6 +1355,7 @@ class ToolExecutingAgentExecutor:
 ## For missing pay:
 - User asks "View checklist table of well logs data" → IMMEDIATELY call well_checklist_table with wells if user provided or else wells=''
 - User asks "Generate logplot for WELL, then IMMEDIATELY call build_logplot with well=WELL and track_templates if user provided or track_templates=GR,LLD,NPHI
+- User asks "Generate well_logplot for WELL, then IMMEDIATELY call well_logplot with well=WELL and curves if user provided or curves=[]
 - "planset" is equivalent with "logplot"
 - User asks "plot histogram for CURVES from well WELL", then IMMEDIATELY call plot_histogram_well with WELL and CURVES and num_bins=10 if it is not provided
 - User asks "plot histogram for CURVE1 and CURVE2 from file.las with 9 bins" → IMMEDIATELY call plot_histogram_las with file_path="file.las" and curveNames=["CURVE1", "CURVE2"] and numBins=9
@@ -1301,11 +1399,12 @@ Then: Present the results
 
 Available tools: list_files, system_status, health_check, directory_info,
 las_parser, las_analysis, formation_evaluation, well_correlation, segy_parser, segy_classify, segy_qc,
-quick_segy_summary, dump_content, plot_las, build_logplot, plot_histogram_las, show_sheets, show_columns,
+quick_segy_summary, dump_content, plot_las, well_logplot, build_logplot, plot_histogram_las, show_sheets, show_columns,
 unique_from_column, marker4well, zone4well, production_monthly_data_table, describe_production_data, summarize_marker_data,
-buildCRMInput, trainCRMModel, production_by_time, production_crossplot,welltest_chart, welltest_table,water_io_ratio_map, production_map,
-plt_table, well_checklist_table, well_checklist_curves, create_wells_tvdss, create_pseudo_log, view_training_result,
-set_context_for_tool_function
+buildCRMInput, trainCRMModel, production_by_time, production_crossplot,welltest_chart, welltest_table,
+water_analysis_map, production_map,
+plt_table, well_checklist_table, well_checklist_curves, create_wells_tvdss, create_pseudo_log, 
+view_training_experiment, delete_training_experiment, accept_experiment_las_file, suggest_log_creation, set_context_for_tool_function
 
 Available context_params: modes, marker_file, file_path
 """
@@ -1337,10 +1436,13 @@ Available context_params: modes, marker_file, file_path
                 if hasattr(event, 'content') and event.content and event.content.parts:
                     final_response = event.content.parts[0].text
                     if hasattr(event.content.parts[0], 'function_response') and event.content.parts[0].function_response:
+                        print(event.content.parts[0].function_response.response)
                         tool_response = event.content.parts[0].function_response.response['result']
-                        tool_response = json.loads(tool_response)
-                        tool_response = tool_response['text']
-                        print("GGGGGGG", event.content.parts[0].function_response.response)
+                        try:
+                            tool_response = json.loads(tool_response)
+                            tool_response = tool_response['text']
+                        except:
+                            pass
                 elif hasattr(event, 'text') and event.text:
                     final_response = event.text
 
@@ -1361,7 +1463,6 @@ Available context_params: modes, marker_file, file_path
                         'arguments': getattr(event.tool_call, 'parameters', {})
                     })
                     self.logger.info(f"Direct tool call detected: {event.tool_call.name}")
-                print("FFFFFFFFF", event, final_response)
             # Update statistics
             self.stats["tool_executions"] += len(tool_calls_made)
 
@@ -1377,6 +1478,7 @@ Available context_params: modes, marker_file, file_path
             return final_response or tool_response # "Analysis completed."
 
         except Exception as e:
+            traceback.print_exc()
             self.logger.error(f"Google ADK execution error: {e}")
             return self._minimal_fallback(query)
 
@@ -1519,7 +1621,7 @@ class ToolExecutingHybridAgent:
             if isinstance(result, dict):
                 output = result.get("output", str(result))
                 params = result.get("attachment", None)
-                print(output, params)
+                #print(output, params)
             else:
                 output = str(result)
 

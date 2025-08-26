@@ -1,0 +1,24 @@
+VSHALE:
+    - GR
+    - NPHI
+    - RHOB
+    - RT
+PHIE:
+    - VSHALE
+    - GR
+    - DT
+    - NPHI
+    - RHOB
+    - RT
+SW:
+    - PHIE
+    - VSHALE
+    - RT
+    - C1
+    - C2
+    - C3
+    - IC4
+    - NC4
+    - IC5
+    - NC5
+    - TGAS

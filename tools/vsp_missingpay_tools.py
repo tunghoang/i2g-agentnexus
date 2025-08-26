@@ -19,12 +19,15 @@ from pywaterflood import CRM
 from xlsx_utils import XLSX
 from config.settings import DataConfig
 from utils.missing_pay_utils import get_well_checklist, get_well_checklist_curves,\
-    make_pseudo_log, get_training_result, remove_training_result
+    make_pseudo_log, get_training_result, remove_training_result, get_wells_has_curve, \
+    read_curves_from_las, read_curves_meta_data_from_las, \
+    get_runs, get_curves_in_well
 from utils.plot_utils import multi_chart, advLogplot, logplot, write_json
 from xlsx_utils import XLSX
 from multiprocessing import Process
+from mlflow.artifacts import download_artifacts
 
-from base_utils import iframe, link, PUBLISH_BASE
+from base_utils import iframe, excel_link, getLogRules, PUBLISH_BASE, find_similar_curves
 
 def create_missingpay_tools(mcp_server, data_config: DataConfig) -> List[str]:
     WELLS_DIR_PATH = "wells"
@@ -41,58 +44,31 @@ def create_missingpay_tools(mcp_server, data_config: DataConfig) -> List[str]:
             track_templates = input_data.get("track_templates", None)
             if track_templates is None:
                 raise Exception("Track templates should be specified")
-
-            well_data_dir = f"wells/{well}"
-            if not os.path.isdir(f"{data_config.data_dir}/{well_data_dir}"):
-                raise Exception(f"Well {well} not found")
-            composite_logs = f"{well_data_dir}/GIS/Las/*.las"
-            files = glob(f"{data_config.data_dir}/{composite_logs}")
-            if len(files) == 0:
-                raise Exception(f"No composite logs found for well {well}")
-
             track_templates = input_data.get("track_templates", "GR,LLD,NPHI")
             track_templates = track_templates.split(",")
             track_templates = [tpl.strip() for tpl in track_templates]
 
-            logDF_path = files[0]
-
-            las = MemoryCache.get_instance().get(logDF_path)
-            if las is None:
-                las = lasio.read(logDF_path)
-                MemoryCache.get_instance().put(logDF_path, las)
-
-            df = las.df().reset_index()
+            df = read_curves_from_las(well, [])
+            df = df.reset_index()
             if track_templates:
                 keyZoneDF, zoneDF = XLSX.extract_zones1(well)
                 perforationDF = XLSX.extract_perforation(well)
                 perforationDF = fill_zones(perforationDF, 'md', df[df.columns[0]])
                 df['PERF'] = perforationDF['PERF']
-                las_curves = dict(las.curves)
+                las_curves = dict(read_curves_meta_data_from_las(well))
                 las_curves['PERF'] = dict(unit='N/A')
                 fig = advLogplot(df, las_curves, track_styles=track_templates, title=f"Well {well} Logplot", keyZoneDF = keyZoneDF, zoneDF=zoneDF)
             else:
-                fig = logplot(df, las.curves)
+                fig = logplot(df, las_curves)
 
-            #dest_path = Naming.dest_path(
-            #    logDF_path.removeprefix(f"{data_config.data_dir}/"), category="logplot"
-            #)
-            #fig.write_html(dest_path)
-            dest_path = Naming.dest_path(
-                logDF_path.removeprefix(f"{data_config.data_dir}/"), category="logplot", format='json'
-            )
+            raw_path = f"{well}_planset"
+            dest_path = Naming.dest_path(raw_path, category='logplot', format='json')
+            publish_path = Naming.publish_path(raw_path, category='logplot', format='json')
             write_json(fig, dest_path)
             Naming.gen_site()
-            prefix = f"{data_config.data_dir}/"
-            relative_path = f"/logplot/{logDF_path.removeprefix(prefix)}.json"
             return {
-                "text": f'<iframe width="100%" height="1200px" src=\'{PUBLISH_BASE}/{Naming.publish_path("view_plot")}?plot={relative_path}\'></iframe>'
+                "text": iframe(f'{Naming.publish_path("view_plot")}?plot={publish_path}', height='1200px')
             }
-            #return {
-            #    "text": Naming.publish_path(
-            #        logDF_path.removeprefix(f"{data_config.data_dir}/"),
-            #        category="logplot",
-            #    )
-            #}
         except Exception as e:
             traceback.print_exc()
             return {"text": str(e)}
@@ -127,7 +103,7 @@ def create_missingpay_tools(mcp_server, data_config: DataConfig) -> List[str]:
             )
             count = len(well_names)
             out_file_relative_path = os.path.join(
-                f"well_checklist_table{"_".join(well_names)}.html"
+                f"well_checklist_table{"_".join(well_names[:4])}.html"
             )
             out_file_path = os.path.join("/tmp", out_file_relative_path)
             df = pd.DataFrame(
@@ -187,7 +163,7 @@ def create_missingpay_tools(mcp_server, data_config: DataConfig) -> List[str]:
                 pe_result,
             ) = get_well_checklist_curves(wells=well_names_input)
             out_file_relative_path = os.path.join(
-                f"well_checklist_curves{"_".join(well_names)}.html"
+                f"well_checklist_curves{"_".join(well_names[:5])}.html"
             )
             out_file_path = os.path.join("/tmp", out_file_relative_path)
             df = pd.DataFrame(
@@ -376,7 +352,7 @@ def create_missingpay_tools(mcp_server, data_config: DataConfig) -> List[str]:
             # view training result
             out_file_relative_path = get_training_result(target_curve, target_well, model_type)
 
-            return {"text": out_file_relative_path}
+            return {"text": iframe(out_file_relative_path)}
         except Exception as e:
             traceback.print_exc()
             return {"text": f"Tool failed: {str(e)}"}
@@ -396,7 +372,7 @@ def create_missingpay_tools(mcp_server, data_config: DataConfig) -> List[str]:
 
             out_file_relative_path = get_training_result(target_curve, target_well, model_type, seconds, filter_expr)
 
-            return {"text": out_file_relative_path}
+            return {"text": iframe(out_file_relative_path, height='500px')}
         except Exception as e:
             traceback.print_exc()
             return {"text": f"Tool failed: {str(e)}"}
@@ -416,7 +392,7 @@ def create_missingpay_tools(mcp_server, data_config: DataConfig) -> List[str]:
             # view
             out_file_relative_path = get_training_result()
 
-            return {"text": out_file_relative_path}
+            return {"text": iframe(out_file_relative_path, height='500px')}
         except Exception as e:
             traceback.print_exc()
             return {"text": f"Tool failed: {str(e)}"}
@@ -441,6 +417,170 @@ def create_missingpay_tools(mcp_server, data_config: DataConfig) -> List[str]:
             traceback.print_exc()
             return dict(text=str(e))
 
+    @mcp_server.tool(
+        name="suggest_log_creation",
+        description="discover data and suggest how to calculate a log curve"
+    )
+    def suggest_log_creation(input):
+        try:
+            input_data = json.loads(input)
+            target_curve = input_data['target_curve'].upper()
+            target_well = input_data['target_well']
+            wells = input_data['wells']
+            if not target_curve:
+                raise Exception("Please provide specific target curve to calculate")
+            if not target_well:
+                raise Exception("Please provide specific target well for calculation")
+
+            log_rule = getLogRules(target_curve)
+            print('----->', log_rule)
+            if log_rule is None:
+                raise Exception(f"Don't know how to create log curve {target_curve}")
+            list_curve = [target_curve] + log_rule
+
+            def calc_distance(row):
+                df = XLSX.extract_wellpos([target_well, row['well']])
+                if len(df.index) < 2:
+                    return None 
+                wells = df[['X', 'Y']].values
+                return np.sqrt(np.sum(np.square(wells[0] - wells[1])))
+                
+            def calc_score(row):
+                length = len(list_curve)
+                score = 0
+                for idx,c in enumerate(list_curve) :
+                    score += (length - idx) * row[c]
+                return score
+
+            all_curves = get_curves_in_well(target_well)
+            missing_input_curves = {}
+            for c in log_rule:
+                if len(find_similar_curves(c, all_curves)):
+                    missing_input_curves[c] = 0
+                else:
+                    missing_input_curves[c] = 1
+            target_well_input_features = set(log_rule)
+            target_well_missing_input_features = { c for c in missing_input_curves if missing_input_curves[c] >0 }
+
+            well_infos = None
+            if not wells:
+                well_infos = get_wells_has_curve(target_curve)
+            else:
+                well_infos = [ { 'well': w, "all_curves": get_curves_in_well(w) } for w in wells ]
+
+            for winfo in well_infos:
+                for c in list_curve:
+                    if len(find_similar_curves(c, winfo['all_curves'])):
+                        winfo[c] = 1
+                    else: 
+                        winfo[c] = 0
+
+
+            df = pd.DataFrame(well_infos)
+            selected_cols = ['well', target_curve] + log_rule
+            df = df[ selected_cols ]
+            df['score'] = df.apply(calc_score, axis=1)
+            df['distance'] = df.apply(calc_distance, axis=1)
+            df_score = df.sort_values(by=['score', 'distance'], ascending=[False, True])
+            df = df.sort_values(by=['distance', 'score'], ascending=[True, False])
+            dest_path = Naming.dest_path(f"{target_curve}_{target_well}", category='suggestion', format = 'xlsx')
+            publish_path = Naming.publish_path(f"{target_curve}_{target_well}", category='suggestion', format = 'xlsx')
+            XLSX.save_dataframe(df, dest_path)
+
+            top5 = df.head(5)
+            print('top5', top5)
+            opt1_wells = list(top5['well'].values)
+            opt1_top5_most_distance = top5['distance'].max()
+            opt1_input_features = [c for c in log_rule if top5[c].sum() == 5]
+            opt1_input_missing = [c for c in log_rule if top5[c].sum() < 5]
+            
+            top5 = df_score.head(5)
+            print('----------\n','top5', top5)
+            opt2_wells = list(top5['well'].values)
+            opt2_top5_most_distance = top5['distance'].max()
+            opt2_input_features = [c for c in log_rule if top5[c].sum() == 5]
+            opt2_input_missing = [c for c in log_rule if top5[c].sum() < 5]
+            # conclude
+            print(set(list_curve), set(missing_input_curves), set(list_curve) - set(missing_input_curves))
+            answer = f'''
+###  Analysis on target well {target_well}:
+
+1. Important input curves available:
+
+- {'\n- '.join(list(target_well_input_features))}
+
+2. The following important input curves are missing: {','.join(target_well_missing_input_features) or None}
+
+### For calculating _{target_curve}_ in well _{target_well}_ consider the following suggestions:
+
+1. Using nearby wells: {",".join(opt1_wells)} with input curves {",".join(opt1_input_features)} 
+(missing: {",".join(opt1_input_missing) or 'None'}). 
+The most distant well is {opt1_top5_most_distance} metres away from {target_well}.
+Also consider reconstructing missing curves before calculating {target_curve}
+2. Using wells with most available data: {",".join(opt2_wells)} with input curves {",".join(opt2_input_features)}
+(missing: {",".join(opt2_input_missing) or 'None'}). 
+The most distant well is {opt2_top5_most_distance} metres away from {target_well}.
+
+The above conclusions are drawn from {excel_link(publish_path, label="here")}
+'''
+            return dict(text=answer)
+        except Exception as e:
+            traceback.print_exc()
+            return dict(text=str(e))
+
+    @mcp_server.tool(
+        name="accept_experiment_las_file",
+        description="Accept las file produced by an experiment"
+    )
+    def accept_experiment_las_file(input):
+        try:
+            run_id_prefix = input
+            runs = get_runs(run_id_prefix)
+            if runs is None or len(runs) == 0:
+                raise Exception("No experiment run found")
+            run = runs[0]
+            run_data = run.data
+            well = run_data.params.get("target_well", None)
+            las_file = os.path.basename(run_data.params.get('las_file'))
+            if well is None:
+                raise Exception('This experiment is not for well log')
+            dest_path = Naming.las_path(well, category='store')
+            print(las_file)
+            download_artifacts(
+                run_id=run.info.run_id, 
+                artifact_path=f'las/{las_file}', 
+                dst_path = f'{dest_path}/')
+            file_path = f"{dest_path}/_{las_file}"
+            os.rename(f"{dest_path}/{las_file}", file_path)
+            las = lasio.read(file_path)
+            storage = Store()
+            new_curves = [{'curve': c.mnemonic, 'path': file_path, 'ref': None} for c in las.curves]
+            storage.save_curves_in_well(new_curves, well)
+            return dict(text=f"Experiment {run_id_prefix} result is saved to well {well} under file name _{las_file}")
+        except Exception as e:
+            traceback.print_exc()
+            return dict(text=str(e))
+
+    @mcp_server.tool(
+        name="plt_table",
+        description="Build PLT Table"
+    )
+    def plt_table(input):
+        try:
+            input_data = input
+            print(input_data)
+            raw_path = 'plt.xlsx'
+            dest_path = Naming.dest_path(raw_path, category='plt', format='xlsx')
+            publish_path = Naming.publish_path(raw_path, category='plt', format='xlsx')
+            if not os.path.exists(dest_path):
+                in_file = Naming.default_plt_file(category='store')
+                df = XLSX.parse_plt()
+                XLSX.save_dataframe(df, dest_path)
+            return dict(text=excel_link(publish_path, label="PLT Table"))
+        except Exception as e:
+            traceback.print_exc()
+            return dict(text=str(e))
+    
     tool_names = [
         "build_logplot",
         "zone4well",
@@ -450,5 +590,8 @@ def create_missingpay_tools(mcp_server, data_config: DataConfig) -> List[str]:
         "create_pseudo_log",
         "view_training_experiment",
         "delete_training_experiment",
+        "suggest_log_creation",
+        "accept_experiment_las_file",
+        "plt_table"
     ]
     return tool_names
