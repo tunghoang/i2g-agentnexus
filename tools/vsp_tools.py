@@ -749,6 +749,7 @@ def create_vsp_tools(mcp_server, data_config: DataConfig) -> List[str]:
             wells = input_data['wells']
             wells = [ w.strip() for w in wells ]
             year = input_data['year']
+            data = input_data['data']
 
             wellpos_df = XLSX.extract_wellpos(wells)
             df = XLSX.parse_well_production()
@@ -759,8 +760,8 @@ def create_vsp_tools(mcp_server, data_config: DataConfig) -> List[str]:
                 prod_df = prod_df[ prod_df[prod_df.columns[0]].dt.year == year ]
 
             columns = prod_df.columns
-
-            selected_columns = ["CV.OilRate", "CV.LiqRate", "CV.Watercut", "CV.WaterInj_Rate"]
+            selected_columns = ["CV.OilRate", "CV.LiqRate", "CV.Watercut", "CV.WaterInj_Rate", 
+                                'CV.Oilcum/1000', 'CV.WaterProdCum/1000', 'CV.WaterInjCum/1000']
 
             prod_df = prod_df[[columns[0], columns[1], *selected_columns]]
             idx = prod_df.groupby(columns[1])[columns[0]].idxmax()
@@ -771,24 +772,45 @@ def create_vsp_tools(mcp_server, data_config: DataConfig) -> List[str]:
 
             result_df = pd.merge(prod_df, wellpos_df, on='Well')
             result_df = result_df[['Well', 'X', 'Y', *selected_columns]]
-            result_df['%OR'] = result_df['CV.OilRate'] / result_df['CV.LiqRate']
-            result_df['%WR'] = 1 - result_df['%OR']
-            result_df['LiqRateNorm'] = normalize(result_df['CV.LiqRate'])
-            result_df['WIRNorm'] = normalize(result_df['CV.WaterInj_Rate'])
+            if data == 'monthly_rate':
+                result_df['%OR'] = result_df['CV.OilRate'] / result_df['CV.LiqRate']
+                result_df['%WR'] = 1 - result_df['%OR']
+                result_df['LiqRateNorm'] = normalize(result_df['CV.LiqRate'])
+                result_df['WIRNorm'] = normalize(result_df['CV.WaterInj_Rate'])
 
-            hovertemplate = [
-                'LiqRate & Watercut: %{customdata[4]:,.0f}   -   %{customdata[5]:,.0f}%',
-                'Water Injection Rate: %{customdata[6]:,.0f}'
-            ]
-            hovertemplate = "<br>".join(hovertemplate)
+                hovertemplate = [
+                    'LiqRate & Watercut: %{customdata[4]:,.0f}   -   %{customdata[5]:,.0f}%',
+                    'Water Injection Rate: %{customdata[6]:,.0f}'
+                ]
+                hovertemplate = "<br>".join(hovertemplate)
 
-            fig = pie_map(result_df, groups = [[7,8], []], names=[['Oil rate', 'Water rate'], ['Water inj. rate', '']], radius_cols=[9, 10], hovertemplate=hovertemplate, 
-                color_palettes=[
-                    ['rgba(154, 205, 50, 0.7)', 'rgba(255, 215, 181, 0.7)'],
-                    ['rgba(0, 54, 119, 0.7)', 'blue']
-                ], 
-                plot_title=f'Production map {"in " + str(year) if year else ""}'
-            )
+                fig = pie_map(result_df, groups = [[10,11], []], names=[['Oil rate', 'Water rate'], ['Water inj. rate', '']], radius_cols=[12, 13], hovertemplate=hovertemplate, 
+                    color_palettes=[
+                        ['rgba(154, 205, 50, 0.7)', 'rgba(255, 215, 181, 0.7)'],
+                        ['rgba(0, 54, 119, 0.7)', 'blue']
+                    ], 
+                    plot_title=f'Production map {"in " + str(year) if year else ""}'
+                )
+            elif data == 'cv':
+                result_df['%OCV'] = result_df['CV.Oilcum/1000'] / (result_df['CV.Oilcum/1000'] + result_df['CV.WaterProdCum/1000'] )
+                result_df['%WCV'] = 1 - result_df['%OCV']
+                result_df['LiqCVNorm'] = normalize(result_df['CV.Oilcum/1000'] + result_df['CV.WaterProdCum/1000'])
+                result_df['WICVNorm'] = normalize(result_df['CV.WaterInjCum/1000'])
+
+                hovertemplate = [
+                    'OilCum/1000 & WaterProdCum/1000: %{customdata[7]:,.0f}   -   %{customdata[8]:,.0f}',
+                    'WaterInjCum/1000: %{customdata[9]:,.0f}'
+                ]
+                hovertemplate = "<br>".join(hovertemplate)
+
+                fig = pie_map(result_df, groups = [[10,11], []], names=[['Oilcum/1000', 'WaterProdCum/1000'], ['WaterInjCum/1000', '']], radius_cols=[12, 13], hovertemplate=hovertemplate, 
+                    color_palettes=[
+                        ['rgba(154, 205, 50, 0.7)', 'rgba(255, 215, 181, 0.7)'],
+                        ['rgba(0, 54, 119, 0.7)', 'blue']
+                    ], 
+                    plot_title=f'Production map {"in " + str(year) if year else ""}'
+                )
+            
 
             dest_path = Naming.dest_path(f"wells_{'_'.join(wells)}", category="production_map", format="html")
             publish_path = Naming.publish_path(f"wells_{'_'.join(wells)}", category="production_map", format="html")

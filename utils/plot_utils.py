@@ -931,7 +931,7 @@ def plot_charts(dfs, modes = ['lines+markers']):
         ycols = columns[1:]
         for ycol in ycols:
             _df = df[[xcol, ycol]].dropna(how='any')
-            trace = go.Scattergl(x=_df[xcol], y=_df[ycol], name=f"{key}-{ycol}", mode="+".join(modes))
+            trace = go.Scattergl(x=_df[xcol], y=_df[ycol], name=f"pressure-{ycol}", mode="+".join(modes))
             fig.append_trace(trace, row=idx+1, col=1)
         fig.update_xaxes(title_text="Date", row=idx+1, col=1)
         fig.update_yaxes(title_text="Pressure", row=idx+1, col=1)
@@ -1021,7 +1021,7 @@ def pie_map(df, groups, names, key_col=0, x_col=1, y_col=2, radius_cols = None, 
                             showlegend=first_row)
             if pie:
                 data = data + pie
-            first_row = False
+                first_row = False
 
     fig = go.Figure( data, {} )
     fig.add_trace(

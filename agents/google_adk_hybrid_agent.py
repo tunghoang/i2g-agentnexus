@@ -10,6 +10,7 @@ import time
 import logging
 import inspect
 import asyncio
+import numpy as np
 from typing import Optional, Dict, Any, List, Union
 from glob import iglob
 
@@ -34,6 +35,7 @@ from servers.mcp_server import MCPClient
 from naming import Naming
 from base_utils import recursive_get, recursive_put, iframe, link, PUBLISH_BASE
 from context import Context
+from xlsx_utils import XLSX
 logger = logging.getLogger(__name__)
 
 AGENT_URL = os.getenv("AGENT_URL") or "http://localhost:8990"
@@ -101,6 +103,34 @@ class ToolExecutingAgentExecutor:
                 return {"status": "error", "message": str(e)}
 
         tools.append(list_files)
+
+        def calc_distance_between_wells(tool_context: ToolContext, well1:str, well2:str) -> dict:
+            """Calculate distance between well1 and well2
+
+            Args:
+                well1: first well
+                well2: second well
+
+            Returns:
+                dict: results
+            """
+            try:
+                wellpos_df = XLSX.extract_wellpos([well1, well2])
+                if len(wellpos_df.index) == 1:
+                    result = f"Only {wellpos_df['Well'].values[0]} found."
+                elif len(wellpos_df.index) == 0:
+                    result = "None of the wells found"
+                else:
+                    wells = wellpos_df[['X', 'Y']].values
+                    distance = np.sqrt(np.sum(np.square(wells[0] - wells[1])))
+                    result = f"Distance = {distance:.2f} meters"
+
+                return {"status": "success", "result": result}
+            except Exception as e:
+                executor_instance.logger.error(f"Error in list_files: {e}")
+                return {"status": "error", "message": str(e)}
+
+        tools.append(calc_distance_between_wells)
 
         def list_wells(tool_context: ToolContext, pattern: str) -> dict:
             """List wells matching pattern in the data directory
@@ -1219,19 +1249,22 @@ class ToolExecutingAgentExecutor:
                 return {"status": "error", "message": str(e)}
         tools.append(water_analysis_map)
 
-        def production_map(tool_context: ToolContext, wells: list[str] = [], year: int = 0) -> dict:
+        def production_map(tool_context: ToolContext, wells: list[str] = [], year: int = 0, data: str = 'monthly_rate') -> dict:
             """View production map for input wells in a year. If a list of wells is specified, show the map of those wells. If the well list is empty, show the map for all existing wells
             
             Args:
                 wells: input wells
                 year: year
+                data (str): data to view on map. Supported:
+                    - 'cv' for "cumulated volume"
+                    - 'monthly_rate' for "monthly rate"
 
             Returns:
                 dict: result
             """
             try:
                 executor_instance.logger.info(f"Executing production_map for wells {wells}")
-                result = executor_instance._execute_mcp_tool("production_map", json.dumps(dict(wells=wells, year=year)))
+                result = executor_instance._execute_mcp_tool("production_map", json.dumps(dict(wells=wells, year=year, data=data)))
                 tool_context.actions.skip_summarization = True
                 return {"status": "success", "result": result }
             except Exception as e:
@@ -1298,6 +1331,7 @@ class ToolExecutingAgentExecutor:
 - User asks "get unique values from column 0 in file.xlsx sheet 0" → IMMEDIATELY call unique_from_column with column=0 file_path="file.xlsx" and sheet=0
 
 ## For CRM analysis:
+- "bubble map" means "production map"
 - User asks "build CRM input using production wells and injection wells" → IMMEDIATELY call buildCRMInput with corresponding production_wells and injection_wells
 - User asks "show wells in marker file", then IMMEDIATELY call unique_from_column with column=0 file_path="misc/Marker.xlsx" and sheet=0
 - User asks "show wells in production monthly file", then IMMEDIATELY call unique_from_column with column=1 file_path="" and sheet=0
@@ -1402,7 +1436,7 @@ las_parser, las_analysis, formation_evaluation, well_correlation, segy_parser, s
 quick_segy_summary, dump_content, plot_las, well_logplot, build_logplot, plot_histogram_las, show_sheets, show_columns,
 unique_from_column, marker4well, zone4well, production_monthly_data_table, describe_production_data, summarize_marker_data,
 buildCRMInput, trainCRMModel, production_by_time, production_crossplot,welltest_chart, welltest_table,
-water_analysis_map, production_map,
+water_analysis_map, production_map, calc_distance_between_wells,
 plt_table, well_checklist_table, well_checklist_curves, create_wells_tvdss, create_pseudo_log, 
 view_training_experiment, delete_training_experiment, accept_experiment_las_file, suggest_log_creation, set_context_for_tool_function
 
