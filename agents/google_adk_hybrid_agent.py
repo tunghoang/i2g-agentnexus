@@ -622,7 +622,7 @@ class ToolExecutingAgentExecutor:
                 return dict(status="error", message=str(e))
         tools.append(FunctionTool(zone4well))
 
-        def discover_wells_in_prodmonthly():
+        def discover_wells_in_prodmonthly(tool_context: ToolContext):
             """Discover wells in production monthy file
             Args:
                 None
@@ -632,6 +632,7 @@ class ToolExecutingAgentExecutor:
             try:
                 executor_instance.logger.info("Executing discover_wells_in_prodmonthly")
                 result = executor_instance._execute_mcp_tool('discover_wells_in_prodmonthly', None)
+                tool_context.actions.skip_summarization = True
                 return {"status": "success", "result": result}
             except Exception as e:
                 executor_instance.logger.error("Error in discover_wells_in_prodmonth")
@@ -724,25 +725,26 @@ class ToolExecutingAgentExecutor:
                 return {"status": "error", "result": result}
         tools.append(buildCRMInput)
 
-        def trainCRMModel(filepath:str):
-            """Train CRM Model from a CRM input file
-
+        def train_crm_model(tool_context: ToolContext, i_wells:list[str], o_wells:list[str]) -> dict:
+            """Train CRM Model from injection wells i_wells and production wells o_wells
+            
             Args:
-                filepath: CRM input file
+                i_wells (list[str]): injection wells
+                o_wells (list[str]): production wells
 
             Returns:
                 dict: results
             """
             try:
-                executor_instance.logger.info("Executing trainCRMModel from {filepath}")
-                result = executor_instance._execute_mcp_tool('trainCRMModel', json.dumps(dict(filepath=filepath)))
+                executor_instance.logger.info("Executing train_crm_model from injection wells {i_wells} and production wells {o_wells}")
+                result = executor_instance._execute_mcp_tool('train_crm_model', json.dumps(dict(i_wells=i_wells, o_wells=o_wells)))
+                tool_context.actions.skip_summarization = True
                 return {"status": "success",
-                        "result": "result is created. Output is in attachment field",
-                        "attachment": result}
+                        "result": result}
             except Exception as e:
-                executor_instance.logger.error(f"Error in trainCRMModel {e}")
-                return {"status": "error", "result": result}
-        tools.append(trainCRMModel)
+                executor_instance.logger.error(f"Error in train_crm_model: {e}")
+                return {"status": "error", "message": str(e)}
+        tools.append(train_crm_model)
 
         def production_crossplot(params: list[str], wells: list[str], xparam: str):
             """Plot production params by oilcum for wells from production data file
@@ -1052,6 +1054,56 @@ class ToolExecutingAgentExecutor:
                 return {"status": "error", "message": str(e)}
         tools.append(view_training_experiment)
         
+        def view_wf_experiment(
+            tool_context: ToolContext,
+            iwells: list[str] = [],
+            owells: list[str] = [],
+            model_type: str = 'CRM',
+            seconds: int = 0, 
+            filter_expr: str = ''
+        ) -> dict:
+            """
+            View water flooding (or wf) experiments of injection wells (iwells) and production wells (owells) for a well using a model type and
+            a time range specified in miliseconds ago and a filter expression.
+
+            Args:
+                iwells (str, optional): List of injection wells.
+                owells (str, optional): List of production wells.
+                model_type (str, optional): Type of machine learning model to use. 
+                    Supported values:
+                        - 'CRM' for Capacitance Registance Model
+                        - 'LSTM' for Long Short Term Memory
+                
+                seconds (int, optional): Time since experiment creation, in seconds.  
+                    Used to normalize relative time expressions (e.g., "last minutes", "last days", "last years") to a common unit: seconds.
+
+                filter_expr (str, optional): A filter expression to filter experiments.
+
+            Returns:
+                dict: Result.
+            """
+            try:
+                executor_instance.logger.info(
+                    f"Executing view_wf_experiment of injection {iwells} and production {owells} "
+                    f"using model {model_type}, filtering last {seconds} seconds with expression {filter_expr}"
+                )
+                result = executor_instance._execute_mcp_tool(
+                    'view_wf_experiment',
+                    json.dumps({
+                        "iwells": iwells,
+                        "owells": owells,
+                        "model_type": model_type,
+                        "seconds": seconds,
+                        "filter_expr": filter_expr,
+                    })
+                )
+                tool_context.actions.skip_summarization = True
+                return {"status": "success", "result": result}
+            except Exception as e:
+                executor_instance.logger.error(f"Error in view_wf_experiment {e}")
+                return {"status": "error", "message": str(e)}
+
+        tools.append(view_wf_experiment)
         def delete_training_experiment(
             experiment_id: str,
         ) -> dict:
@@ -1435,8 +1487,8 @@ Available tools: list_files, system_status, health_check, directory_info,
 las_parser, las_analysis, formation_evaluation, well_correlation, segy_parser, segy_classify, segy_qc,
 quick_segy_summary, dump_content, plot_las, well_logplot, build_logplot, plot_histogram_las, show_sheets, show_columns,
 unique_from_column, marker4well, zone4well, production_monthly_data_table, describe_production_data, summarize_marker_data,
-buildCRMInput, trainCRMModel, production_by_time, production_crossplot,welltest_chart, welltest_table,
-water_analysis_map, production_map, calc_distance_between_wells,
+train_crm_model, view_wf_experiment, production_by_time, production_crossplot,welltest_chart, welltest_table,
+water_analysis_map, production_map, calc_distance_between_wells, train
 plt_table, well_checklist_table, well_checklist_curves, create_wells_tvdss, create_pseudo_log, 
 view_training_experiment, delete_training_experiment, accept_experiment_las_file, suggest_log_creation, set_context_for_tool_function
 

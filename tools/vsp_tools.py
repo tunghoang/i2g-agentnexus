@@ -19,6 +19,7 @@ from calendar import monthrange
 from pywaterflood import CRM
 from tools.plot_tools import getColor
 from utils.plot_utils import multi_chart, production_by_time_chart, production_by_oilcum_chart, plot_charts, pie_map
+from utils.wf_utils import build_wf_input, train_crm, get_wf_run
 from xlsx_utils import XLSX
 from base_utils import iframe, link, excel_link, normalize, PUBLISH_BASE
 
@@ -64,7 +65,6 @@ def create_vsp_tools(mcp_server, data_config: DataConfig) -> List[str]:
                 temp_path = Naming.dest_path(f"well{well}.marker", category='markers', format='xlsx')
                 publish_temp_path = Naming.publish_path(f"well{well}.marker", category='markers', format='xlsx')
                 markerDF.to_excel(Naming.dest_path(f"well{well}.marker", category='markers', format='xlsx'))
-                print("++++++++++++++++++++", temp_path)
                 #return {"text":f'<iframe width="100%" height="1200px" src=\'{PUBLISH_BASE}/{Naming.publish_path("view_plot")}?file={publish_temp_path}\'></iframe>' }
                 return { "text": excel_link(publish_temp_path, label="marker file") }
                 #return {"text": json.dumps(markerDF.to_dict('records'))}
@@ -92,7 +92,6 @@ def create_vsp_tools(mcp_server, data_config: DataConfig) -> List[str]:
             temp_path = Naming.dest_path(f"well{well}.marker", category='markers', format='xlsx')
             publish_temp_path = Naming.publish_path(f"well{well}.marker", category='markers', format='xlsx')
             filteredDF.to_excel(Naming.dest_path(f"well{well}.marker", category='markers', format='xlsx'))
-            print("++++++++++++++++++++", temp_path)
             #return {"text":f'<iframe width="100%" height="1200px" src=\'{PUBLISH_BASE}/{Naming.publish_path("view_plot")}?file={publish_temp_path}\'></iframe>' }
             return { "text": iframe(f'{Naming.publish_path("excel-viewer/",format=None)}?file={publish_temp_path}') }
         except Exception as e:
@@ -222,6 +221,7 @@ def create_vsp_tools(mcp_server, data_config: DataConfig) -> List[str]:
     @mcp_server.tool(name="discover_wells_in_prodmonthly", description="Discover wells in production monthly file")
     def discover_wells_in_prodmonthly(input):
         try:
+            '''
             well_column = 1
             data_columns = [
                     0, # Date
@@ -241,19 +241,24 @@ def create_vsp_tools(mcp_server, data_config: DataConfig) -> List[str]:
                 MemoryCache.get_instance().put(production_file, excel_file)
 
             df = excel_file.parse(sheet, header=0)
+            '''
+            well_column = 1
+            df = XLSX.extract_production_data()
             columns = list(df.columns)
             df[columns[well_column]] = df[columns[well_column]].astype(str)
-            df = df[[ columns[i] for i in data_columns ]]
-            idx = df.groupby(columns[well_column])[columns[data_columns[0]]].idxmax()
+            idx = df.groupby(columns[well_column])['Date'].idxmax()
             resultDF = df.iloc[idx]
             print(resultDF)
             def conclude_well(row):
                 print(row)
-                return 'injection' if row[columns[15]] > 0 else 'production'
+                return 'injection' if row[columns[8]] > 0 else 'production'
             resultDF['type'] = resultDF.apply(conclude_well, axis=1)
             resultDF['Date'] = pd.to_datetime(resultDF['Date']).astype(str)
             print(resultDF)
-            return {"text": json.dumps(resultDF.to_dict("records"))}
+            dest_path = Naming.dest_path('well_table', format='xlsx', category='production')
+            publish_path = Naming.publish_path('well_table', format='xlsx', category='production')
+            XLSX.save_dataframe(resultDF, dest_path)
+            return {"text": excel_link(publish_path)}
         except Exception as e:
             traceback.print_exc()
             return {"text": str(e), "isError": True}
@@ -313,10 +318,24 @@ def create_vsp_tools(mcp_server, data_config: DataConfig) -> List[str]:
         return {"text": result_file}
 
     @mcp_server.tool(
-        name="trainCRMModel",
+        name="train_crm_model",
         description="Train CRM model using a input file"
     )
-    def trainCRMModel(**kwargs):
+    def train_crm_model(input):
+        try:
+            input_data = json.loads(input)
+            iwells = input_data['i_wells']
+            owells = input_data['o_wells']
+            df = build_wf_input(iwells, owells)
+
+            df = df.fillna(0)
+            publish_path = train_crm(df, 'per-pair', 'up-to one')
+            return {'text': iframe(publish_path)}
+        except Exception as e:
+            traceback.print_exc()
+            return {"text": str(e)}
+            
+    def _trainCRMModel_(**kwargs):
         CHART_DIR = '/tmp'
         try:
             input_data = json.loads(kwargs['input'])
@@ -353,6 +372,26 @@ def create_vsp_tools(mcp_server, data_config: DataConfig) -> List[str]:
         except Exception as e:
             traceback.print_exc()
             return {"text": "trainCRMModel failed: {str(e)}"}
+
+    @mcp_server.tool(
+        name="view_wf_experiment",
+        description="view_wf_experiment"
+    )
+    def view_wf_experiment(input: str) -> dict:
+        try:
+            input_data = json.loads(input)
+            iwells: list[str] = input_data.get("iwells")
+            owells: list[str] = input_data.get("owells")
+            model_type: str = input_data.get("model_type")
+            seconds: int = input_data.get("seconds")
+            filter_expr: str = input_data.get("filter_expr")
+
+            out_file_relative_path = get_wf_run(iwells, owells, model_type, seconds, filter_expr)
+
+            return {"text": iframe(out_file_relative_path, height='500px')}
+        except Exception as e:
+            traceback.print_exc()
+            return {"text": str(e)}
 
     @mcp_server.tool(
         name="production_by_time",
@@ -824,7 +863,7 @@ def create_vsp_tools(mcp_server, data_config: DataConfig) -> List[str]:
         "marker4well",
         "productiondata4well",
         "buildCRMInput",
-        "trainCRMModel",
+        "train_crm_model",
         "production_crossplot",
         "production_by_time",
         "production_by_oilcum",

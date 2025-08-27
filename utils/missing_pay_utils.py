@@ -40,7 +40,7 @@ import plotly.graph_objects as go
 from mlflow.artifacts import download_artifacts
 
 from utils.plot_utils import logplot
-from base_utils import aliases_of_curve, standard_curve_name, find_similar_curves, getUnit
+from base_utils import aliases_of_curve, standard_curve_name, find_similar_curves, getUnit, get_mlflow_experiment, human_readable_diff, parse_json_param, parse_float_param, get_mlflow_artifact_path, seconds_ago_to_timestamp
 
 mlflow_uri = "http://localhost:5000"
 mlflow.set_tracking_uri(mlflow_uri)
@@ -513,29 +513,6 @@ def train_model(x_train: np.ndarray, y_train: np.ndarray, model_type: str, **kwa
     model.fit(x_train, y_train)
     return model
     
-def human_readable_diff(start_time: datetime, end_time: datetime) -> str:
-    if not start_time or not end_time:
-        return "N/A"
-
-    delta = end_time - start_time
-    if delta.days > 3:
-        utc7 = timezone(timedelta(hours=7))
-        return start_time.astimezone(utc7).strftime("%d/%m/%Y, %I:%M:%S %p")
-
-    seconds_total = int(delta.total_seconds())
-    minutes, seconds = divmod(seconds_total, 60)
-    hours, minutes = divmod(minutes, 60)
-    days, hours = divmod(hours, 24)
-
-    if days:
-        return f"{days} days ago"
-    if hours:
-        return f"{hours} hours ago"
-    if minutes:
-        return f"{minutes} minutes ago"
-    
-    return f"{seconds} seconds ago"
-
 def make_pseudo_log(
         target_curve: str = '',
         target_well: str = '',
@@ -681,9 +658,6 @@ def normalize_filter_expr(expr: str) -> str:
 
     return expr
 
-def seconds_ago_to_timestamp(seconds_ago: int) -> int:
-    dt = datetime.now() - timedelta(seconds=seconds_ago)
-    return int(dt.timestamp()) * 1000
 
 def make_filter_params(
     target_curve: str, 
@@ -712,57 +686,6 @@ def make_filter_params(
     
     return " and ".join(filter_params)
         
-def parse_json_param(param: str):
-    if not param:
-        return "N/A"
-    try:
-        result = json.loads(param)
-        if type(result) == list:
-            return ", ".join(result)
-        elif type(result) == dict:
-            return ", ".join(f"{k}: {v}" for k, v in result.items())
-        return result
-    except:
-        return param
-
-def parse_float_param(param: float | int):
-    if param is None:
-        return "N/A"
-    return f"{param:.2f}"
-
-def get_mlflow_experiment(client: MlflowClient, name: str):
-    experiment = client.get_experiment_by_name(name)
-    if not experiment:
-        experiment_id = client.create_experiment(name)
-        experiment = client.get_experiment(experiment_id)
-    return experiment
-
-def get_mlflow_artifact_path(
-        experiment_id: str,
-        run_id: str,
-        artifact_path: str,
-        allow_remote: bool = False,
-    ) -> str | None:
-
-    mlflow_path = Naming.mlflow_path(f"{experiment_id}/{run_id}/artifacts")
-    local_file_path = os.path.join(mlflow_path, artifact_path)
-    if os.path.isfile(local_file_path):
-        return local_file_path 
-
-    # MLflow is running on a different host
-    if allow_remote:
-        try:
-            os.makedirs(dest_path, exist_ok=True)
-            downloaded_path = download_artifacts(
-                run_id=run_id,
-                artifact_path=artifact_path,
-                dst_path=dest_path
-            )
-            return downloaded_path
-        except Exception:
-            return None
-
-    return None
 
 def get_training_result(
         target_curve: str = '',

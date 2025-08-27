@@ -583,23 +583,29 @@ def histogram(df, curve_names, num_bins, file_path: str=""):
         fig.add_trace(trace)
     return fig
 
-def multi_chart(chart_titles, data1, data2, data3):
+def multi_chart(chart_titles, traces, chart_titles1 = [], traces1 = []):
+    colors = ['blue', 'red', 'green', 'magenta']
+    suffixes = ['Production', 'Train', 'Predict', 'Injection']
+    colors1 = ['magenta']
+    suffixes1 = ['Injection']
+    chart_cnt = len(chart_titles) + len(chart_titles1)
+    print(chart_cnt)
     fig = make_subplots(
-        cols=1, rows=len(chart_titles), shared_xaxes=True,
-        subplot_titles=chart_titles
+        cols=1, rows=chart_cnt, shared_xaxes=True,
+        subplot_titles=chart_titles + chart_titles1
     )
     for i,title in enumerate(chart_titles):
-        trace1 = go.Scatter(x=data1['x'], y=data1['y'][:, i], 
-                            name=f'[{title}] Production', mode='lines', line=dict(color='blue'), legendgroup=f'{i}')
-        trace2 = go.Scatter(x=data2['x'], y=data2['y'][:, i], 
-                            name=f'[{title}] Train', mode='lines', line=dict(color='red'), legendgroup=f'{i}')
-        trace3 = go.Scatter(x=data3['x'], y=data3['y'][:, i], 
-                            name=f'[{title}] Predict', mode='lines', line=dict(color='green'), legendgroup=f'{i}')
+        for j,tr in enumerate(traces):
+            trace = go.Scatter(x = tr['x'], y = tr['y'][:, i], 
+                            name=f"[{title}] {suffixes[j]}", mode='lines', line=dict(color=colors[j]), legendgroup=f'{i}')
+            fig.append_trace(trace, i+1, 1)
 
-        fig.append_trace(trace1, i+1, 1)
-        fig.append_trace(trace2, i+1, 1)
-        fig.append_trace(trace3, i+1, 1)
-
+    for i,title in enumerate(chart_titles1):
+        for j,tr in enumerate(traces1):
+            trace = go.Scatter(x = tr['x'], y = tr['y'][:, i], 
+                            name=f"[{title}] {suffixes1[j]}", mode='lines', line=dict(color=colors1[j]), legendgroup=f'{i + len(chart_titles)}')
+            fig.append_trace(trace, len(chart_titles) + i+1, 1)
+    
     fig.update_xaxes(
         showline=True,
         linewidth=0.5,
@@ -616,7 +622,8 @@ def multi_chart(chart_titles, data1, data2, data3):
     fig.update_layout(
         plot_bgcolor="#fff",
         width=800,
-        legend_tracegroupgap=100
+        height=chart_cnt * 200 + 200,
+        legend_tracegroupgap=150
     )
     return fig
 

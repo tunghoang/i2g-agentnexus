@@ -5,7 +5,6 @@ from cache import MemoryCache
 from naming import Naming
 
 class XLSX:
-    PRODUCTION_FILEPATH="production/PVT_WellTest_Perforation_WaterAnalysis.xlsx"
     #PRODUCTION_MONTHLY_SHEET=4
     PRODUCTION_MONTHLY_SHEET=0
 
@@ -24,7 +23,6 @@ class XLSX:
     @classmethod
     def parse_well_production(cls, sheet: int = PRODUCTION_MONTHLY_SHEET):
         PROD_WELL_COL = 1
-        #df = cls.parse_excel(Naming.data_path(cls.PRODUCTION_FILEPATH), sheet)
         df = cls.parse_excel(Naming.default_production_monthly_file(category='store'), sheet)
         #df['Date'] = pd.to_datetime(df['Date'], unit='D', origin='1899-12-30')
         df['Date'] = pd.to_datetime(df['Date'])
@@ -182,38 +180,47 @@ class XLSX:
         print(type(layers), layers)
         return layers
     @classmethod
-    def extract_production_data(cls, wells=None, file_path=None, sheet=PRODUCTION_MONTHLY_SHEET):
+    def extract_production_data(cls, 
+        wells=None, file_path=None, sheet=PRODUCTION_MONTHLY_SHEET,
+        idxcols = [0,1,4,6,7,9,10,11,14,17],
+        colnames = ['Date', 'Well', 'Platform', 'CV.OilRate', 'Qoil/1000', 'CV.LiquidRate', 'Qwater/1000', 'WaterProdCum', 'CV.WaterInj_Rate', 'CV.WaterCut']
+    ):
         _file_path = file_path or Naming.default_production_monthly_file(category='raw')
         xlsx_file = MemoryCache.get_instance().get(_file_path)
         if xlsx_file is None:
             xlsx_file = pd.ExcelFile(Naming.data_path(_file_path), engine='openpyxl')
             MemoryCache.get_instance().put(_file_path, xlsx_file)
         df = xlsx_file.parse(sheet, header=0)
-        retrieved_cols = {
-            "Date": 0, 
-            "Well": 1, 
-            "Platform": 4, 
-            "CV.OilRate": 6, 
-            "Qoil/1000": 7, 
-            "CV.LiquidRate": 9, 
-            "Qwater/1000": 10, 
-            "WaterProdCum": 11, 
-            "CV.WaterInj_Rate": 14, 
-            "CV.WaterCut": 17
-        }
-        ori_cols = [str(df.columns[c]) for c in retrieved_cols.values()]
-        print(ori_cols)
-        new_cols = list(retrieved_cols.keys())
-        col_mapping = { c: new_cols[idx] for idx,c in enumerate(ori_cols) }
-        print(col_mapping)
-        
-        df = df[ori_cols]
-        df = df.rename( columns=col_mapping )
-        df["Well"] = df["Well"].astype(str)
+        #retrieved_cols = {
+        #    "Date": 0, 
+        #    "Well": 1, 
+        #    "Platform": 4, 
+        #    "CV.OilRate": 6, 
+        #    "Qoil/1000": 7, 
+        #    "CV.LiquidRate": 9, 
+        #    "Qwater/1000": 10, 
+        #    "WaterProdCum": 11, 
+        #    "CV.WaterInj_Rate": 14, 
+        #    "CV.WaterCut": 17
+        #}
+        if colnames and len(colnames):
+            retrieved_cols = { colnames[idx]: idxcols[idx] for idx,_ in enumerate(idxcols) }
+            ori_cols = [str(df.columns[c]) for c in retrieved_cols.values()]
+            print(ori_cols)
+            new_cols = list(retrieved_cols.keys())
+            col_mapping = { c: new_cols[idx] for idx,c in enumerate(ori_cols) }
+            print(col_mapping)
+            
+            df = df[ori_cols]
+            df = df.rename( columns=col_mapping )
+        else:
+            df = df[[str(df.columns[c]) for c in idxcols]]
+        df[df.columns[1]] = df[df.columns[1]].astype(str)
+        df[df.columns[0]] = pd.to_datetime(df[df.columns[0]]).astype(str)
         print(df)
         print(wells)
         if wells and len(wells) > 0:
-            df = df[df["Well"].isin(wells)]
+            df = df[df[df.columns[1]].isin(wells)]
         return df
 
     @classmethod
