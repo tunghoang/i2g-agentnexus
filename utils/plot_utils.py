@@ -614,6 +614,7 @@ def multi_chart(chart_titles, traces, chart_titles1 = [], traces1 = []):
         gridcolor=gridcolor(),
     )
     fig.update_yaxes(
+        title_text='Oil rate (ton/day)',
         showline=True,
         linewidth=0.5,
         linecolor="#444",
