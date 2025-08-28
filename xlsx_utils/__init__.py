@@ -113,6 +113,7 @@ class XLSX:
         columns = list(allMarkerDF.columns)
         firstColumn = columns[0]
         allMarkerDF[firstColumn] = allMarkerDF[firstColumn].astype(str)
+        allMarkerDF[firstColumn] = allMarkerDF[firstColumn].str.removeprefix('BH-')
         filteredDF = allMarkerDF[allMarkerDF[firstColumn] == well]
         filteredDF.sort_values(by='MD', ascending=True, inplace=True)
         return filteredDF
