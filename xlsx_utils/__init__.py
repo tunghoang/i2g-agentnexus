@@ -1,4 +1,5 @@
 import pandas as pd
+import traceback
 import numpy as np
 import re
 from cache import MemoryCache
@@ -137,6 +138,8 @@ class XLSX:
             _well = re.sub(r'^.+\-', '', well)
 
         markerDF = cls.extract_markers(_well, file_path)
+        print("++++++++++++++++++")
+        print(markerDF)
         columns = list(markerDF.columns)
 
         markerDF = markerDF.sort_values(columns[5])
@@ -145,15 +148,19 @@ class XLSX:
             return None, None
         max_depth = markerDF.iloc[-1][columns[5]]
         keyMarkerDF = markerDF[markerDF[columns[1]].str.startswith('SH')]
+        print("++++++++++++++++++")
+        print(keyMarkerDF)
 
         keyZoneDF = pd.DataFrame()
-        keyZoneDF[columns[0]] = keyMarkerDF[columns[0]]
-        keyZoneDF[columns[1]] = keyMarkerDF[columns[1]]
-        keyZoneDF[f"{columns[1]}-1"] = keyMarkerDF[columns[1]].shift(periods=-1)
-        keyZoneDF['start'] = keyMarkerDF[columns[5]].astype(float)
-        keyZoneDF['stop'] = keyMarkerDF[columns[5]].shift(periods=-1).astype(float)
-        keyZoneDF.iat[-1, 4] = max_depth
-
+        try:
+            keyZoneDF[columns[0]] = keyMarkerDF[columns[0]]
+            keyZoneDF[columns[1]] = keyMarkerDF[columns[1]]
+            keyZoneDF[f"{columns[1]}-1"] = keyMarkerDF[columns[1]].shift(periods=-1)
+            keyZoneDF['start'] = keyMarkerDF[columns[5]].astype(float)
+            keyZoneDF['stop'] = keyMarkerDF[columns[5]].shift(periods=-1).astype(float)
+            keyZoneDF.iat[-1, 4] = max_depth
+        except:
+            traceback.print_exc()
 
         zoneDF = pd.DataFrame()
         zoneDF[columns[0]] = markerDF[columns[0]]
