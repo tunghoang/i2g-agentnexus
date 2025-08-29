@@ -584,8 +584,8 @@ def histogram(df, curve_names, num_bins, file_path: str=""):
     return fig
 
 def multi_chart(chart_titles, traces, chart_titles1 = [], traces1 = []):
-    colors = ['blue', 'red', 'green', 'magenta']
-    suffixes = ['Production', 'Train', 'Predict', 'Injection']
+    colors = ['blue', 'red', 'green', 'purple', 'magenta']
+    suffixes = ['Production', 'Train', 'Predict', 'Predict-Future', 'Injection']
     colors1 = ['magenta']
     suffixes1 = ['Injection']
     chart_cnt = len(chart_titles) + len(chart_titles1)
@@ -993,7 +993,7 @@ def __scatter_pie(radius, x, y, sectors, colors = ["rgba(255, 0, 255, 0.7)","rgb
         
     return pie_segments
 
-def pie_map(df, groups, names, key_col=0, x_col=1, y_col=2, radius_cols = None, hovertemplate=None, color_palettes=None, plot_title='Pie map'):
+def pie_map(df, groups, names, key_col=0, x_col=1, y_col=2, anno_cols=[], anno_suffixes=[], radius_cols = None, hovertemplate=None, color_palettes=None, plot_title='Pie map'):
     xSeries = df.iloc[:, x_col]
     minV = xSeries.min()
     maxV = xSeries.max()
@@ -1035,13 +1035,17 @@ def pie_map(df, groups, names, key_col=0, x_col=1, y_col=2, radius_cols = None, 
     fig.add_trace(
         go.Scattergl(name='Well position', x=df.iloc[:, x_col], y = df.iloc[:, y_col], 
             mode="markers", 
-            marker=dict(size=16, symbol='hexagram-dot', color='lightgreen', line=dict(color="maroon", width=2)),
-            #text=df[df.columns[key_col]], textposition='bottom center', textfont={'color': 'pink', 'shadow': '2px 2px 1px rgba(0,0,0,0.7)'},
+            #marker=dict(size=16, symbol='hexagram-dot', color='lightgreen', line=dict(color="maroon", width=2)),
+            marker=dict(size=4, symbol='circle', color='maroon'),
             customdata=df, 
             hovertemplate=hovertemplate)
     )
     for row in df.itertuples(index=False):
-        fig.add_annotation(text=f'{row[key_col]}', visible=True, showarrow=False,
+        anno_values = [ f"{0 if math.isnan(row[anno_col]) else row[anno_col]:.1f}{anno_suffixes[idx]}" for idx,anno_col in enumerate(anno_cols) ]
+        anno_div = "_" * 6 * len(anno_cols)
+        anno_text = f'{row[key_col]}<br><sup>{anno_div}</sup><br>{"/".join(anno_values)}'
+        
+        fig.add_annotation(text=anno_text, visible=True, showarrow=False,
                 font=dict(color="pink", size=12, shadow='2px 2px 1px rgba(0,0,0,0.7)'),
                 x=row[x_col] , y=row[y_col], xanchor='center', yanchor='top', yshift=-10, xref='x', yref='y')
     fig.update_xaxes(showticklabels=False)

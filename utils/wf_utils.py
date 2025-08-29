@@ -22,7 +22,7 @@ def getdaysofmonth(datestr:str):
      return daynum
 
 def build_wf_input(iwells:list[str], owells:list[str], production_col=2, injection_col=5) -> pd.DataFrame:
-    df = XLSX.extract_production_data([*iwells, *owells], idxcols=[0, 1, 7, 10, 12, 15], colnames = None)
+    df = XLSX.extract_production_data([*iwells, *owells], idxcols=[0, 1, 6, 10, 12, 14], colnames = None)
     print('------', df.columns)
     df.sort_values(by = ['Date'], ascending = [True])
     grouped = df.groupby('Master.Wellnumber')
@@ -75,6 +75,22 @@ def train_crm(df, tau_selection = 'per-pair', constraints = 'up-to one'):
     q_train = crm.predict()
     q_test = crm.predict(injection=df_validate[injection_wells].values, time=df_validate['Time'].astype(np.float64).values)
 
+    # TODO
+    start_date = df['Date'].values[-1]
+    start_date = datetime.strptime(start_date, '%Y-%m-%d')
+    end_date = datetime.strptime('2033-12-01', '%Y-%m-%d')
+    
+    lastTime = df['Time'].values[-1]
+    df_specs = {"Date": pd.date_range(start=start_date, end=end_date, freq='MS')}
+    for iwell in injection_wells:
+        df_specs[iwell] = df[iwell].values[-1]
+    df_future = pd.DataFrame(df_specs)
+    df_future = df_future.iloc[1:].reset_index(drop=True)
+    df_future['Date'] = df_future['Date'].astype(str)
+    df_future['Time'] = df_future['Date'].apply(getdaysofmonth).cumsum() + lastTime
+    print(df_future)
+    q_future = crm.predict(injection=df_future[injection_wells].values, time=df_future['Time'].astype(np.float64).values)
+
     metrics_df = pd.DataFrame({'Well': production_wells})
     MAEs = []
     RMSEs = []
@@ -91,8 +107,9 @@ def train_crm(df, tau_selection = 'per-pair', constraints = 'up-to one'):
     data1 = dict(x=df['Date'].values, y=df[production_wells].values)
     data2 = dict(x=df_train["Date"].values, y=q_train)
     data3 = dict(x=df_validate["Date"].values, y=q_test)
+    dataF = dict(x=df_future['Date'].values, y = q_future)
     data4 = dict(x=df['Date'].values, y=df[injection_wells].values)
-    fig = multi_chart(production_wells, [data1, data2, data3], injection_wells, [data4])
+    fig = multi_chart(production_wells, [data1, data2, data3, dataF], injection_wells, [data4])
 
     dest_path = Naming.dest_path('crm-chart', category='wf-crm')
     publish_path = Naming.publish_path('crm-chart', category='wf-crm')

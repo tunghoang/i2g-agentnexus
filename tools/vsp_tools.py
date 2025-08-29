@@ -724,7 +724,8 @@ def create_vsp_tools(mcp_server, data_config: DataConfig) -> List[str]:
                 '%{customdata[3]:,.1%}   -   %{customdata[4]:,.1%}'
             ]
             hovertemplate = "<br>".join(hovertemplate)
-            fig = pie_map(result_df, groups = [[3,4]], names=[['Water production', 'Water injection']], 
+            fig = pie_map(result_df, groups = [[3,4]], names=[['Reservoir water', 'Injection water']], 
+                        anno_cols = [3, 4], anno_suffixes = ['', ''],
                         hovertemplate=hovertemplate, 
                         plot_title=f'Water analysis {"in " + str(year) if year else ""}')
 
@@ -823,7 +824,9 @@ def create_vsp_tools(mcp_server, data_config: DataConfig) -> List[str]:
                 ]
                 hovertemplate = "<br>".join(hovertemplate)
 
-                fig = pie_map(result_df, groups = [[10,11], []], names=[['Oil rate', 'Water rate'], ['Water inj. rate', '']], radius_cols=[12, 13], hovertemplate=hovertemplate, 
+                fig = pie_map(result_df, groups = [[10,11], []], names=[['Oil rate', 'Water rate'], ['Water inj. rate', '']],
+                    anno_cols = [4,3,5,6], anno_suffixes = ['','','%', ''],
+                    radius_cols=[12, 13], hovertemplate=hovertemplate, 
                     color_palettes=[
                         ['rgba(154, 205, 50, 0.7)', 'rgba(255, 215, 181, 0.7)'],
                         ['rgba(0, 54, 119, 0.7)', 'blue']
@@ -842,7 +845,9 @@ def create_vsp_tools(mcp_server, data_config: DataConfig) -> List[str]:
                 ]
                 hovertemplate = "<br>".join(hovertemplate)
 
-                fig = pie_map(result_df, groups = [[10,11], []], names=[['Oilcum/1000', 'WaterProdCum/1000'], ['WaterInjCum/1000', '']], radius_cols=[12, 13], hovertemplate=hovertemplate, 
+                fig = pie_map(result_df, groups = [[10,11], []], names=[['Oilcum/1000', 'WaterProdCum/1000'], ['WaterInjCum/1000', '']], 
+                    anno_cols = [7,8,3,9],
+                    radius_cols=[12, 13], hovertemplate=hovertemplate, 
                     color_palettes=[
                         ['rgba(154, 205, 50, 0.7)', 'rgba(255, 215, 181, 0.7)'],
                         ['rgba(0, 54, 119, 0.7)', 'blue']

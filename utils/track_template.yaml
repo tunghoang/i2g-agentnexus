@@ -51,6 +51,42 @@ NPHI:
       line_color: '#ff00ff'
       xaxis:
         range: [140., 40.]
+INTERP1:
+  curves:
+    - name: PHIE
+      mode: lines
+      line_color: brown
+      xaxis:
+        range: [1, 0.]
+    - name: BVW
+      expr:
+        op: mul
+        operands:
+          - PHIE
+          - SW
+      mode: lines
+      xaxis:
+        range: [1, 0.]
+      line_color: green
+    - name: SW
+      mode: lines
+      line_color: cyan
+      xaxis:
+        range: [1, 0.]
+    
+INTERP2:
+  curves:
+    - name: VSHALE
+      mode: lines
+      line_color: maroon
+      xaxis:
+        range: [1, 0.]
+    - name: PHIE
+      mode: lines
+      line_color: brown
+      xaxis:
+        range: [1, 0.]
+
 INTERP:
   curves:
     - name: VCLAV
