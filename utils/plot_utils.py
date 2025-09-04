@@ -1,14 +1,15 @@
 import os
 import json
 import math
-import numpy as np
 import hashlib
+import numpy as np
+import lasio
 import yaml
 import pandas as pd
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 from plotly.io import write_json as __write_json
-from base_utils import recursive_get, update_dict, standard_curve_name
+from base_utils import recursive_get, update_dict, standard_curve_name, find_similar_curves
 _allTrackConfigs = None
 _allCurveSpecs = None
 
@@ -269,8 +270,10 @@ def logplot(df, curves, title=None):
                     limits = np.array(limits)
                     limits = np.log10(limits) if logType == 'log' else limits
                     curveLimitProperties = dict(type=logType, range=list(limits))
+        else:
+            curveSpec = {"line_color": getHashColor(c)}
         __track_header(fig, TRACK_HEADER, colIdx=idx + 1)
-        print(curveSpec, c)
+        #print(curveSpec, c)
         fig.update_xaxes(
             title = None,
             showline=True,
@@ -330,8 +333,20 @@ def __makeHoverTemplate(columns):
         template += (f"<b>{c}</b>:" + "<span>%{customdata[" + str(idx) + "]}</span><br>")
     return template
 
+def __calc_new_col(df, op, operands):
+    def func(row):
+        ret = None
+        if op == 'mul':
+            for oprand in operands:
+                if ret is None:
+                    ret = row[oprand]
+                else:
+                    ret = ret * row[oprand]
+        return ret
+    return df.apply(func, axis = 1)
+
 def advLogplot(df, curves, track_styles, title = None, keyZoneDF = None, zoneDF = None):
-    curveNames = list(df.columns[1:])
+    curveNames = lambda : df.columns[1:]
     refCurveName = df.columns[0]
 
     PLOT_HEADER = 60
@@ -393,9 +408,11 @@ def advLogplot(df, curves, track_styles, title = None, keyZoneDF = None, zoneDF 
         return dict(type=logType)
 
     def curveProps(curveSpec):
+        removed_props = ('xaxis', 'expr', 'unit')
         curveProperties = { **curveSpec }
-        if 'xaxis' in curveProperties:
-            del curveProperties['xaxis']
+        for p in removed_props:
+            if p in curveProperties:
+                del curveProperties[p]
         #curveProperties['name'] = ''
         return curveProperties
 
@@ -459,36 +476,46 @@ def advLogplot(df, curves, track_styles, title = None, keyZoneDF = None, zoneDF 
     for track_style in track_styles:
         trackConfig = getTrackConfig(track_style)
         for c in trackConfig['curves']:
-            if c['name'] in curveNames:
+            if 'expr' in c and c['name'] not in curveNames():
+                expr = c['expr']
+                df[c['name']] = __calc_new_col(df, expr['op'], expr['operands'])
+                curves[c['name']] = { "unit": c['unit']}
+            if c['name'] in curveNames():
                 selectedCurves.append(c['name'])
+            else: 
+                sim_curves = find_similar_curves(c['name'], curveNames())
+                if len(sim_curves) > 0:
+                    selectedCurves.append(sim_curves[0])
 
-    hoverdata = df[selectedCurves]
+    hoverdata = df[list(set(selectedCurves))]
     hovertemplate = __makeHoverTemplate(list(hoverdata.columns))
 
-    print(selectedCurves, curveNames)
-    print(hovertemplate)
-    for _,track_style in enumerate(track_styles):
+    for _idx,track_style in enumerate(track_styles):
         trackConfig = getTrackConfig(track_style)
         overlaying_idx = None
         have_track = False
+        _jdx = 0
         for jdx, curveSpec in enumerate(trackConfig['curves']):
             c = curveSpec['name']
-            if c not in curveNames:
+            if c not in curveNames():
                 print(f"Curve {c} is absent in log file")
                 continue
             have_track = True
             xaxis_index += 1
-            print(track_idx, TRACK_NUM(), X_DOMAIN(track_idx))
+            #print('>>>', track_idx, TRACK_NUM(), X_DOMAIN(track_idx))
             xaxes[f'xaxis{xaxis_index}'] = dict(domain=X_DOMAIN(track_idx), 
                                                 tickfont_color=curveSpec.get('line_color', curveSpec.get('marker_color')), 
                                                 linecolor=curveSpec.get('line_color', curveSpec.get('marker_color')),
                                                 **curveXAxisLimitProps(curveSpec),
                                                 **curveXAxisPositionProps(jdx),
                                                 **XAXIS_DEFAULT_PROPS )
-            if jdx == 0:
+            if _jdx == 0:
                 overlaying_idx = xaxis_index
             else:
                 xaxes[f'xaxis{xaxis_index}']['overlaying'] = f'x{overlaying_idx}'
+
+            _jdx += 1
+
             trace = go.Scattergl(
                 x=df[c], y=df[refCurveName], xaxis=f'x{xaxis_index}', yaxis=f'y{track_idx + 1}', **curveProps(curveSpec), 
                 customdata=hoverdata, hovertemplate=hovertemplate
@@ -502,7 +529,7 @@ def advLogplot(df, curves, track_styles, title = None, keyZoneDF = None, zoneDF 
                 showarrow=False,
                 align="center",
                 visible=True,
-                **curveLabelPositionProps(jdx, overlaying_idx),
+                **curveLabelPositionProps(jdx, overlaying_idx)
             )
             # Curve limits
             fig.add_annotation(text=f"{recursive_get(curveSpec, ['xaxis', 'range'])[0]:.1f}", 
@@ -531,7 +558,7 @@ def advLogplot(df, curves, track_styles, title = None, keyZoneDF = None, zoneDF 
             yaxes[f'yaxis{track_idx + 1}'] = {**yaxes['yaxis'], "matches": 'y', "anchor":f'x{overlaying_idx}', "showticklabels":False}
             track_idx += 1
 
-    plot_title=title or f"Logplot for {','.join(curveNames)}"
+    plot_title=title or f"Logplot for {','.join(curveNames())}"
     update_dict(yaxes['yaxis'], dict(position=0.60/TRACK_NUM(), side='left', showgrid=False, showline=False, anchor='free'))
     update_dict(yaxes['yaxis2'], dict(position=1.60/TRACK_NUM(), matches='y', side='left', showgrid=False, showline=False, anchor='free'))
     fig.update_layout(
@@ -589,7 +616,7 @@ def multi_chart(chart_titles, traces, chart_titles1 = [], traces1 = []):
     colors1 = ['magenta']
     suffixes1 = ['Injection']
     chart_cnt = len(chart_titles) + len(chart_titles1)
-    print(chart_cnt)
+    #print(chart_cnt)
     fig = make_subplots(
         cols=1, rows=chart_cnt, shared_xaxes=True,
         subplot_titles=chart_titles + chart_titles1
@@ -1041,7 +1068,7 @@ def pie_map(df, groups, names, key_col=0, x_col=1, y_col=2, anno_cols=[], anno_s
             hovertemplate=hovertemplate)
     )
     for row in df.itertuples(index=False):
-        anno_values = [ f"{0 if math.isnan(row[anno_col]) else row[anno_col]:.1f}{anno_suffixes[idx]}" for idx,anno_col in enumerate(anno_cols) ]
+        anno_values = [ f"{0 if math.isnan(row[anno_col]) else row[anno_col]:.0f}{anno_suffixes[idx]}" for idx,anno_col in enumerate(anno_cols) ]
         anno_div = "_" * 6 * len(anno_cols)
         anno_text = f'{row[key_col]}<br><sup>{anno_div}</sup><br>{"/".join(anno_values)}'
         

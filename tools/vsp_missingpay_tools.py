@@ -27,7 +27,7 @@ from xlsx_utils import XLSX
 from multiprocessing import Process
 from mlflow.artifacts import download_artifacts
 
-from base_utils import iframe, excel_link, getLogRules, PUBLISH_BASE, find_similar_curves
+from base_utils import iframe, excel_link, getLogRules, PUBLISH_BASE, find_similar_curves, standard_curve_name
 
 def create_missingpay_tools(mcp_server, data_config: DataConfig) -> List[str]:
     WELLS_DIR_PATH = "wells"
@@ -352,7 +352,7 @@ def create_missingpay_tools(mcp_server, data_config: DataConfig) -> List[str]:
             # view training result
             out_file_relative_path = get_training_result(target_curve, target_well, model_type)
 
-            return {"text": iframe(out_file_relative_path)}
+            return {"text": iframe(out_file_relative_path, height="500px")}
         except Exception as e:
             traceback.print_exc()
             return {"text": f"Tool failed: {str(e)}"}
@@ -432,7 +432,7 @@ def create_missingpay_tools(mcp_server, data_config: DataConfig) -> List[str]:
             if not target_well:
                 raise Exception("Please provide specific target well for calculation")
 
-            log_rule = getLogRules(target_curve)
+            log_rule = getLogRules(standard_curve_name(target_curve))
             print('----->', log_rule)
             if log_rule is None:
                 raise Exception(f"Don't know how to create log curve {target_curve}")
@@ -453,14 +453,16 @@ def create_missingpay_tools(mcp_server, data_config: DataConfig) -> List[str]:
                 return score
 
             all_curves = get_curves_in_well(target_well)
-            missing_input_curves = {}
+            input_curve_flags = {}
             for c in log_rule:
-                if len(find_similar_curves(c, all_curves)):
-                    missing_input_curves[c] = 0
+                sim_curves = find_similar_curves(c, all_curves)
+                if len(sim_curves):
+                    input_curve_flags[c] = 0
                 else:
-                    missing_input_curves[c] = 1
+                    input_curve_flags[c] = 1
             target_well_input_features = set(log_rule)
-            target_well_missing_input_features = { c for c in missing_input_curves if missing_input_curves[c] >0 }
+            target_well_available_input_features = { c for c in input_curve_flags if input_curve_flags[c] == 0 }
+            target_well_missing_input_features = { c for c in input_curve_flags if input_curve_flags[c] > 0 }
 
             well_infos = None
             if not wells:
@@ -501,25 +503,24 @@ def create_missingpay_tools(mcp_server, data_config: DataConfig) -> List[str]:
             opt2_input_features = [c for c in log_rule if top5[c].sum() == 5]
             opt2_input_missing = [c for c in log_rule if top5[c].sum() < 5]
             # conclude
-            print(set(list_curve), set(missing_input_curves), set(list_curve) - set(missing_input_curves))
             answer = f'''
 ###  Analysis on target well {target_well}:
 
-1. Important input curves available:
+1. Important input curves: <span style='color: blue'>{','.join(list(target_well_input_features))}</span>
 
-- {'\n- '.join(list(target_well_input_features))}
+2. Important input curves available: <span style='color: blue;background-color: yellow'>{','.join(list(target_well_available_input_features))}</span>
 
-2. The following important input curves are missing: {','.join(target_well_missing_input_features) or None}
+3. The following important input curves are missing: <span style='color:red;background-color:yellow'>{','.join(target_well_missing_input_features) or None}</span>
 
 ### For calculating _{target_curve}_ in well _{target_well}_ consider the following suggestions:
-
-1. Using nearby wells: {",".join(opt1_wells)} with input curves {",".join(opt1_input_features)} 
+1. Input curves can only be <span style='color: blue'>{",".join(list(target_well_available_input_features))}</span>
+2. Using nearby wells: <span style='color: blue'>{",".join(opt1_wells)}</span> with input curves <span style='color: blue'>{",".join(opt1_input_features)}</span>
 (missing: {",".join(opt1_input_missing) or 'None'}). 
-The most distant well is {opt1_top5_most_distance} metres away from {target_well}.
+The most distant well is <span style='color: blue'>{opt1_top5_most_distance:.0f}</span> metres away from {target_well}.
 Also consider reconstructing missing curves before calculating {target_curve}
-2. Using wells with most available data: {",".join(opt2_wells)} with input curves {",".join(opt2_input_features)}
+3. Using wells with most available data: <span style='color: blue'>{",".join(opt2_wells)}</span> with input curves <span style='color: blue'>{",".join(opt2_input_features)}</span>
 (missing: {",".join(opt2_input_missing) or 'None'}). 
-The most distant well is {opt2_top5_most_distance} metres away from {target_well}.
+The most distant well is <span style='color: blue'>{opt2_top5_most_distance:.0f}</span> metres away from {target_well}.
 
 The above conclusions are drawn from {excel_link(publish_path, label="here")}
 '''

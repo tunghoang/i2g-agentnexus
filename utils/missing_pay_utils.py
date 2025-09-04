@@ -330,7 +330,7 @@ def __rename_dup_columns(df):
     new_columns = []
     for c in columns:
         if c in dup_names:
-            cnt = counter[c] + 1
+            cnt = counters[c] + 1
             counters[c] = cnt
             new_columns.append(f"{c}:{cnt}")
         else:
@@ -474,7 +474,12 @@ def prepare_las_training_data(wells: list[str], curves: list[str]) -> np.ndarray
     all_data = []
     for well in wells:
         df = read_curves_from_las(well, curves)
-        df_cleaned = df.dropna()
+        all_curves = list(df.columns)
+        selected_curves = []
+        for c in curves:
+            candidate = find_similar_curves(c, all_curves)
+            selected_curves.append(candidate[-1])
+        df_cleaned = df[selected_curves].dropna()
         data = df_cleaned.values
         if data is not None:
             all_data.append(data)
@@ -575,9 +580,13 @@ def make_pseudo_log(
 
         # write to las file and comparison logplot
         tmp_las = None
-        #input_data = prepare_las_training_data([target_well], curves)
         input_df = read_curves_from_las(target_well, curves)
-        input_df = input_df.dropna()
+        selected_curves = []
+        for c in curves:
+            all_curves = input_df.columns
+            candidates = find_similar_curves(c, all_curves)
+            selected_curves.append(candidates[-1])
+        input_df = input_df[selected_curves].dropna()
         input_data = input_df.values
 
         if len(input_data) > 0:

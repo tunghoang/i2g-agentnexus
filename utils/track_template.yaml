@@ -55,7 +55,7 @@ INTERP1:
   curves:
     - name: PHIE
       mode: lines
-      line_color: brown
+      line_color: blue
       xaxis:
         range: [1, 0.]
     - name: BVW
@@ -65,9 +65,10 @@ INTERP1:
           - PHIE
           - SW
       mode: lines
+      unit: '%'
+      line_color: green
       xaxis:
         range: [1, 0.]
-      line_color: green
     - name: SW
       mode: lines
       line_color: cyan
@@ -80,10 +81,10 @@ INTERP2:
       mode: lines
       line_color: maroon
       xaxis:
-        range: [1, 0.]
+        range: [0, 1.]
     - name: PHIE
       mode: lines
-      line_color: brown
+      line_color: blue
       xaxis:
         range: [1, 0.]
 
@@ -98,7 +99,7 @@ INTERP:
       mode: lines
       line_color: blue
       xaxis:
-        range: [0, 1.]
+        range: [1, 0.]
     - name: SW
       mode: lines
       line_color: green

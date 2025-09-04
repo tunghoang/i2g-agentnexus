@@ -1441,6 +1441,7 @@ class ToolExecutingAgentExecutor:
 ## For missing pay:
 - User asks "View checklist table of well logs data" → IMMEDIATELY call well_checklist_table with wells if user provided or else wells=''
 - User asks "Generate logplot for WELL, then IMMEDIATELY call build_logplot with well=WELL and track_templates if user provided or track_templates=GR,LLD,NPHI
+- User asks "show well interpretation results for WELL", then IMMEDIATELY call build_logplot with well=WELL and track_templates=GR,LLD,NPHI,INTERP1,INTERP2
 - User asks "Generate well_logplot for WELL, then IMMEDIATELY call well_logplot with well=WELL and curves if user provided or curves=[]
 - "planset" is equivalent with "logplot"
 - User asks "plot histogram for CURVES from well WELL", then IMMEDIATELY call plot_histogram_well with WELL and CURVES and num_bins=10 if it is not provided

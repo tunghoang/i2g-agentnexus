@@ -163,14 +163,14 @@ def create_plot_tools(mcp_server: FastMCP, data_config: DataConfig) -> List[str]
             df = read_curves_from_las(well, curves)
             las_curves = read_curves_meta_data_from_las(well)
             #df = df.reset_index()
-            if len(curves) > 0:
-                selected_curves = [df.columns[0]]
-                for c in curves:
-                    all_curves = get_curves_in_well(well)
-                    sim_curves = find_similar_curves(c, all_curves)
-                    selected_curves += sim_curves
-                selected_curves = list(set(selected_curves))
-                df = df[selected_curves]
+            #if len(curves) > 0:
+            #    selected_curves = [df.columns[0]]
+            #    for c in curves:
+            #        all_curves = get_curves_in_well(well)
+            #        sim_curves = find_similar_curves(c, all_curves)
+            #        selected_curves += sim_curves
+            #    selected_curves = list(set(selected_curves))
+            #    df = df[selected_curves]
             fig = logplot(df, las_curves)
             dest_path = Naming.dest_path(f"{well}_curves", category='well_logplot', format='html')
             publish_path = Naming.publish_path(f"{well}_curves", category='well_logplot', format='html')

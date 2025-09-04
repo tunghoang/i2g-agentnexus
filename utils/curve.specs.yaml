@@ -37,7 +37,7 @@ PHIE:
   mode: lines
   line_color: brown
   xaxis:
-    range: [0, 1.]
+    range: [1., 0.]
 SW:
   mode: lines
   line_color: cyan

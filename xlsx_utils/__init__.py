@@ -128,7 +128,6 @@ class XLSX:
         zoneDF[columns[1]] = markerDF[columns[1]]
         zoneDF['start'] = markerDF[columns[5]].astype(float)
         zoneDF['stop'] = markerDF[columns[5]].shift(periods=-1).astype(float)
-        print(zoneDF)
         return zoneDF
 
     @classmethod
@@ -138,8 +137,6 @@ class XLSX:
             _well = re.sub(r'^.+\-', '', well)
 
         markerDF = cls.extract_markers(_well, file_path)
-        print("++++++++++++++++++")
-        print(markerDF)
         columns = list(markerDF.columns)
 
         markerDF = markerDF.sort_values(columns[5])
@@ -148,8 +145,6 @@ class XLSX:
             return None, None
         max_depth = markerDF.iloc[-1][columns[5]]
         keyMarkerDF = markerDF[markerDF[columns[1]].str.startswith('SH')]
-        print("++++++++++++++++++")
-        print(keyMarkerDF)
 
         keyZoneDF = pd.DataFrame()
         try:
@@ -160,7 +155,7 @@ class XLSX:
             keyZoneDF['stop'] = keyMarkerDF[columns[5]].shift(periods=-1).astype(float)
             keyZoneDF.iat[-1, 4] = max_depth
         except:
-            traceback.print_exc()
+            pass
 
         zoneDF = pd.DataFrame()
         zoneDF[columns[0]] = markerDF[columns[0]]
@@ -178,14 +173,12 @@ class XLSX:
     @classmethod
     def extract_layers(cls, file_path=None):
         _file_path = file_path or Naming.default_perforation_file(category='raw')
-        print(_file_path)
         xlsx_file = MemoryCache.get_instance().get(_file_path)
         if xlsx_file is None:
             xlsx_file = pd.ExcelFile(Naming.data_path(_file_path), engine='openpyxl')
             MemoryCache.get_instance().put(_file_path, xlsx_file)
         df = xlsx_file.parse(0, skiprows=3, header=None)
         layers = df.iloc[:, 5].unique()
-        print(type(layers), layers)
         return layers
     @classmethod
     def extract_production_data(cls, 
@@ -214,10 +207,8 @@ class XLSX:
         if colnames and len(colnames):
             retrieved_cols = { colnames[idx]: idxcols[idx] for idx,_ in enumerate(idxcols) }
             ori_cols = [str(df.columns[c]) for c in retrieved_cols.values()]
-            print(ori_cols)
             new_cols = list(retrieved_cols.keys())
             col_mapping = { c: new_cols[idx] for idx,c in enumerate(ori_cols) }
-            print(col_mapping)
             
             df = df[ori_cols]
             df = df.rename( columns=col_mapping )
@@ -225,8 +216,6 @@ class XLSX:
             df = df[[str(df.columns[c]) for c in idxcols]]
         df[df.columns[1]] = df[df.columns[1]].astype(str)
         df[df.columns[0]] = pd.to_datetime(df[df.columns[0]]).astype(str)
-        print(df)
-        print(wells)
         if wells and len(wells) > 0:
             df = df[df[df.columns[1]].isin(wells)]
         return df
@@ -246,12 +235,9 @@ class XLSX:
         pro_df = xlsx_file.parse(PRO_SHEET, header=0)
         pro_df = pro_df.rename(columns={pro_df.columns[0]: "Date"})
         pro_df.columns = pro_df.columns.astype(str)
-        print('production_df 1', pro_df)
-        print(pro_df.columns, wells)
         pro_df = pro_df[ ['Date'] + [ w for w in wells if w in list(pro_df.columns) ] ]
         pro_df = pro_df.set_index('Date')
         pro_df = pro_df.dropna(how='all').reset_index()
-        print('production_df', pro_df)
 
         inj_df = xlsx_file.parse(INJ_SHEET, header=0)
         inj_df = inj_df.rename(columns={inj_df.columns[0]: "Date"})
@@ -259,7 +245,6 @@ class XLSX:
         inj_df = inj_df[ ['Date'] + [ w for w in wells if w in list(inj_df.columns) ] ]
         inj_df = inj_df.set_index('Date')
         inj_df = inj_df.dropna(how='all').reset_index()
-        print(inj_df)
         return {"production": pro_df, "injection": inj_df}
 
     @classmethod

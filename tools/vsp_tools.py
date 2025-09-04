@@ -846,7 +846,7 @@ def create_vsp_tools(mcp_server, data_config: DataConfig) -> List[str]:
                 hovertemplate = "<br>".join(hovertemplate)
 
                 fig = pie_map(result_df, groups = [[10,11], []], names=[['Oilcum/1000', 'WaterProdCum/1000'], ['WaterInjCum/1000', '']], 
-                    anno_cols = [7,8,3,9],
+                    anno_cols = [7,8,3,9], anno_suffixes = ['','','%',''],
                     radius_cols=[12, 13], hovertemplate=hovertemplate, 
                     color_palettes=[
                         ['rgba(154, 205, 50, 0.7)', 'rgba(255, 215, 181, 0.7)'],
