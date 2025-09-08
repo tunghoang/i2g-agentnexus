@@ -7,6 +7,9 @@ import yaml
 import numpy as np
 import pandas as pd
 
+import plotly.graph_objects as go
+from plotly.subplots import make_subplots
+
 from glob import glob, iglob
 from multiprocessing import Event
 from datetime import datetime, timedelta, timezone
@@ -19,7 +22,9 @@ from store import Store
 import mlflow
 from mlflow.tracking import MlflowClient
 from mlflow.entities import ViewType
+from mlflow.artifacts import download_artifacts
 
+# regression
 from sklearn.tree import DecisionTreeRegressor
 from sklearn.linear_model import HuberRegressor, Lasso, LinearRegression
 from sklearn.ensemble import RandomForestRegressor
@@ -27,17 +32,31 @@ from sklearn.svm import SVR
 from sklearn.neural_network import MLPRegressor
 from xgboost import XGBRegressor
 
-from sklearn.model_selection import train_test_split
+# classification
+from sklearn.tree import DecisionTreeClassifier
+from sklearn.linear_model import LogisticRegression
+from sklearn.neural_network import MLPClassifier
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.svm import SVC
+from xgboost import XGBClassifier
+
+from sklearn.model_selection import train_test_split, learning_curve
 from sklearn.metrics import (
+    # regression
     mean_squared_error, r2_score,
     mean_absolute_percentage_error,
     mean_absolute_error, max_error,
     explained_variance_score,
+    # classification
+    accuracy_score,
+    precision_score,
+    recall_score,
+    f1_score,
+    roc_auc_score,
+    confusion_matrix, 
+    roc_curve, 
+    precision_recall_curve
 )
-
-from sklearn.model_selection import learning_curve
-import plotly.graph_objects as go
-from mlflow.artifacts import download_artifacts
 
 from utils.plot_utils import logplot
 from base_utils import aliases_of_curve, standard_curve_name, find_similar_curves, getUnit, get_mlflow_experiment, human_readable_diff, parse_json_param, parse_float_param, get_mlflow_artifact_path, seconds_ago_to_timestamp
@@ -517,7 +536,133 @@ def train_model(x_train: np.ndarray, y_train: np.ndarray, model_type: str, **kwa
     model = models[model_type](**model_params)
     model.fit(x_train, y_train)
     return model
-    
+
+def train_classifier(x_train: np.ndarray, y_train: np.ndarray, model_type: str, **kwargs):
+    models = {
+        "decision_tree": DecisionTreeClassifier,
+        "logistic": LogisticRegression,
+        "neural_network": MLPClassifier,
+        "random_forest": RandomForestClassifier,
+        "svm": SVC,
+        "xgboost": XGBClassifier,
+    }
+
+    if model_type not in models:
+        raise ValueError(f"Unsupported model: '{model_type}'")
+
+    default_params = {
+        "decision_tree": {"max_depth": 10, "random_state": 42},
+        "logistic": {"max_iter": 1000},
+        "neural_network": {"hidden_layer_sizes": (100,), "activation": "relu", "max_iter": 500},
+        "random_forest": {"n_estimators": 100, "max_depth": 10, "random_state": 42},
+        "svm": {"probability": True},  # for ROC AUC
+        "xgboost": {"use_label_encoder": False, "eval_metric": "logloss"},
+    }
+
+    model_params = {**default_params.get(model_type, {}), **kwargs}
+    model = models[model_type](**model_params)
+    model.fit(x_train, y_train)
+    return model
+
+def make_pseudo_log_classifier(
+        target_curve: str = '',
+        target_well: str = '',
+        curves: list[str] = [],
+        wells: list[str] = [],
+        model_type: str = "random_forest",
+        model_params: dict = {},
+        started_event: Event = None,
+        exp_name: str = "pseudo_logs_classifier",
+    ):
+    client = MlflowClient()
+    experiment = get_mlflow_experiment(client, name=exp_name)
+    model_name = f"{target_curve}_{target_well}_{model_type}"
+
+    with mlflow.start_run(experiment_id=experiment.experiment_id, run_name=model_name) as run:
+        mlflow.log_param("target_curve", target_curve)
+        mlflow.log_param("target_well", target_well)
+        mlflow.log_param("model_type", model_type)
+        mlflow.log_param("input_curves", json.dumps(curves))
+        mlflow.log_param("input_wells", json.dumps(wells))
+        mlflow.log_param("model_params", json.dumps(model_params))
+
+        if started_event:
+            started_event.set()
+
+        all_curves = [c for c in curves if c != target_curve] + [target_curve]
+        dataset = prepare_las_training_data(wells, all_curves)
+        if len(dataset) == 0:
+            raise ValueError(f"No valid data found for curves {curves} in wells {wells}")
+
+        # split
+        train_data, test_data = train_test_split(dataset, test_size=0.2, random_state=42, shuffle=True)
+        x_train = train_data[:, :-1]
+        y_train = (train_data[:, -1] > 0).astype(int) # binary
+        x_test = test_data[:, :-1]
+        y_test  = (test_data[:, -1] > 0).astype(int)
+
+        # train
+        model = train_classifier(x_train, y_train, model_type, **model_params)
+        mlflow.sklearn.log_model(model, name=model_name, input_example=x_train[:5])
+
+        # predict
+        y_pred = model.predict(x_test)
+        y_proba = model.predict_proba(x_test)[:, 1] if hasattr(model, "predict_proba") else None
+
+        # metrics
+        acc = accuracy_score(y_test, y_pred)
+        prec = precision_score(y_test, y_pred, zero_division=0)
+        rec = recall_score(y_test, y_pred, zero_division=0)
+        f1 = f1_score(y_test, y_pred, zero_division=0)
+        auc = roc_auc_score(y_test, y_proba) if y_proba is not None else None
+
+        mlflow.log_metric("accuracy", acc)
+        mlflow.log_metric("precision", prec)
+        mlflow.log_metric("recall", rec)
+        mlflow.log_metric("f1_score", f1)
+        mlflow.log_metric("roc_auc", auc)
+        
+        # write to las file and comparison logplot
+        input_df = read_curves_from_las(target_well, curves)
+        selected_curves = [
+            find_similar_curves(c, input_df.columns)[-1] for c in curves
+        ]
+        input_df = input_df[selected_curves].dropna()
+        input_data = input_df.values
+
+        if input_data.size > 0:
+            predicted_curve = model.predict(input_data)
+            tmp_las = write_curve_to_las(
+                target_well, 
+                target_curve, 
+                curves, 
+                predicted_curve, 
+                run_id=run.info.run_id
+            )
+            mlflow.log_artifact(tmp_las, artifact_path="las")
+            mlflow.log_param("las_file", os.path.basename(tmp_las))
+            os.remove(tmp_las)
+
+            # Comparison logplot
+            input_df[f"{target_curve}:*"] = predicted_curve
+            plot_df = read_curves_from_las(target_well, [target_curve])
+            plot_df[f"{target_curve}:*"] = input_df[f"{target_curve}:*"]
+            las_curves = read_curves_meta_data_from_las(target_well)
+            las_curves.append(lasio.las_items.CurveItem(mnemonic=f"{target_curve}:*", unit="v/v"))
+
+            fig = logplot(plot_df,las_curves)
+            tmp_plot = "visualization.html"
+            fig.write_html(tmp_plot)
+            mlflow.log_artifact(tmp_plot, artifact_path="plots")
+            os.remove(tmp_plot)
+        
+        # evaluation
+        fig = visualize_classifier_result(model, dataset)
+        tmp_html = "plot.html"
+        fig.write_html(tmp_html)
+        mlflow.log_artifact(tmp_html, artifact_path="plots")
+        os.remove(tmp_html)
+
 def make_pseudo_log(
         target_curve: str = '',
         target_well: str = '',
@@ -650,6 +795,67 @@ def visualize_training_result(model, data: np.ndarray):
         yaxis_title='R² Score',
         template='plotly_white'
     )
+    return fig
+
+def visualize_classifier_result(model, dataset):
+    x = dataset[:, :-1]
+    y = (dataset[:, -1] > 0).astype(int) # binary
+
+    y_pred = model.predict(x)
+    y_proba = model.predict_proba(x)[:, 1] if hasattr(model, "predict_proba") else None
+
+    fig = make_subplots(
+        rows=1, cols=3,
+        subplot_titles=("Confusion Matrix", "ROC Curve", "Precision-Recall Curve"),
+        horizontal_spacing=0.15
+    )
+
+    # Confusion Matrix
+    cm = confusion_matrix(y, y_pred)
+    fig.add_trace(
+        go.Heatmap(
+            z=cm,
+            x=["Pred 0", "Pred 1"],
+            y=["True 0", "True 1"],
+            colorscale="Blues",
+            text=cm,
+            texttemplate="%{text}",
+            showscale=False
+        ),
+        row=1, col=1
+    )
+
+    # ROC Curve
+    if y_proba is not None:
+        fpr, tpr, _ = roc_curve(y, y_proba)
+        fig.add_trace(
+            go.Scatter(x=fpr, y=tpr, mode="lines", name="ROC curve"),
+            row=1, col=2
+        )
+        fig.add_trace(
+            go.Scatter(x=[0, 1], y=[0, 1], mode="lines", name="Random", line=dict(dash="dash")),
+            row=1, col=2
+        )
+        fig.update_xaxes(title_text="False Positive Rate", row=1, col=2)
+        fig.update_yaxes(title_text="True Positive Rate", row=1, col=2)
+
+    # Precision-Recall Curve
+    if y_proba is not None:
+        prec, rec, _ = precision_recall_curve(y, y_proba)
+        fig.add_trace(
+            go.Scatter(x=rec, y=prec, mode="lines", name="PR curve"),
+            row=1, col=3
+        )
+        fig.update_xaxes(title_text="Recall", row=1, col=3)
+        fig.update_yaxes(title_text="Precision", row=1, col=3)
+
+    fig.update_layout(
+        title="Classification Evaluation Results",
+        width=1400,
+        height=500,
+        showlegend=False
+    )
+
     return fig
 
 def normalize_filter_expr(expr: str) -> str:
