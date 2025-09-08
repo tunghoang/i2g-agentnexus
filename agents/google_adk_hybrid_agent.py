@@ -1301,12 +1301,14 @@ class ToolExecutingAgentExecutor:
                 return {"status": "error", "message": str(e)}
         tools.append(water_analysis_map)
 
-        def production_map(tool_context: ToolContext, wells: list[str] = [], year: int = 0, data: str = 'monthly_rate') -> dict:
-            """View production map for input wells in a year. If a list of wells is specified, show the map of those wells. If the well list is empty, show the map for all existing wells
+        def production_map(tool_context: ToolContext, wells: list[str] = [], year: int = 0, month:int = 0, day:int = 0, data: str = 'monthly_rate') -> dict:
+            """View production map for input wells up to a date specified by year, month, and day. If a list of wells is specified, show the map of those wells. If the well list is empty, show the map for all existing wells
             
             Args:
                 wells: input wells
                 year: year
+                month: month
+                day: day
                 data (str): data to view on map. Supported:
                     - 'cv' for "cumulated volume"
                     - 'monthly_rate' for "monthly rate"
@@ -1316,9 +1318,9 @@ class ToolExecutingAgentExecutor:
             """
             try:
                 executor_instance.logger.info(f"Executing production_map for wells {wells}")
-                result = executor_instance._execute_mcp_tool("production_map", json.dumps(dict(wells=wells, year=year, data=data)))
+                result = executor_instance._execute_mcp_tool("production_map", json.dumps(dict(wells=wells, year=year,month=month,day=day,data=data)))
                 tool_context.actions.skip_summarization = True
-                return {"status": "success", "result": result }
+                return {"status": "success", "result": result}
             except Exception as e:
                 traceback.print_exc()
                 return {"status": "error", "message": str(e)}

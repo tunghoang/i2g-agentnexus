@@ -1069,7 +1069,7 @@ def pie_map(df, groups, names, key_col=0, x_col=1, y_col=2, anno_cols=[], anno_s
     )
     for row in df.itertuples(index=False):
         anno_values = [ f"{0 if math.isnan(row[anno_col]) else row[anno_col]:.0f}{anno_suffixes[idx]}" for idx,anno_col in enumerate(anno_cols) ]
-        anno_div = "_" * 6 * len(anno_cols)
+        anno_div = "_" * 5 * len(anno_cols)
         anno_text = f'{row[key_col]}<br><sup>{anno_div}</sup><br>{"/".join(anno_values)}'
         
         fig.add_annotation(text=anno_text, visible=True, showarrow=False,
