@@ -73,7 +73,7 @@ def train_crm(df, tau_selection = 'per-pair', constraints = 'up-to one'):
     crm = CRM(tau_selection=tau_selection, constraints=constraints)
     crm.fit(df_train[production_wells].values, df_train[injection_wells].values, df_train["Time"].astype(np.float64).values)
     q_train = crm.predict()
-    q_test = crm.predict(injection=df_validate[injection_wells].values, time=df_validate['Time'].astype(np.float64).values)
+    q_test = crm.predict(time=df_validate['Time'].astype(np.float64).values, injection=df_validate[injection_wells].values)
 
     # TODO
     start_date = df['Date'].values[-1]
@@ -89,7 +89,7 @@ def train_crm(df, tau_selection = 'per-pair', constraints = 'up-to one'):
     df_future['Date'] = df_future['Date'].astype(str)
     df_future['Time'] = df_future['Date'].apply(getdaysofmonth).cumsum() + lastTime
     print(df_future)
-    q_future = crm.predict(injection=df_future[injection_wells].values, time=df_future['Time'].astype(np.float64).values)
+    q_future = crm.predict(time=df_future['Time'].astype(np.float64).values, injection=df_future[injection_wells].values)
 
     metrics_df = pd.DataFrame({'Well': production_wells})
     MAEs = []

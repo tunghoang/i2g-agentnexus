@@ -881,3 +881,56 @@ def get_wells_has_curve(curve: str):
             matched_wells.append({'well': w, 'curves': sim_curves, 'all_curves': curves})
 
     return matched_wells
+
+############ Clastic Interpretation ################
+
+gr_clean, gr_clay = 40, 135
+sp_clean, sp_clay = -60,2
+
+neut_clean1, den_clean1 = 15, 2.6
+neut_clean2, den_clean2 = 40, 2
+neut_clay, den_clay =47.5, 2.8
+
+#VCLGR
+def vclgr(gr_log, gr_clean, gr_clay, correction=None):
+
+    igr=(gr_log - gr_clean)/(gr_clay - gr_clean)       #Linear Gamma Ray
+
+    if correction == "young":
+        vclgr_larionov_young= 0.083*( 2**(3.7*igr) - 1 )   #Larionov (1969) - Tertiary rocks
+        vclgr=vclgr_larionov_young
+    elif correction == "older":
+        vclgr_larionov_old = 0.33*( 2**(2*igr) - 1 )        #Larionov (1969) - Older rocks
+        vclgr = vclgr_larionov_old
+    elif correction=="clavier":
+        vclgr_clavier = 1.7 - (3.38 - (igr + 0.7)**2)**0.5    #Clavier (1971)
+        vclgr=vclgr_clavier
+    elif correction=="steiber":
+        vclgr_steiber = 0.5*igr/(1.5 - igr)               #Steiber (1969) - Tertiary rocks
+        vclgr=vclgr_steiber
+    else:
+        vclgr=igr
+    return vclgr
+
+#VCLSP
+def vclsp(sp_log, sp_clean, sp_clay):
+    vclsp=(sp_log - sp_clean)/(sp_clay - sp_clean)
+    return vclsp
+
+#VCLRT
+def vclrt(rt_log, rt_clean,rt_clay):
+    vrt=(rt_clay/rt_log)*(rt_clean - rt_log)/(rt_clean - rt_clay)
+    if (rt_log > 2* rt_clay):
+        vclrt = 0.5 * (2 * vrt)** (0.67*(vrt + 1)) 
+    else:
+        vclrt = vrt
+    return vclrt
+
+#VCLND
+def vclnd(neut_log,den_log,neut_clean1,den_clean1,neut_clean2,den_clean2,neut_clay,den_clay):
+    term1 = (den_clean2 - den_clean1)*(neut_log - neut_clean1)-(den_log - den_clean1)*(neut_clean2 - neut_clean1)
+    term2 =(den_clean2 - den_clean1)*(neut_clay - neut_clean1)-(den_clay - den_clean1)*(neut_clean2 - neut_clean1)
+    vclnd=term1/term2
+    return vclnd
+
+
