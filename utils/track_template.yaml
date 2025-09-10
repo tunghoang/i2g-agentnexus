@@ -55,7 +55,7 @@ INTERP1:
   curves:
     - name: PHIE
       mode: lines
-      line_color: blue
+      line_color: black
       xaxis:
         range: [1, 0.]
     - name: BVW
@@ -65,13 +65,15 @@ INTERP1:
           - PHIE
           - SW
       mode: lines
+      fill: tozerox
+      fillcolor: aqua
       unit: '%'
-      line_color: green
+      line_color: aqua
       xaxis:
         range: [1, 0.]
     - name: SW
       mode: lines
-      line_color: cyan
+      line_color: blue
       xaxis:
         range: [1, 0.]
     
@@ -79,14 +81,21 @@ INTERP2:
   curves:
     - name: VSHALE
       mode: lines
-      line_color: maroon
+      line_color: green
+      fill: tozerox
+      fillcolor: '#aaffaa'
+      fill2: tonextx
+      fill2color: '#ffff00'
+      fill2name: "      Sandstone     "
       xaxis:
-        range: [0, 1.]
+        range: [0., 1.]
     - name: PHIE
       mode: lines
       line_color: blue
+      fill: tozerox
+      fillcolor: 'white'
       xaxis:
-        range: [1, 0.]
+        range: [1., 0.]
 
 INTERP:
   curves:

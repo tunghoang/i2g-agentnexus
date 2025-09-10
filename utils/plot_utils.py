@@ -408,7 +408,7 @@ def advLogplot(df, curves, track_styles, title = None, keyZoneDF = None, zoneDF 
         return dict(type=logType)
 
     def curveProps(curveSpec):
-        removed_props = ('xaxis', 'expr', 'unit')
+        removed_props = ('xaxis', 'expr', 'unit', 'fill2', 'fill2color', 'fill2name')
         curveProperties = { **curveSpec }
         for p in removed_props:
             if p in curveProperties:
@@ -495,11 +495,14 @@ def advLogplot(df, curves, track_styles, title = None, keyZoneDF = None, zoneDF 
         overlaying_idx = None
         have_track = False
         _jdx = 0
-        for jdx, curveSpec in enumerate(trackConfig['curves']):
+        for curveSpec in trackConfig['curves']:
             c = curveSpec['name']
             if c not in curveNames():
-                print(f"Curve {c} is absent in log file")
-                continue
+                sim_curves = find_similar_curves(c, curveNames())
+                if len(sim_curves) == 0:
+                    print(f"Curve {c} is absent in log file")
+                    continue
+                c = sim_curves[0]
             have_track = True
             xaxis_index += 1
             #print('>>>', track_idx, TRACK_NUM(), X_DOMAIN(track_idx))
@@ -507,20 +510,29 @@ def advLogplot(df, curves, track_styles, title = None, keyZoneDF = None, zoneDF 
                                                 tickfont_color=curveSpec.get('line_color', curveSpec.get('marker_color')), 
                                                 linecolor=curveSpec.get('line_color', curveSpec.get('marker_color')),
                                                 **curveXAxisLimitProps(curveSpec),
-                                                **curveXAxisPositionProps(jdx),
+                                                **curveXAxisPositionProps(_jdx),
                                                 **XAXIS_DEFAULT_PROPS )
             if _jdx == 0:
                 overlaying_idx = xaxis_index
             else:
                 xaxes[f'xaxis{xaxis_index}']['overlaying'] = f'x{overlaying_idx}'
 
-            _jdx += 1
+            if curveSpec.get('fill2', None) == 'tonextx':
+                axisProps = curveXAxisLimitProps(curveSpec)
+                v = np.max(axisProps.get('range', [0, 1000]))
+                maxtrace = go.Scattergl(
+                    x=[v]*len(df.index), y=df[refCurveName], xaxis=f'x{xaxis_index}', yaxis=f'y{track_idx + 1}', mode='lines', 
+                    fill='tozerox', fillcolor=curveSpec.get('fill2color')
+                )
+                fig.add_trace(maxtrace)
 
+            cprops = curveProps(curveSpec)
             trace = go.Scattergl(
-                x=df[c], y=df[refCurveName], xaxis=f'x{xaxis_index}', yaxis=f'y{track_idx + 1}', **curveProps(curveSpec), 
+                x=df[c], y=df[refCurveName], xaxis=f'x{xaxis_index}', yaxis=f'y{track_idx + 1}', **cprops, 
                 customdata=hoverdata, hovertemplate=hovertemplate
             )
             fig.add_trace(trace)
+
             # Curve label
             fig.add_annotation(
                 text=f"{c}({curves[c]['unit']})",
@@ -529,28 +541,58 @@ def advLogplot(df, curves, track_styles, title = None, keyZoneDF = None, zoneDF 
                 showarrow=False,
                 align="center",
                 visible=True,
-                **curveLabelPositionProps(jdx, overlaying_idx)
+                **curveLabelPositionProps(_jdx, overlaying_idx)
             )
             # Curve limits
             fig.add_annotation(text=f"{recursive_get(curveSpec, ['xaxis', 'range'])[0]:.1f}", 
                                font_color=curveSpec.get('line_color', curveSpec.get('marker_color')),
                                font_size = 10, showarrow=False, visible=True, 
-                               **curveUnitPositionProps(jdx, overlaying_idx, 'left'))
+                               **curveUnitPositionProps(_jdx, overlaying_idx, 'left'))
             fig.add_annotation(text=f"{recursive_get(curveSpec, ['xaxis', 'range'])[1]:.1f}", 
                                font_color=curveSpec.get('line_color', curveSpec.get('marker_color')),
                                font_size = 10, showarrow=False, visible=True, 
-                               **curveUnitPositionProps(jdx, overlaying_idx, 'right'))
+                               **curveUnitPositionProps(_jdx, overlaying_idx, 'right'))
+            if curveSpec.get('fill2', None) == 'tonextx':
+                _jdx += 1
+                fig.add_shape(
+                            type='rect',
+                            xref=f"x{overlaying_idx} domain", x0=0.01, x1=0.99, 
+                            yref=f"y domain", ysizemode='pixel',yanchor=1,
+                            y0=TRACK_HEADER - 2*TRACK_TITLE - _jdx*CURVE_HEADER - 6,
+                            y1=TRACK_HEADER - TRACK_TITLE - _jdx*CURVE_HEADER - 6,
+                            visible=True, line_color='#c0c0c0', line_width=1, fillcolor=curveSpec.get('fill2color'),
+                            layer='above'
+                            )
+                '''
+                fig.add_shape(
+                    type="rect",
+                    xref=f'x{xdomain} domain', x0=0, x1=1,
+                    yref='y domain', ysizemode='pixel', yanchor=yanchor,y0=TRACK_HEADER,y1=TRACK_HEADER - TRACK_TITLE,
+                    visible=True, fillcolor='#f5deb3',
+                    line_width=0.5,
+                    line_color=borderColor(),
+                    #row=1,
+                    #col=colIdx + 1,
+                )'''
+                fig.add_annotation(text=curveSpec.get('fill2name'), 
+                               font=dict(color=curveSpec.get('line_color', curveSpec.get('marker_color')), size=10),
+                               bgcolor=curveSpec.get('fill2color'),
+                               showarrow=False,
+                               align="center",
+                               visible=True,
+                               **curveLabelPositionProps(_jdx, overlaying_idx))
             # Track grid
             limits = recursive_get(curveSpec, ['xaxis' , 'range']) or [0.0, 1.0]
             nticks = recursive_get(curveSpec, ['xaxis' , 'nticks']) or 5
             step = abs(limits[1] - limits[0])/nticks
             ticks = recursive_get(curveSpec, ['xaxis', 'ticks']) or [(i + 1)*step for i in range(nticks - 1)]
-            if jdx == 0:
+            if _jdx == 0:
                 for x in ticks:
                     fig.add_shape(type='line', 
                                   xref=f"x{overlaying_idx}", x0=x, x1=x,
                                   yref='y domain', y0=0, y1=1,
                                   line_width=0.5, line_color=gridcolor(), layer="below")
+            _jdx += 1
             
         if have_track:
             __track_header(fig, TRACK_HEADER, xdomain=overlaying_idx, colIdx=track_idx)

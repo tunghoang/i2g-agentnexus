@@ -736,7 +736,7 @@ class ToolExecutingAgentExecutor:
                 dict: results
             """
             try:
-                executor_instance.logger.info("Executing train_crm_model from injection wells {i_wells} and production wells {o_wells}")
+                executor_instance.logger.info(f"Executing train_crm_model from injection wells {i_wells} and production wells {o_wells}")
                 result = executor_instance._execute_mcp_tool('train_crm_model', json.dumps(dict(i_wells=i_wells, o_wells=o_wells)))
                 tool_context.actions.skip_summarization = True
                 return {"status": "success",
@@ -745,6 +745,26 @@ class ToolExecutingAgentExecutor:
                 executor_instance.logger.error(f"Error in train_crm_model: {e}")
                 return {"status": "error", "message": str(e)}
         tools.append(train_crm_model)
+
+        def train_crm_model_for_reservoir(tool_context: ToolContext, reservoir:str) -> dict:
+            """Train CRM Model for a reservoir
+
+            Args:
+                reservoir (str): name of reservoir
+
+            Returns:
+                dict: results
+            """
+            try:
+                executor_instance.logger.info(f"Executing train_crm_model_for_reservoir for {reservoir}")
+                result = executor_instance._execute_mcp_tool("train_crm_model_for_reservoir", json.dumps(dict(reservoir=reservoir)))
+                tool_context.actions.skip_summarization = True
+                return {"status": "success", "result": result}
+            except Exception as e:
+                traceback.print_exc()
+                executor_instance.logger.error(f"Error in train_crm_model_for_reservoir: {e}")
+                return {"status": "error", "message": str(e)}
+        tools.append(train_crm_model_for_reservoir)
 
         def production_crossplot(params: list[str], wells: list[str], xparam: str):
             """Plot production params by oilcum for wells from production data file

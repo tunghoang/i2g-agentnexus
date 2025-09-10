@@ -79,7 +79,7 @@ def getCurveRules(curve = None):
         with open('utils/curve.rules.yaml') as file:
             _allCurveRules = yaml.safe_load(file)
     if curve:
-        return _allCurveRules.get(curve)
+        return _allCurveRules.get(curve, [])
     return _allCurveRules
 
 def getCurveReversedRules(curve = None):
@@ -91,14 +91,15 @@ def getCurveReversedRules(curve = None):
             for alias in aliases:
                 _allCurveReversedRules[alias] = c
     if curve:
-        return _allCurveReversedRules.get(curve, None)
+        return _allCurveReversedRules.get(curve, curve)
     return _allCurveReversedRules
 
 def _trim_curve_index(curve_name):
     return re.sub(":.*$", "", curve_name)
 
 def standard_curve_name(curve):
-    return getCurveReversedRules(_trim_curve_index(curve))
+    sName = getCurveReversedRules(_trim_curve_index(curve))
+    return sName
 
 def aliases_of_curve(curve):
     return getCurveRules(curve)

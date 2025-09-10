@@ -2,11 +2,13 @@ import os
 import re
 import numpy as np
 import json
+import uuid
 import traceback
 from pathlib import Path
 from datetime import datetime
 from typing import List, Dict, Any
 
+from multiprocessing import Process, Event
 from pytest import param
 from sqlalchemy import over
 from config.settings import DataConfig
@@ -15,13 +17,14 @@ from naming import Naming
 from cache import MemoryCache
 import pandas as pd
 import mlflow
+from mlflow.tracking import MlflowClient
 from calendar import monthrange
 from pywaterflood import CRM
 from tools.plot_tools import getColor
 from utils.plot_utils import multi_chart, production_by_time_chart, production_by_oilcum_chart, plot_charts, pie_map
-from utils.wf_utils import build_wf_input, train_crm, get_wf_run
+from utils.wf_utils import build_wf_input, build_wf_input_for_reservoir, train_crm, get_wf_run
 from xlsx_utils import XLSX
-from base_utils import iframe, link, excel_link, normalize, PUBLISH_BASE
+from base_utils import iframe, link, excel_link, normalize, PUBLISH_BASE, get_mlflow_experiment
 
 _cACHE = dict()
 
@@ -317,61 +320,108 @@ def create_vsp_tools(mcp_server, data_config: DataConfig) -> List[str]:
         merged_df.to_csv("./data/crm_input.csv")
         return {"text": result_file}
 
+    def do_train_crm_model(iwells, owells, started_event):
+        client = MlflowClient()
+    
+        experiment = get_mlflow_experiment(client, name='wf')
+        model_name = f"CRM-{uuid.uuid4().hex[:8]}"
+
+        run = mlflow.start_run(experiment_id=experiment.experiment_id, run_name=model_name) 
+
+        mlflow.log_param("injection_wells", json.dumps(iwells))
+        mlflow.log_param("production_wells", json.dumps(owells))
+
+        if started_event:
+            started_event.set()
+
+        df = build_wf_input(iwells, owells)
+        df = df.fillna(0)
+        train_crm(df, experiment, run, 'per-pair', 'up-to one')
+
+        mlflow.end_run()
+
+    def do_train_crm_model_for_reservoir(reservoir, started_event):
+        client = MlflowClient()
+    
+        experiment = get_mlflow_experiment(client, name='wf')
+        model_name = f"CRM-{uuid.uuid4().hex[:8]}"
+
+        run = mlflow.start_run(experiment_id=experiment.experiment_id, run_name=model_name) 
+
+        mlflow.log_param("injection_wells", json.dumps([]))
+        mlflow.log_param("production_wells", json.dumps([]))
+
+        if started_event:
+            started_event.set()
+        df = build_wf_input_for_reservoir(reservoir)
+        df = df.fillna(0)
+        train_crm(df, experiment, run, 'per-pair', 'up-to one')
+        mlflow.end_run()
+
     @mcp_server.tool(
         name="train_crm_model",
-        description="Train CRM model using a input file"
+        description="Train CRM model from injection wells and production wells"
     )
     def train_crm_model(input):
         try:
             input_data = json.loads(input)
             iwells = input_data['i_wells']
             owells = input_data['o_wells']
-            df = build_wf_input(iwells, owells)
 
-            df = df.fillna(0)
-            publish_path = train_crm(df, 'per-pair', 'up-to one')
-            return {'text': iframe(publish_path)}
+            # start training
+            started_event = Event()
+            process = Process(
+                target=do_train_crm_model,
+                args=(
+                    iwells, owells,
+                    started_event,
+                )
+            )
+            process.start()
+            # wait for the training process to init
+            started_event.wait()
+            
+            # view training result
+            out_file_relative_path = get_wf_run([], [], 'CRM', 60, "")
+
+
+            #df = build_wf_input(iwells, owells)
+
+            #df = df.fillna(0)
+            #publish_path = train_crm(df, 'per-pair', 'up-to one')
+            return {'text': iframe(out_file_relative_path, height="480px")}
+
         except Exception as e:
             traceback.print_exc()
             return {"text": str(e)}
             
-    def _trainCRMModel_(**kwargs):
-        CHART_DIR = '/tmp'
+    @mcp_server.tool(
+        name="train_crm_model_for_reservoir",
+        description="Train CRM model using reservoir name"
+    )
+    def train_crm_model_for_reservoir(input):
         try:
-            input_data = json.loads(kwargs['input'])
-            filepath = input_data.get('filepath', None)
-            if not filepath:
-                return {"text": "filepath should not be None or empty" }
-
-            input_file = os.path.join('data/', filepath)
-
-            df = pd.read_csv(input_file, header=0)
-            df = df.fillna(0)
-            columns = list(df.columns)
-            production_wells = [ w for w in columns if w.startswith("P") ]
-            injection_wells = [ w for w in columns if w.startswith("I") ]
-
-            train_ratio = 0.8
-            dfsize = len(df.index)
-            df_train_size = round(dfsize * train_ratio)
-            df_train = df.iloc[:df_train_size]
-            df_validate = df.iloc[df_train_size:]
-
-            crm = CRM(tau_selection='per-pair', constraints='up-to one')
-            crm.fit(df_train[production_wells].values, df_train[injection_wells].values, df_train["Time"].astype(np.float64).values)
-            q_train = crm.predict()
-            q_test = crm.predict(injection=df_validate[injection_wells].values, time=df_validate['Time'].astype(np.float64).values)
-
-            data1 = dict(x=df['Time'].astype(np.float64).values, y=df[production_wells].values)
-            data2 = dict(x=df_train["Time"].astype(np.float64).values, y=q_train)
-            data3 = dict(x=df_validate["Time"].astype(np.float64).values, y=q_test)
-            fig = multi_chart(production_wells, data1, data2, data3)
-            dest_path = os.path.join(CHART_DIR, 'crm-chart.html')
-            fig.write_html(dest_path)
-            return {'text': 'The result has been generated in crm-chart.html'}
+            input_data = json.loads(input)
+            reservoir = input_data.get('reservoir', None)
+            # start training
+            started_event = Event()
+            process = Process(
+                target=do_train_crm_model_for_reservoir,
+                args=(
+                    reservoir,
+                    started_event,
+                )
+            )
+            process.start()
+            # wait for the training process to init
+            started_event.wait()
+            
+            # view training result
+            out_file_relative_path = get_wf_run([], [], 'CRM', 60, "")
+            return {'text': iframe(out_file_relative_path, height="480px")}
         except Exception as e:
             traceback.print_exc()
-            return {"text": "trainCRMModel failed: {str(e)}"}
+            return {"text": str(e)}
 
     @mcp_server.tool(
         name="view_wf_experiment",

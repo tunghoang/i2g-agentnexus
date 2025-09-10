@@ -43,3 +43,13 @@ SW:
   line_color: cyan
   xaxis:
     range: [1, 0.]
+RESTFLAG:
+  mode: lines
+  line_color: green
+  xaxis:
+    range: [-0.1, 1.1]
+PAYFLAG:
+  mode: lines
+  line_color: blue
+  xaxis:
+    range: [-0.1, 1.1]

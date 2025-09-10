@@ -307,7 +307,7 @@ def _read_curves_from_las_file(las_file_path, curves: list[str]):
                         break
             else: 
                 for c1 in all_cols:
-                    if standard_curve_name(c1) == c:
+                    if standard_curve_name(c1) == standard_curve_name(c):
                         selected_curves.append(c1)
                         break
         df = df[ selected_curves ]
@@ -497,6 +497,9 @@ def prepare_las_training_data(wells: list[str], curves: list[str]) -> np.ndarray
         selected_curves = []
         for c in curves:
             candidate = find_similar_curves(c, all_curves)
+            print("candidates:", candidate, c, all_curves, curves, well)
+            if len(candidate) == 0:
+                raise Exception(f"Curve {c} is not found in well {well}")
             selected_curves.append(candidate[-1])
         df_cleaned = df[selected_curves].dropna()
         data = df_cleaned.values
@@ -572,7 +575,8 @@ def make_pseudo_log_classifier(
         model_type: str = "random_forest",
         model_params: dict = {},
         started_event: Event = None,
-        exp_name: str = "pseudo_logs_classifier",
+        exp_name: str = "pseudo_logs",
+        #exp_name: str = "pseudo_logs_classifier",
     ):
     client = MlflowClient()
     experiment = get_mlflow_experiment(client, name=exp_name)
@@ -594,6 +598,7 @@ def make_pseudo_log_classifier(
         if len(dataset) == 0:
             raise ValueError(f"No valid data found for curves {curves} in wells {wells}")
 
+        print(all_curves)
         # split
         train_data, test_data = train_test_split(dataset, test_size=0.2, random_state=42, shuffle=True)
         x_train = train_data[:, :-1]
@@ -909,8 +914,9 @@ def get_training_result(
         seconds: int = 0,
         filter_expr: str = '',
         exp_name="pseudo_logs",
+        #exp_name="pseudo_logs_classifier",
     ):
-
+    print("======",target_curve, target_well, model_type, exp_name)
     client = MlflowClient()
     experiment = get_mlflow_experiment(client, name=exp_name)
 
@@ -922,6 +928,7 @@ def get_training_result(
         order_by=["start_time DESC"], 
         max_results=10
     )
+    print("RUNS:", runs)
     run_ids: list[str] = []
     model_names: list[str] = []
     curve_list: list[str] = []

@@ -11,7 +11,8 @@ from xlsx_utils import XLSX
 from datetime import datetime
 from calendar import monthrange
 import numpy as np
-from pywaterflood import CRM
+#from pywaterflood import CRM
+from utils.crm import CRM
 from base_utils import compute_metrics, get_mlflow_experiment, human_readable_diff, parse_json_param, parse_float_param, get_mlflow_artifact_path, seconds_ago_to_timestamp
 
 from utils.plot_utils import multi_chart
@@ -24,6 +25,8 @@ def getdaysofmonth(datestr:str):
 def build_wf_input(iwells:list[str], owells:list[str], production_col=2, injection_col=5) -> pd.DataFrame:
     df = XLSX.extract_production_data([*iwells, *owells], idxcols=[0, 1, 6, 10, 12, 14], colnames = None)
     print('------', df.columns)
+    df = df.dropna()
+    print("***********", df.Date.unique())
     df.sort_values(by = ['Date'], ascending = [True])
     grouped = df.groupby('Master.Wellnumber')
 
@@ -33,14 +36,15 @@ def build_wf_input(iwells:list[str], owells:list[str], production_col=2, injecti
 
     merged_df = None
     for w in owells:
+        print("PPPPPPPPPPP", w)
         colName = f"P{w.strip()}"
         colMapping = { dfs[w].columns[production_col]: colName }
         df = dfs[w].rename(columns=colMapping)
         if merged_df is None:
             merged_df = df[['Date', colName]]
         else:
-            print(merged_df.columns)
-            print(df.columns)
+            print(">>>", merged_df.columns)
+            print("<<<", df.columns)
             merged_df = pd.merge(merged_df, df[['Date', colName]], on='Date', how='outer')
 
     for w in iwells:
@@ -57,9 +61,25 @@ def build_wf_input(iwells:list[str], owells:list[str], production_col=2, injecti
     merged_df.to_csv('/tmp/crm_input.csv')
     return merged_df
 
-def train_crm(df, tau_selection = 'per-pair', constraints = 'up-to one'):
-    client = MlflowClient()
-    
+def build_wf_input_for_reservoir(reservoir: str):
+    df = XLSX.extract_production_data(idxcols=[0, 1, 6, 10, 12, 14, 22, 23, 25], colnames = None)
+    if reservoir not in df['Completion'].unique():
+        raise Exception(f"Reservoir {reservoir} not found")
+
+    df = df[ df['Completion'] == reservoir ]
+
+    owells = list(df[df["CV.WellProd"] == 1]['Master.Wellnumber'].unique())
+    iwells = list(df[df["CV.WellInj"] == 1]['Master.Wellnumber'].unique())
+    print("owells", owells)
+    print("iwells", iwells)
+    return build_wf_input(iwells, owells)
+
+def train_crm(df, experiment, run, tau_selection = 'per-pair', constraints = 'up-to one'):
+    #mlflow.log_param("injection_wells", json.dumps(injection_wells))
+    #mlflow.log_param("production_wells", json.dumps(production_wells))
+    mlflow.log_param("tau_selection", tau_selection)
+    mlflow.log_param("constraints", constraints)
+
     columns = list(df.columns)
     production_wells = [ w for w in columns if w.startswith("P") ]
     injection_wells = [ w for w in columns if w.startswith("I") ]
@@ -73,7 +93,7 @@ def train_crm(df, tau_selection = 'per-pair', constraints = 'up-to one'):
     crm = CRM(tau_selection=tau_selection, constraints=constraints)
     crm.fit(df_train[production_wells].values, df_train[injection_wells].values, df_train["Time"].astype(np.float64).values)
     q_train = crm.predict()
-    q_test = crm.predict(time=df_validate['Time'].astype(np.float64).values, injection=df_validate[injection_wells].values)
+    q_test = crm.predict(injection=df_validate[injection_wells].values, time=df_validate['Time'].astype(np.float64).values)
 
     # TODO
     start_date = df['Date'].values[-1]
@@ -91,59 +111,68 @@ def train_crm(df, tau_selection = 'per-pair', constraints = 'up-to one'):
     print(df_future)
     q_future = crm.predict(time=df_future['Time'].astype(np.float64).values, injection=df_future[injection_wells].values)
 
-    metrics_df = pd.DataFrame({'Well': production_wells})
+
+    metrics_df = pd.DataFrame()
+    well_links = []
     MAEs = []
     RMSEs = []
     MAPEs = []
     R2s = []
+
+    data4 = dict(x=df['Date'].values, y=df[injection_wells].values)
+    q_real = df[production_wells].values
     for idx,owell in enumerate(production_wells):
+        data1 = dict(x=df['Date'].values, y=q_real[:, idx].reshape(-1,1))
+        data2 = dict(x=df_train["Date"].values, y=q_train[:, idx].reshape(-1, 1))
+        data3 = dict(x=df_validate["Date"].values, y=q_test[:, idx].reshape(-1,1))
+        dataF = dict(x=df_future['Date'].values, y = q_future[:, idx].reshape(-1,1))
+        fig = multi_chart([owell], [data1, data2, data3, dataF], injection_wells, [data4])
+        dest_path = Naming.dest_path(f'crm-chart_{owell}', category='wf-crm')
+        plot = fig.write_html(dest_path, include_plotlyjs="/js/plotly-3.0.1.min.js")
+        
+        mlflow.log_artifact(dest_path, artifact_path='report')
+        well_links.append(f"<a href='crm-chart_{owell}.html' target='_blank'>{owell}</a>")
+        
         metrics = compute_metrics(df_train[owell].values, q_train[:, idx])
         MAEs.append(metrics['MAE'])
         RMSEs.append(metrics['RMSE'])
         MAPEs.append(metrics['MAPE'])
         R2s.append(metrics['R2'])
-    metrics_df = pd.DataFrame({"Well": production_wells, "MAE": MAEs, "RMSE": RMSEs, "MAPE": MAPEs, 'R²': R2s})
+    
+    metrics_df = pd.DataFrame({"Well": well_links, "MAE": MAEs, "RMSE": RMSEs, "MAPE": MAPEs, 'R²': R2s})
     table = metrics_df.to_html(index=False, escape=False)
-    data1 = dict(x=df['Date'].values, y=df[production_wells].values)
-    data2 = dict(x=df_train["Date"].values, y=q_train)
-    data3 = dict(x=df_validate["Date"].values, y=q_test)
-    dataF = dict(x=df_future['Date'].values, y = q_future)
-    data4 = dict(x=df['Date'].values, y=df[injection_wells].values)
-    fig = multi_chart(production_wells, [data1, data2, data3, dataF], injection_wells, [data4])
+    #data1 = dict(x=df['Date'].values, y=df[production_wells].values)
+    #data2 = dict(x=df_train["Date"].values, y=q_train)
+    #data3 = dict(x=df_validate["Date"].values, y=q_test)
+    #dataF = dict(x=df_future['Date'].values, y = q_future)
+    #data4 = dict(x=df['Date'].values, y=df[injection_wells].values)
+    #fig = multi_chart(production_wells, [data1, data2, data3, dataF], injection_wells, [data4])
 
     dest_path = Naming.dest_path('crm-chart', category='wf-crm')
     publish_path = Naming.publish_path('crm-chart', category='wf-crm')
-    #fig.write_html(dest_path)
-    plot = fig.to_html(full_html=False, include_plotlyjs="/js/plotly-3.0.1.min.js")
 
     template_path = "templates/wf_training_result_report_tpl.html"
     template = None
     with open(template_path, "r") as tpl_file:
         template = tpl_file.read()
     
-    report_html = template.replace("{{TABLE}}", table).replace("{{PLOT}}", plot)
+    report_html = template.replace("{{TABLE}}", table).replace("{{PLOT}}", "")
     with open(dest_path, "w") as f:
         f.write(report_html)
 
-    experiment = get_mlflow_experiment(client, name='wf')
-    model_name = f"CRM-{uuid.uuid4().hex[:8]}"
-    with mlflow.start_run(experiment_id=experiment.experiment_id, run_name=model_name) as run:
-        mlflow.log_param("injection_wells", json.dumps(injection_wells))
-        mlflow.log_param("production_wells", json.dumps(production_wells))
-        mlflow.log_param("tau_selection", tau_selection)
-        mlflow.log_param("constraints", constraints)
-        mlflow.log_param('report_file', os.path.basename(dest_path))
-        mlflow.log_artifact(dest_path, artifact_path='report')
-    return publish_path
+    mlflow.log_param('report_file', os.path.basename(dest_path))
+    mlflow.log_artifact(dest_path, artifact_path='report')
+    return get_mlflow_artifact_path(experiment.experiment_id, run.info.run_id, f'report/{os.path.basename(dest_path)}')
+    #return publish_path
 
 def wf_filter_params(iwells, owells, model_type, seconds, filter_expr):
     filter_params = []
     
     if iwells and len(iwells):
-        filter_params.append(f"params.iwells = '{iwells}'")
+        filter_params.append(f"params.injection_wells = '{iwells}'")
     
     if owells and len(owells):
-        filter_params.append(f"params.owells = '{owells}'")
+        filter_params.append(f"params.production_wells = '{owells}'")
     
     #if model_type:
     #    filter_params.append(f"params.model_type = '{model_type}'")
@@ -186,8 +215,10 @@ def get_wf_run(iwells: list[str], owells:list[str], model_type:str, seconds: int
         start_time = datetime.fromtimestamp(run.info.start_time / 1000.0)
         time_since_run = human_readable_diff(start_time, datetime.now())
         
-        iwells = parse_json_param(data.params.get("iwells", "[]"))
-        owells = parse_json_param(data.params.get("owells", "[]"))
+        iwells = parse_json_param(data.params.get("injection_wells", "[]"))
+        iwells = iwells[:5]
+        owells = parse_json_param(data.params.get("production_wells", "[]"))
+        owells = owells[:5]
         model = data.params.get("model_type", "CRM")
         tau_selection = data.params.get('tau_selection')
         constraints = data.params.get('constraints')
@@ -197,7 +228,6 @@ def get_wf_run(iwells: list[str], owells:list[str], model_type:str, seconds: int
             report_file = os.path.basename(data.params.get("report_file"))
             report_file_path = get_mlflow_artifact_path(experiment.experiment_id, run_id, artifact_path=f"report/{report_file}")
             report_file_link = f"<a href='{report_file_path[1:]}'>{run_id}</a>" if report_file else "N/A"
-
         except:
             pass
         run_ids += [report_file_link]

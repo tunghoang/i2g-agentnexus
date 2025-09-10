@@ -1,10 +1,11 @@
 from utils.missing_pay_utils import get_training_result, make_pseudo_log_classifier
 
 if __name__ == "__main__":
-    target_curve = "ABC"
-    target_well = "1210"
-    input_curves= ["GR", "Caliper"] # input features
-    training_wells = ["1602", "25", "8010"]    # training wells
+    #target_curve = "RESFLAG"
+    target_curve = "PAYFLAG"
+    target_well = "BH-1210"
+    input_curves= ["VCLAV", "PHIE", "SW"] # input features
+    training_wells = ["BH-1602", "BH-25", "BH-8010"]    # training wells
     model = "random_forest"
     params = {}
 
