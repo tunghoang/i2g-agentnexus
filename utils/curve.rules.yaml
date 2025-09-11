@@ -69,3 +69,7 @@ NC5:
 TGAS:
     - TGAS
     - T GAS MAIN
+RESF:
+    - RESFLAG
+PAYF:
+    - PAYFLAG

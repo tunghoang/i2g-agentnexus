@@ -116,12 +116,12 @@ INTERP:
         range: [1, 0.]
 FLAGS:
   curves:
-    - name: RESFLAG
+    - name: RESF
       mode: markers
       marker_color: red
       marker_size: 6
       marker_symbol: square
-    - name: PAYFLAG
+    - name: PAYF
       mode: markers
       marker_color: green
       marker_size: 6

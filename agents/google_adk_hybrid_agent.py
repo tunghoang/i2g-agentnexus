@@ -958,7 +958,7 @@ class ToolExecutingAgentExecutor:
                 return {"status": "success", "result": result}
 
             except Exception as e:
-                executor_instance.logger.error(f"Error in create_pseudo_log: {e}")
+                executor_instance.logger.error(f"Error in suggest_log_creation: {e}")
                 return {"status": "error", "message": str(e)}
 
         tools.append(suggest_log_creation)

@@ -19,7 +19,7 @@ from pywaterflood import CRM
 from xlsx_utils import XLSX
 from config.settings import DataConfig
 from utils.missing_pay_utils import get_well_checklist, get_well_checklist_curves,\
-    make_pseudo_log, get_training_result, remove_training_result, get_wells_has_curve, \
+    make_pseudo_log, make_pseudo_log_classifier, get_training_result, remove_training_result, get_wells_has_curve, \
     read_curves_from_las, read_curves_meta_data_from_las, \
     get_runs, get_curves_in_well
 from utils.plot_utils import multi_chart, advLogplot, logplot, write_json
@@ -27,7 +27,7 @@ from xlsx_utils import XLSX
 from multiprocessing import Process
 from mlflow.artifacts import download_artifacts
 
-from base_utils import iframe, excel_link, getLogRules, PUBLISH_BASE, find_similar_curves, standard_curve_name
+from base_utils import iframe, excel_link, getLogRules, getFlagRules, PUBLISH_BASE, find_similar_curves, standard_curve_name
 
 def create_missingpay_tools(mcp_server, data_config: DataConfig) -> List[str]:
     WELLS_DIR_PATH = "wells"
@@ -330,21 +330,41 @@ def create_missingpay_tools(mcp_server, data_config: DataConfig) -> List[str]:
                 raise Exception(f"No valid curves found")
                     
             started_event = Event()
-            
-            # start training
-            process = Process(
-                target=make_pseudo_log,
-                args=(
-                    target_curve, 
-                    target_well, 
-                    curves, 
-                    selected_wells, 
-                    model_type, 
-                    model_params, 
-                    started_event,
+
+            s_target_curve = standard_curve_name(target_curve)
+            log_rule = getLogRules(s_target_curve)
+            if log_rule:
+                # start training
+                process = Process(
+                    target=make_pseudo_log,
+                    args=(
+                        target_curve, 
+                        target_well, 
+                        curves, 
+                        selected_wells, 
+                        model_type, 
+                        model_params, 
+                        started_event,
+                    )
                 )
-            )
-            process.start()
+                process.start()
+            else:
+                log_rule = getFlagRules(s_target_curve)
+                if not log_rule:
+                    raise Exception(f"Don't know how to create {target_curve}")
+                process = Process(
+                    target=make_pseudo_log_classifier,
+                    args=(
+                        target_curve, 
+                        target_well, 
+                        curves, 
+                        selected_wells, 
+                        model_type, 
+                        model_params, 
+                        started_event,
+                    )
+                )
+                process.start()
 
             # wait for the training process to init
             started_event.wait()
@@ -433,9 +453,16 @@ def create_missingpay_tools(mcp_server, data_config: DataConfig) -> List[str]:
                 raise Exception("Please provide specific target well for calculation")
 
             log_rule = getLogRules(standard_curve_name(target_curve))
-            print('----->', log_rule)
+            is_flag_rule = False
+            if log_rule is None:
+                print('No log_rule found. Try flag_rule')
+                log_rule = getFlagRules(standard_curve_name(target_curve))
+                is_flag_rule = True
+
             if log_rule is None:
                 raise Exception(f"Don't know how to create log curve {target_curve}")
+            print('----->', log_rule, is_flag_rule)
+
             list_curve = [target_curve] + log_rule
 
             def calc_distance(row):
@@ -505,6 +532,8 @@ def create_missingpay_tools(mcp_server, data_config: DataConfig) -> List[str]:
             # conclude
             answer = f'''
 ###  Analysis on target well {target_well}:
+
+*This is log creation for __{'flag curve' if is_flag_rule else 'log curve'}__*
 
 1. Important input curves: <span style='color: blue'>{','.join(list(target_well_input_features))}</span>
 

@@ -63,6 +63,7 @@ def normalize(s):
 _allCurveRules = None
 _allCurveReversedRules = None
 _allLogRules = None
+_allFlagRules = None
 _allCurveUnits = None
 def getUnit(curve = None):
     global _allCurveUnits
@@ -110,6 +111,13 @@ def getLogRules(curve):
         with open('utils/log.rules.yaml') as file:
             _allLogRules = yaml.safe_load(file)
     return _allLogRules.get(curve)
+
+def getFlagRules(curve):
+    global _allFlagRules
+    if _allFlagRules is None:
+        with open('utils/flag.rules.yaml') as file:
+            _allFlagRules = yaml.safe_load(file)
+    return _allFlagRules.get(curve)
 
 def find_similar_curves(curve, curves):
     scurve = standard_curve_name(curve)
