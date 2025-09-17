@@ -1094,7 +1094,7 @@ class ToolExecutingAgentExecutor:
                 return {"status": "error", "message": str(e)}
         tools.append(create_pseudo_markers)
 
-        def apply_model(ToolContext:tool_context, experiment_id: str, target_well: str) -> dict:
+        def apply_model(tool_context: ToolContext, experiment_id: str, target_well: str) -> dict:
             '''
             Apply model identified by experiment_id to predict data in target_well
 
@@ -1179,6 +1179,7 @@ class ToolExecutingAgentExecutor:
                 tool_context.actions.skip_summarization = True
                 return {"status": "success", "result": result}
             except Exception as e:
+                traceback.print_exc()
                 executor_instance.logger.error(f"Error in view_training_experiment {e}")
                 return {"status": "error", "message": str(e)}
         tools.append(view_training_experiment)
@@ -1757,7 +1758,8 @@ Available context_params: modes, marker_file, file_path
             return True
         except Exception as e:
             self._initialization_error = str(e)
-            self.logger.error(f"Google ADK initialization failed: {e}")
+            traceback.print_exc()
+            self.logger.error(f"Google ADK initialization failed11: {e}")
             raise
 
     def _execute_mcp_tool(self, tool_name: str, params: Any) -> str:
