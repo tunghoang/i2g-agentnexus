@@ -19,8 +19,8 @@ from pywaterflood import CRM
 from xlsx_utils import XLSX
 from config.settings import DataConfig
 from utils.missing_pay_utils import get_well_checklist, get_well_checklist_curves,\
-    make_pseudo_log, make_pseudo_log_classifier, get_training_result, remove_training_result, get_wells_has_curve, \
-    read_curves_from_las, read_curves_meta_data_from_las, \
+    make_pseudo_log, make_pseudo_zones, make_pseudo_log_classifier, get_training_result, remove_training_result, get_wells_has_curve, \
+    get_wells_has_markers, read_curves_from_las, read_curves_meta_data_from_las, \
     get_runs, get_curves_in_well
 from utils.plot_utils import multi_chart, advLogplot, logplot, write_json
 from xlsx_utils import XLSX
@@ -378,6 +378,154 @@ def create_missingpay_tools(mcp_server, data_config: DataConfig) -> List[str]:
             return {"text": f"Tool failed: {str(e)}"}
 
     @mcp_server.tool(
+        name="create_pseudo_markers",
+        description="Generate pseudo markers for a well from curves in a list of wells using a machine learning model with model parameters"
+    )
+    def create_pseudo_markers(**kwargs):
+        try:
+            input_data = json.loads(kwargs["input"])
+            target_well: str = input_data.get("target_well")
+            curves: list[str] = input_data.get("curves")
+            wells: list[str] = input_data.get("wells")
+            model_type: str = input_data.get("model_type")
+            model_params: dict = input_data.get("model_params")
+            wells_dir = Naming.well_path()
+
+            available_wells = [entry.name for entry in os.scandir(wells_dir) if entry.is_dir()]
+            selected_wells = [name for name in available_wells if name in wells] if wells else []
+            selected_wells.sort()
+
+            if not selected_wells:
+                raise Exception(f"No valid wells found")
+            
+            if target_well not in available_wells:
+                raise Exception(f"Well '{target_well}' does not exist")
+            
+            if not curves:
+                raise Exception(f"No valid curves found")
+                    
+            started_event = Event()
+
+            log_rule = getFlagRules('Zone')
+            if not log_rule:
+                raise Exception(f"Don't know how to create Zones")
+            process = Process(
+                target=make_pseudo_zones,
+                args=(
+                    target_well, 
+                    curves, 
+                    selected_wells, 
+                    model_type, 
+                    model_params, 
+                    started_event,
+                )
+            )
+            process.start()
+
+            # wait for the training process to init
+            started_event.wait()
+            
+            # view training result
+            out_file_relative_path = get_training_result('Zone', target_well, model_type)
+
+            return {"text": iframe(out_file_relative_path, height="500px")}
+        except Exception as e:
+            traceback.print_exc()
+            return {"text": f"Tool failed: {str(e)}"}
+
+    @mcp_server.tool(
+        name="apply_model",
+        description="Apply existing model for well"
+    )
+    def apply_model(input):
+        try:
+            input_data = json.loads(input)
+            target_well: str = input_data.get('target_well')
+            run_id_prefix: str = input_data.get('run_id')
+            
+            runs = get_runs(run_id_prefix)
+            if runs is None or len(runs) == 0:
+                raise Exception("No experiment run found")
+            run = runs[0]
+            run_data = run.data
+            target_curve = run_data.params.get("target_curve", None)
+            input_curves = run_data.params.get("input_curves", "[]")
+            input_curves = json.loads(input_curves)
+            model_uri = f'runs:/{run.info.run_id}/model'
+            model = mlflow.sklearn.load_model(model_uri)
+
+            input_df = read_curves_from_las(target_well, input_curves)
+            selected_curves = []
+            for c in curves:
+                all_curves = input_df.columns
+                candidates = find_similar_curves(c, all_curves)
+                selected_curves.append(candidates[-1])
+            input_df = input_df[selected_curves].dropna()
+            input_data = input_df.values
+
+            if len(input_data) > 0:
+                print(input_data.shape)
+                predicted_curve_data = model.predict(input_data)
+                print(predicted_curve_data.shape)
+
+                # Comparison logplot
+                input_df[f"{target_curve}:*"] = predicted_curve_data
+                plot_df = read_curves_from_las(target_well, [target_curve])
+                plot_df[f'{target_curve}:*'] = input_df[f"{target_curve}:*"]
+                las_curves = read_curves_meta_data_from_las(target_well)
+                las_curves.append(lasio.las_items.CurveItem(mnemonic=f'{target_curve}:*', unit="v/v"))
+                fig = logplot(plot_df,las_curves)
+                plot_html = fig.to_html(full_html=False, include_plotlyjs="/js/plotly-3.0.1.min.js")
+
+                eval_df = plot_df.dropna()
+                test_data = eval_df.iloc[:, 0].values
+                pred_data = eval_df.iloc[:, -1].values
+
+                mse = mean_squared_error(test_data, pred_data)
+                rmse = np.sqrt(mse)
+                mae = mean_absolute_error(test_data, pred_data)
+                max_err = max_error(test_data, pred_data)
+                r2 = r2_score(test_data, pred_data)
+                ev = explained_variance_score(test_data, pred_data)
+                html_content = f'''<html>
+    <head>
+    </head>
+    <body>
+        <h2>Test model {run.info.run_id} on well {target_well}</h2>
+        <table>
+            <th>
+                <td>Metrics</td>
+                <td>Value</td>
+            </th>
+            <tr>
+                <td>RMSE</td>
+                <td>{rmse:.2f}</td>
+            </tr>
+            <tr>
+                <td>MAE</td>
+                <td>{mae:.2f}</td>
+            </tr>
+            <tr>
+                <td>R2-score</td>
+                <td>{r2:.4f}</td>
+            </tr>
+            
+        </table>
+        <div>
+            {plot_html}
+        </div>
+    </body>
+</html>'''
+            dest_path = Naming.dest_path(f"{run.info.run_id}_{target_well}", category='blind_test', format = 'html')
+            publish_path = Naming.publish_path(f"{run.info.run_id}_{target_well}", category='blind_test', format = 'html')
+            with open(dest_path, 'w') as f:
+                f.write(html_content)
+            return {'text': iframe(publish_path)}
+        except Exception as e:
+            traceback.print_exc()
+            return {"text": f"Tool failed: {str(e)}"}
+
+    @mcp_server.tool(
         name="view_training_experiment",
         description="Show the training experiments"
     )
@@ -559,6 +707,122 @@ The above conclusions are drawn from {excel_link(publish_path, label="here")}
             return dict(text=str(e))
 
     @mcp_server.tool(
+        name="suggest_marker_creation",
+        description="discover data and suggest how to calculate markers"
+    )
+    def suggest_marker_creation(input):
+        try:
+            input_data = json.loads(input)
+            target_well = input_data['target_well']
+            wells = input_data['wells']
+            if not target_well:
+                raise Exception("Please provide specific target well for calculation")
+
+            log_rule = getFlagRules('Zone')
+            is_flag_rule = True
+
+            if log_rule is None:
+                raise Exception(f"Don't know how to create markers")
+
+            list_curve = log_rule
+
+            def calc_distance(row):
+                df = XLSX.extract_wellpos([target_well, row['well']])
+                if len(df.index) < 2:
+                    return None 
+                wells = df[['X', 'Y']].values
+                return np.sqrt(np.sum(np.square(wells[0] - wells[1])))
+                
+            def calc_score1(row):
+                _list_curve = list_curve + ['Zone']
+                length = len(_list_curve)
+                score = 0
+                for idx,c in enumerate(_list_curve) :
+                    score += (length - idx) * row[c]
+                return score
+
+            all_curves = get_curves_in_well(target_well)
+            input_curve_flags = {}
+            for c in log_rule:
+                sim_curves = find_similar_curves(c, all_curves)
+                if len(sim_curves):
+                    input_curve_flags[c] = 0
+                else:
+                    input_curve_flags[c] = 1
+            target_well_input_features = set(log_rule)
+            target_well_available_input_features = { c for c in input_curve_flags if input_curve_flags[c] == 0 }
+            target_well_missing_input_features = { c for c in input_curve_flags if input_curve_flags[c] > 0 }
+
+            well_infos = None
+            if not wells:
+                well_infos = get_wells_has_markers()
+            else:
+                well_infos = [ { 'well': w, "all_curves": get_curves_in_well(w) } for w in wells ]
+
+            for winfo in well_infos:
+                winfo['Zone'] = 1
+                for c in list_curve:
+                    if len(find_similar_curves(c, winfo['all_curves'])):
+                        winfo[c] = 1
+                    else: 
+                        winfo[c] = 0
+
+
+            df = pd.DataFrame(well_infos)
+            selected_cols = ['well', 'Zone'] + log_rule
+            print(df.columns, selected_cols)
+            df = df[ selected_cols ]
+            df['score'] = df.apply(calc_score1, axis=1)
+            df['distance'] = df.apply(calc_distance, axis=1)
+            df_score = df.sort_values(by=['score', 'distance'], ascending=[False, True])
+            df = df.sort_values(by=['distance', 'score'], ascending=[True, False])
+            dest_path = Naming.dest_path(f"Zone_{target_well}", category='suggestion', format = 'xlsx')
+            publish_path = Naming.publish_path(f"Zone_{target_well}", category='suggestion', format = 'xlsx')
+            XLSX.save_dataframe(df, dest_path)
+
+            top5 = df.head(5)
+            print('top5', top5)
+            opt1_wells = list(top5['well'].values)
+            opt1_top5_most_distance = top5['distance'].max()
+            opt1_input_features = [c for c in log_rule if top5[c].sum() == 5]
+            opt1_input_missing = [c for c in log_rule if top5[c].sum() < 5]
+            
+            top5 = df_score.head(5)
+            print('----------\n','top5', top5)
+            opt2_wells = list(top5['well'].values)
+            opt2_top5_most_distance = top5['distance'].max()
+            opt2_input_features = [c for c in log_rule if top5[c].sum() == 5]
+            opt2_input_missing = [c for c in log_rule if top5[c].sum() < 5]
+            # conclude
+            answer = f'''
+###  Analysis on target well {target_well}:
+
+*This is log creation for __{'flag curve' if is_flag_rule else 'log curve'}__*
+
+1. Important input curves: <span style='color: blue'>{','.join(list(target_well_input_features))}</span>
+
+2. Important input curves available: <span style='color: blue;background-color: yellow'>{','.join(list(target_well_available_input_features))}</span>
+
+3. The following important input curves are missing: <span style='color:red;background-color:yellow'>{','.join(target_well_missing_input_features) or None}</span>
+
+### For calculating _markers_ in well _{target_well}_ consider the following suggestions:
+1. Input curves can only be <span style='color: blue'>{",".join(list(target_well_available_input_features))}</span>
+2. Using nearby wells: <span style='color: blue'>{",".join(opt1_wells)}</span> with input curves <span style='color: blue'>{",".join(opt1_input_features)}</span>
+(missing: {",".join(opt1_input_missing) or 'None'}). 
+The most distant well is <span style='color: blue'>{opt1_top5_most_distance:.0f}</span> metres away from {target_well}.
+Also consider reconstructing missing curves before calculating _markers_
+3. Using wells with most available data: <span style='color: blue'>{",".join(opt2_wells)}</span> with input curves <span style='color: blue'>{",".join(opt2_input_features)}</span>
+(missing: {",".join(opt2_input_missing) or 'None'}). 
+The most distant well is <span style='color: blue'>{opt2_top5_most_distance:.0f}</span> metres away from {target_well}.
+
+The above conclusions are drawn from {excel_link(publish_path, label="here")}
+'''
+            return dict(text=answer)
+        except Exception as e:
+            traceback.print_exc()
+            return dict(text=str(e))
+
+    @mcp_server.tool(
         name="accept_experiment_las_file",
         description="Accept las file produced by an experiment"
     )
@@ -618,6 +882,8 @@ The above conclusions are drawn from {excel_link(publish_path, label="here")}
         "well_checklist_curves",
         "create_wells_tvdss",
         "create_pseudo_log",
+        "create_pseudo_markers",
+        "apply_model",
         "view_training_experiment",
         "delete_training_experiment",
         "suggest_log_creation",

@@ -938,6 +938,7 @@ class ToolExecutingAgentExecutor:
             Suggest a model for creating a target_curve in target_well using input wells. If input wells is empty, find suitable input wells
 
             Args:
+                target_curve (str): Target curve to create
                 taget_well (str): Target well for curve creation.
                 wells (list[str]): Source wells used for training data. wells is empty means find suitable input wells
             
@@ -962,6 +963,35 @@ class ToolExecutingAgentExecutor:
                 return {"status": "error", "message": str(e)}
 
         tools.append(suggest_log_creation)
+
+        def suggest_marker_creation(tool_context: ToolContext, target_well: str, wells: list[str]):
+            """
+            Suggest a model for creating markers in target_well using input wells. If input wells is empty, find suitable input wells
+
+            Args:
+                target_well (str): Target well for curve creation.
+                wells (list[str]): Source wells used for training data. wells is empty means find suitable input wells
+            
+            Returns:
+                dict: Result of the pseudo log creation, or error message if failed.
+            """
+            try:
+                executor_instance.logger.info(f"Executing suggest_marker_creation for well '{target_well}' from '{wells}'")
+                result = executor_instance._execute_mcp_tool(
+                    'suggest_marker_creation',
+                    json.dumps({
+                        "target_well": target_well,
+                        "wells": wells
+                    })
+                )
+                tool_context.actions.skip_summarization = True
+                return {"status": "success", "result": result}
+
+            except Exception as e:
+                executor_instance.logger.error(f"Error in suggest_marker_creation: {e}")
+                return {"status": "error", "message": str(e)}
+
+        tools.append(suggest_marker_creation)
 
         def create_pseudo_log(
             tool_context: ToolContext,
@@ -1014,6 +1044,85 @@ class ToolExecutingAgentExecutor:
                 executor_instance.logger.error(f"Error in create_pseudo_log: {e}")
                 return {"status": "error", "message": str(e)}
         tools.append(create_pseudo_log)
+        
+        def create_pseudo_markers(
+            tool_context: ToolContext,
+            target_well: str,
+            curves: list[str],
+            wells: list[str],
+            model_type: str,
+            model_params: dict = {},
+        ) -> dict:
+            """
+            Generate marker for target well from curves in a list of wells using a machine learning model with model parameters.
+
+            Args:
+                taget_well (str): Target well for curve creation.
+                curves (list[str]): Curve types used for training.
+                wells (list[str]): Source wells used for training data.
+                model_type (str): Type of machine learning model to use. Supported:
+                    - 'linear' for Linear Regression
+                    - 'random_forest' for Random Forest Regressor
+                    - 'neural_network' for Multi-layer Perceptron Regressor
+                model_params (dict, optional): Dictionary of model parameters. Example:
+                    - For 'neural_network': {"hidden_layer_sizes": [50, 20], "max_iter": 200}
+                    - For 'random_forest': {"n_estimators": 100, "max_depth": 10}
+            
+            Returns:
+                dict: Result of the created markers, or error message if failed.
+            """
+            try:
+                executor_instance.logger.info(
+                    f"Executing create_pseudo_markers for well '{target_well}'"
+                    f"from curves {curves} in wells {wells} using model '{model_type}' with params '{model_params}'"
+                )
+                result = executor_instance._execute_mcp_tool(
+                    'create_pseudo_markers',
+                    json.dumps({
+                        "target_well": target_well,
+                        "curves": curves,
+                        "wells": wells,
+                        "model_type": model_type,
+                        "model_params": model_params
+                    })
+                )
+                tool_context.actions.skip_summarization = True
+                return {"status": "success", "result": result}
+
+            except Exception as e:
+                executor_instance.logger.error(f"Error in create_pseudo_markers: {e}")
+                return {"status": "error", "message": str(e)}
+        tools.append(create_pseudo_markers)
+
+        def apply_model(ToolContext:tool_context, experiment_id: str, target_well: str) -> dict:
+            '''
+            Apply model identified by experiment_id to predict data in target_well
+
+            Args:
+                experiment_id (str): the experiment_id
+                target_well (str): the target well to predict
+
+            Returns:
+                dict: results
+            '''
+            try:
+                executor_instance.logger.info(
+                    f"Executing apply_model for well '{target_well}' and experiment_id '{experiment_id}'"
+                )
+                result = executor_instance._execute_mcp_tool(
+                    'apply_model',
+                    json.dumps({
+                        "target_well": target_well,
+                        "run_id_prefix": experiment_id
+                    })
+                )
+                tool_context.actions.skip_summarization = True
+                return {"status": "success", "result": result}
+
+            except Exception as e:
+                executor_instance.logger.error(f"Error in apply_model: {e}")
+                return {"status": "error", "message": str(e)}
+        tools.append(apply_model)
         
         def view_training_experiment(
             tool_context: ToolContext,
@@ -1513,7 +1622,7 @@ unique_from_column, marker4well, zone4well, production_monthly_data_table, descr
 train_crm_model, view_wf_experiment, production_by_time, production_crossplot,welltest_chart, welltest_table,
 water_analysis_map, production_map, calc_distance_between_wells, train
 plt_table, well_checklist_table, well_checklist_curves, create_wells_tvdss, create_pseudo_log, 
-view_training_experiment, delete_training_experiment, accept_experiment_las_file, suggest_log_creation, set_context_for_tool_function
+view_training_experiment, delete_training_experiment, accept_experiment_las_file, suggest_log_creation, suggest_marker_creation, set_context_for_tool_function
 
 Available context_params: modes, marker_file, file_path
 """

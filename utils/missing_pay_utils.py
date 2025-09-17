@@ -59,7 +59,7 @@ from sklearn.metrics import (
 )
 
 from utils.plot_utils import logplot
-from base_utils import aliases_of_curve, standard_curve_name, find_similar_curves, getUnit, get_mlflow_experiment, human_readable_diff, parse_json_param, parse_float_param, get_mlflow_artifact_path, seconds_ago_to_timestamp
+from base_utils import aliases_of_curve, standard_curve_name, find_similar_curves, getUnit, get_mlflow_experiment, human_readable_diff, parse_json_param, parse_float_param, get_mlflow_artifact_path, seconds_ago_to_timestamp, excel_link
 
 mlflow_uri = "http://localhost:5000"
 mlflow.set_tracking_uri(mlflow_uri)
@@ -489,7 +489,7 @@ def write_curve_to_las_(
     las_obj.write(las_file)
     return las_file 
 
-def prepare_las_training_data(wells: list[str], curves: list[str]) -> np.ndarray:
+def prepare_las_training_data(wells: list[str], curves: list[str], with_zone=False) -> np.ndarray:
     all_data = []
     for well in wells:
         df = read_curves_from_las(well, curves)
@@ -501,7 +501,19 @@ def prepare_las_training_data(wells: list[str], curves: list[str]) -> np.ndarray
             if len(candidate) == 0:
                 raise Exception(f"Curve {c} is not found in well {well}")
             selected_curves.append(candidate[-1])
-        df_cleaned = df[selected_curves].dropna()
+        
+
+        df = df[selected_curves]
+        if with_zone:
+            keyzone, zone=XLSX.extract_zones1(well)
+            index_col = df.index.name or 'index'
+            target_series = df.reset_index()[index_col]
+            zone['DEPTH'] = zone['start'].apply(lambda x: target_series.iloc[(abs(target_series - x)).idxmin()])
+            zone = zone.set_index('DEPTH')
+            df['Zone'] = zone['Surface']
+            df['Zone'] = df['Zone'].ffill()
+
+        df_cleaned = df.dropna()
         data = df_cleaned.values
         if data is not None:
             all_data.append(data)
@@ -567,6 +579,108 @@ def train_classifier(x_train: np.ndarray, y_train: np.ndarray, model_type: str, 
     model.fit(x_train, y_train)
     return model
 
+def make_pseudo_zones(
+        target_well: str = '',
+        curves: list[str] = [],
+        wells: list[str] = [],
+        model_type: str = "random_forest",
+        model_params: dict = {},
+        started_event: Event = None,
+        exp_name: str = "pseudo_logs",
+        #exp_name: str = "pseudo_logs_classifier",
+    ):
+    client = MlflowClient()
+    experiment = get_mlflow_experiment(client, name=exp_name)
+    model_name = f"Zone_{target_well}_{model_type}"
+
+    with mlflow.start_run(experiment_id=experiment.experiment_id, run_name=model_name) as run:
+        mlflow.log_param("target_curve", "Zone")
+        mlflow.log_param("target_well", target_well)
+        mlflow.log_param("model_type", model_type)
+        mlflow.log_param("input_curves", json.dumps(curves))
+        mlflow.log_param("input_wells", json.dumps(wells))
+        mlflow.log_param("model_params", json.dumps(model_params))
+
+        if started_event:
+            started_event.set()
+
+        #all_curves = [c for c in curves]
+        all_curves = curves
+        dataset = prepare_las_training_data(wells, all_curves, with_zone = True)
+        if len(dataset) == 0:
+            raise ValueError(f"No valid data found for curves {curves} in wells {wells}")
+
+        print(all_curves)
+        # split
+        train_data, test_data = train_test_split(dataset, test_size=0.2, random_state=42, shuffle=True)
+        x_train = train_data[:, :-1]
+        y_train = train_data[:, -1] # labeled data
+        x_test = test_data[:, :-1]
+        y_test = test_data[:, -1] # labeled data
+
+        # train
+        model = train_classifier(x_train, y_train, model_type, **model_params)
+        mlflow.sklearn.log_model(model, name=model_name, input_example=x_train[:5])
+
+        # predict
+        y_pred = model.predict(x_test)
+        y_proba = model.predict_proba(x_test) if hasattr(model, "predict_proba") else None
+
+        # metrics
+        acc = accuracy_score(y_test, y_pred)
+        prec = precision_score(y_test, y_pred, zero_division=0, average='micro')
+        rec = recall_score(y_test, y_pred, zero_division=0, average='micro')
+        f1 = f1_score(y_test, y_pred, zero_division=0, average='micro')
+        auc = roc_auc_score(y_test, y_proba, average='micro', multi_class='ovr') if y_proba is not None else None
+
+        mlflow.log_metric("accuracy", acc)
+        mlflow.log_metric("precision", prec)
+        mlflow.log_metric("recall", rec)
+        mlflow.log_metric("f1_score", f1)
+        mlflow.log_metric("roc_auc", auc)
+        
+        # write result to file and create comparison logplot
+        input_df = read_curves_from_las(target_well, curves)
+        selected_curves = [
+            find_similar_curves(c, input_df.columns)[-1] for c in curves
+        ]
+        input_df = input_df[selected_curves].dropna()
+        input_data = input_df.values
+
+        if input_data.size > 0:
+            predicted_curve = model.predict(input_data)
+            df = read_curves_from_las(target_well, curves)
+            df_cleaned = df.dropna()
+            df_cleaned['Zone'] = predicted_curve
+            print(df_cleaned['Zone'].drop_duplicates(keep='first'))
+            tmp_xlsx = f"{uuid.uuid4().hex[:8]}.xlsx"
+            XLSX.save_dataframe(df_cleaned['Zone'].drop_duplicates(keep='first').reset_index(), tmp_xlsx)
+            mlflow.log_artifact(tmp_xlsx, artifact_path="xlsx")
+            mlflow.log_param("zone_file", os.path.basename(tmp_xlsx))
+            os.remove(tmp_xlsx)
+            
+            '''
+            # Comparison logplot
+            input_df[f"{target_curve}:*"] = predicted_curve
+            plot_df = read_curves_from_las(target_well, [target_curve])
+            plot_df[f"{target_curve}:*"] = input_df[f"{target_curve}:*"]
+            las_curves = read_curves_meta_data_from_las(target_well)
+            las_curves.append(lasio.las_items.CurveItem(mnemonic=f"{target_curve}:*", unit="v/v"))
+
+            fig = logplot(plot_df,las_curves)
+            tmp_plot = "visualization.html"
+            fig.write_html(tmp_plot)
+            mlflow.log_artifact(tmp_plot, artifact_path="plots")
+            os.remove(tmp_plot)
+            '''
+        
+        # evaluation
+        fig = visualize_zone_result(model, dataset)
+        tmp_html = "plot.html"
+        fig.write_html(tmp_html)
+        mlflow.log_artifact(tmp_html, artifact_path="plots")
+        os.remove(tmp_html)
+
 def make_pseudo_log_classifier(
         target_curve: str = '',
         target_well: str = '',
@@ -593,7 +707,7 @@ def make_pseudo_log_classifier(
         if started_event:
             started_event.set()
 
-        all_curves = [c for c in curves if c != target_curve] + [target_curve]
+        all_curves = [c for c in curves if c != target_curve] + [target_curve] # make sure that target curve is at the end of the list
         dataset = prepare_las_training_data(wells, all_curves)
         if len(dataset) == 0:
             raise ValueError(f"No valid data found for curves {curves} in wells {wells}")
@@ -801,10 +915,25 @@ def visualize_training_result(model, data: np.ndarray):
         template='plotly_white'
     )
     return fig
+def visualize_zone_result(model, dataset):
+    x = dataset[:, :-1]
+    y = dataset[:, -1]
+
+    y_pred = model.predict(x)
+    y_proba = model.predict_proba(x)[:, 1] if hasattr(model, "predict_proba") else None
+
+    fig = make_subplots(
+        rows=1, cols=2,
+        subplot_titles=("Confusion Matrix", "Precision-Recall Curve"),
+        horizontal_spacing=0.15
+    )
+
+    return fig
 
 def visualize_classifier_result(model, dataset):
     x = dataset[:, :-1]
     y = (dataset[:, -1] > 0).astype(int) # binary
+    #y = dataset[:, -1]
 
     y_pred = model.predict(x)
     y_proba = model.predict_proba(x)[:, 1] if hasattr(model, "predict_proba") else None
@@ -964,16 +1093,29 @@ def get_training_result(
         mape = parse_float_param(data.metrics.get("mape"))
         rmse = parse_float_param(data.metrics.get("rmse"))
         r2 = parse_float_param(data.metrics.get("r2_score"))
-        las_file_link = 'N/A'
-        visualization_link = "N/A"
+        download_link = 'N/A'
+        visualization_link = "N/A1"
         try:
-            las_file = os.path.basename(data.params.get("las_file"))
-            las_file_path = get_mlflow_artifact_path(experiment.experiment_id, run_id, artifact_path=f"las/{las_file}")
-            las_file_link = f"<a href='{las_file_path}'>Download</a>" if las_file else "N/A"
+            las_file = data.params.get("las_file")
+            if las_file:
+                las_file = os.path.basename(las_file)
+                las_file_path = get_mlflow_artifact_path(experiment.experiment_id, run_id, artifact_path=f"las/{las_file}")
+                download_link = f"<a href='{las_file_path}'>Downloadii</a>"
 
-            visualization_path = get_mlflow_artifact_path(experiment.experiment_id, run_id, artifact_path="plots/visualization.html")
-            visualization_link = f"<a href='{visualization_path}'>View</a>" if visualization_path else "N/A"
-        except:
+                visualization_path = get_mlflow_artifact_path(experiment.experiment_id, run_id, artifact_path="plots/visualization.html")
+                visualization_link = f"<a href='{visualization_path}'>View</a>" if visualization_path else "N/A2"
+            else:
+                zone_file = data.params.get('zone_file')
+                if zone_file:
+                    zone_file = os.path.basename(zone_file)
+                    zone_file_path = get_mlflow_artifact_path(experiment.experiment_id, run_id, artifact_path=f'xlsx/{zone_file}')
+                    download_link = f"<a href='{zone_file_path}'>Download33</a>"
+                    visualization_link = excel_link(zone_file_path, label='View', syntax='html')
+                else:
+                    download_link = "N/A"
+                    visualization_link = 'N/A3'
+        except Exception as e:
+            traceback.print_exc()
             pass
 
         # generate table
@@ -989,8 +1131,8 @@ def get_training_result(
             "MAPE (%)": mape,
             "RMSE": rmse,
             "R² Score": r2,
-            "Las File": las_file_link,
-            "Logplot": visualization_link
+            "Download": download_link,
+            "View": visualization_link
         }])
         table = df.to_html(index=False, escape=False)
         
@@ -1092,6 +1234,18 @@ def get_wells_has_curve(curve: str):
         sim_curves = find_similar_curves(curve, curves)
         if len(sim_curves):
             matched_wells.append({'well': w, 'curves': sim_curves, 'all_curves': curves})
+
+    return matched_wells
+
+def get_wells_has_markers():
+    storage = Store()
+    all_wells = __get_all_wells()
+    matched_wells = []
+    for w in all_wells:
+        _, zones = XLSX.extract_zones1(w)
+        if zones is not None and len(zones.index):
+            curves = get_curves_in_well(w)
+            matched_wells.append({'well': w, 'curves': ['Zone'], 'all_curves': curves + ['Zone']})
 
     return matched_wells
 

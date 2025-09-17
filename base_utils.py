@@ -46,11 +46,14 @@ def iframe(url, height='960px'):
         return f'<iframe width="100%" src="{PUBLISH_BASE}/{url}"></iframe>'
     return f'<iframe width="100%" height="{height}" src="{PUBLISH_BASE}/{url}"></iframe>'
     
-def link(url, label = 'result'):
-    return f'[{label}]({PUBLISH_BASE}/{url})'
+def link(url, label = 'result', syntax='md'):
+    if syntax == 'md':
+        return f'[{label}]({PUBLISH_BASE}/{url})'
+    if syntax == 'html':
+        return f'<a href="{PUBLISH_BASE}/{url}" target="_blank">{label}</a>'
 
-def excel_link(publish_path, label='result'):
-    return link(f'{Naming.publish_path("excel-viewer", format=None)}/?file=/{publish_path}', label=label)
+def excel_link(publish_path, label='result', syntax='md'):
+    return link(f'{Naming.publish_path("excel-viewer", format=None)}/?file=/{publish_path}', label=label, syntax=syntax)
 
 def normalize(s):
     minV = s.min()
