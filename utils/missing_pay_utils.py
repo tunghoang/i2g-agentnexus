@@ -39,6 +39,7 @@ from sklearn.neural_network import MLPClassifier
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.svm import SVC
 from xgboost import XGBClassifier
+from sklearn.preprocessing import LabelEncoder, label_binarize
 
 from sklearn.model_selection import train_test_split, learning_curve
 from sklearn.metrics import (
@@ -53,6 +54,7 @@ from sklearn.metrics import (
     recall_score,
     f1_score,
     roc_auc_score,
+    auc,
     confusion_matrix, 
     roc_curve, 
     precision_recall_curve
@@ -641,6 +643,8 @@ def make_pseudo_zones(
         
         # write result to file and create comparison logplot
         input_df = read_curves_from_las(target_well, curves)
+        print("*************** INPUT_DF", input_df)
+        print("*************** CURVES", curves)
         selected_curves = [
             find_similar_curves(c, input_df.columns)[-1] for c in curves
         ]
@@ -915,17 +919,79 @@ def visualize_training_result(model, data: np.ndarray):
         template='plotly_white'
     )
     return fig
+
 def visualize_zone_result(model, dataset):
-    x = dataset[:, :-1]
-    y = dataset[:, -1]
+    X = dataset[:, :-1]
+    y = dataset[:, -1] # string labels
+    
+    le = LabelEncoder()
+    y_encoded = le.fit_transform(y) # convert strings -> integers
+    class_names = le.classes_
+    n_classes = len(class_names)
 
-    y_pred = model.predict(x)
-    y_proba = model.predict_proba(x)[:, 1] if hasattr(model, "predict_proba") else None
+    if hasattr(model, "predict_proba"):
+        y_proba = model.predict_proba(X)
+    else:
+        raise ValueError("Model must support probability outputs (predict_proba).")
 
+    y_pred = np.argmax(y_proba, axis=1)
+
+    # Confusion Matrix
     fig = make_subplots(
-        rows=1, cols=2,
-        subplot_titles=("Confusion Matrix", "Precision-Recall Curve"),
+        rows=1, cols=3,
+        subplot_titles=("Confusion Matrix", "ROC Curves", "Precision-Recall Curves"),
         horizontal_spacing=0.15
+    )
+
+    # Confusion Matrix
+    cm = confusion_matrix(y_encoded, y_pred, labels=range(n_classes))
+    fig.add_trace(
+        go.Heatmap(
+            z=cm,
+            x=[f"Pred {c}" for c in class_names],
+            y=[f"True {c}" for c in class_names],
+            colorscale="Blues",
+            text=cm,
+            texttemplate="%{text}",
+            showscale=False
+        ),
+        row=1, col=1
+    )
+
+    # ROC Curves (One-vs-Rest)
+    if y_proba is not None and n_classes > 1:
+        y_bin = label_binarize(y_encoded, classes=range(n_classes))
+        for i, cls in enumerate(class_names):
+            fpr, tpr, _ = roc_curve(y_bin[:, i], y_proba[:, i])
+            roc_auc = auc(fpr, tpr)
+            fig.add_trace(
+                go.Scatter(x=fpr, y=tpr, mode="lines", name=f"{cls} (AUC={roc_auc:.2f})"),
+                row=1, col=2
+            )
+        fig.add_trace(
+            go.Scatter(x=[0, 1], y=[0, 1], mode="lines", name="Random", line=dict(dash="dash")),
+            row=1, col=2
+        )
+        fig.update_xaxes(title_text="False Positive Rate", row=1, col=2)
+        fig.update_yaxes(title_text="True Positive Rate", row=1, col=2)
+
+    # Precision-Recall Curves
+    if y_proba is not None and n_classes > 1:
+        y_bin = label_binarize(y_encoded, classes=range(n_classes))
+        for i, cls in enumerate(class_names):
+            prec, rec, _ = precision_recall_curve(y_bin[:, i], y_proba[:, i])
+            fig.add_trace(
+                go.Scatter(x=rec, y=prec, mode="lines", name=f"{cls}"),
+                row=1, col=3
+            )
+        fig.update_xaxes(title_text="Recall", row=1, col=3)
+        fig.update_yaxes(title_text="Precision", row=1, col=3)
+
+    fig.update_layout(
+        title="Classification Evaluation",
+        width=1600,
+        height=600,
+        legend=dict(x=1.05, y=1)
     )
 
     return fig
