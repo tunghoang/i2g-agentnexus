@@ -986,7 +986,7 @@ class ToolExecutingAgentExecutor:
 
         tools.append(suggest_log_creation)
 
-        def suggest_marker_creation(tool_context: ToolContext, target_well: str, wells: list[str]):
+        def suggest_marker_creation(tool_context: ToolContext, target_well: str, wells: list[str] = []):
             """
             Suggest a model for creating markers in target_well using input wells. If input wells is empty, find suitable input wells
 
@@ -1678,12 +1678,15 @@ Available context_params: modes, marker_file, file_path
                     final_response = event.content.parts[0].text
                     if hasattr(event.content.parts[0], 'function_response') and event.content.parts[0].function_response:
                         print(event.content.parts[0].function_response.response)
-                        tool_response = event.content.parts[0].function_response.response['result']
-                        try:
-                            tool_response = json.loads(tool_response)
-                            tool_response = tool_response['text']
-                        except:
-                            pass
+                        if 'result' in event.content.parts[0].function_response.response:
+                            tool_response = event.content.parts[0].function_response.response['result']
+                            try:
+                                tool_response = json.loads(tool_response)
+                                tool_response = tool_response['text']
+                            except:
+                                pass
+                        else:
+                            tool_response = event.content.parts[0].function_response.response['error']
                 elif hasattr(event, 'text') and event.text:
                     final_response = event.text
 
