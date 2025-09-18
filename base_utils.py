@@ -1,4 +1,5 @@
 import os
+import traceback
 import numpy as np
 import pandas as pd
 from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
@@ -11,6 +12,7 @@ from mlflow.artifacts import download_artifacts
 import json
 import yaml
 import re
+import pickle
 from naming import Naming
 #PUBLISH_BASE="http://dashboard.portal:9999"
 PUBLISH_BASE="http://dashboard.portal:8990"
@@ -125,7 +127,14 @@ def getFlagRules(curve):
 def find_similar_curves(curve, curves):
     scurve = standard_curve_name(curve)
     aliases = aliases_of_curve(scurve)
-    ret_curves = [ c for c in curves if c == curve or c in aliases ]
+    ret_curves = []
+
+    for c in curves:
+        short_curve = re.sub(r':[1-9]+$', '', c)
+        if short_curve == curve or short_curve in aliases:
+            ret_curves.append(c)
+
+    #ret_curves = [ c for c in curves if c == curve or c in aliases ]
     return ret_curves
  
 
@@ -225,3 +234,17 @@ def get_mlflow_artifact_path(
 def seconds_ago_to_timestamp(seconds_ago: int) -> int:
     dt = datetime.now() - timedelta(seconds=seconds_ago)
     return int(dt.timestamp()) * 1000
+
+def load_model(run):
+    try:
+        experiment_id = run.info.experiment_id
+        run_name = run.info.run_name
+        model_id = run.outputs.model_outputs[0].model_id
+        model_base_path = Naming.mlflow_model_path(experiment_id, model_id)
+        model_path = f"{model_base_path}/artifacts/model.pkl"
+        if not os.path.isfile(model_path):
+            model_path = f"{model_base_path}/artifacts/{run_name}.pkl"
+        return pickle.load(open(model_path, 'rb'))
+    except:
+        traceback.print_exc()
+        return None

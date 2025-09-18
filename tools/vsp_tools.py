@@ -22,7 +22,7 @@ from calendar import monthrange
 from pywaterflood import CRM
 from tools.plot_tools import getColor
 from utils.plot_utils import multi_chart, production_by_time_chart, production_by_oilcum_chart, plot_charts, pie_map
-from utils.wf_utils import build_wf_input, build_wf_input_for_reservoir, train_crm, get_wf_run
+from utils.wf_utils import build_wf_input, build_wf_input_for_reservoir, train_crm, train_lstm, get_wf_run
 from xlsx_utils import XLSX
 from base_utils import iframe, link, excel_link, normalize, PUBLISH_BASE, get_mlflow_experiment
 
@@ -395,6 +395,62 @@ def create_vsp_tools(mcp_server, data_config: DataConfig) -> List[str]:
             traceback.print_exc()
             return {"text": str(e)}
             
+    def do_train_lstm_model(iwells, owells, started_event):
+        client = MlflowClient()
+    
+        experiment = get_mlflow_experiment(client, name='wf')
+        model_name = f"LSTM-{uuid.uuid4().hex[:8]}"
+
+        run = mlflow.start_run(experiment_id=experiment.experiment_id, run_name=model_name) 
+
+        mlflow.log_param("injection_wells", json.dumps(iwells))
+        mlflow.log_param("production_wells", json.dumps(owells))
+
+        if started_event:
+            started_event.set()
+
+        df = build_wf_input(iwells, owells)
+        df = df.fillna(0)
+        train_lstm(df, experiment, run)
+
+        mlflow.end_run()
+
+    @mcp_server.tool(
+        name="train_lstm_model",
+        description="Train LSTM model from injection wells and production wells"
+    )
+    def train_lstm_model(input):
+        try:
+            input_data = json.loads(input)
+            iwells = input_data['i_wells']
+            owells = input_data['o_wells']
+
+            # start training
+            started_event = Event()
+            process = Process(
+                target=do_train_lstm_model,
+                args=(
+                    iwells, owells,
+                    started_event,
+                )
+            )
+            process.start()
+            # wait for the training process to init
+            started_event.wait()
+            
+            # view training result
+            out_file_relative_path = get_wf_run([], [], 'CRM', 60, "")
+
+
+            #df = build_wf_input(iwells, owells)
+
+            #df = df.fillna(0)
+            #publish_path = train_crm(df, 'per-pair', 'up-to one')
+            return {'text': iframe(out_file_relative_path, height="480px")}
+
+        except Exception as e:
+            traceback.print_exc()
+            return {"text": str(e)}
     @mcp_server.tool(
         name="train_crm_model_for_reservoir",
         description="Train CRM model using reservoir name"
@@ -912,6 +968,8 @@ def create_vsp_tools(mcp_server, data_config: DataConfig) -> List[str]:
         "productiondata4well",
         "buildCRMInput",
         "train_crm_model",
+        "train_crm_model_for_reservoir",
+        "train_lstm_model",
         "production_crossplot",
         "production_by_time",
         "production_by_oilcum",

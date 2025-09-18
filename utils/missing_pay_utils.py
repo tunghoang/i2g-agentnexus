@@ -370,6 +370,7 @@ def read_curves_from_las(well_name: str, curves: list[str]) -> pd.DataFrame | No
     if not las_file_paths:
         raise FileNotFoundError(f"No las files found")
     dfs = []
+    print("LAS_PATHS_ARRAY", las_file_paths)
     for las_file_path in las_file_paths:
         #las_file_path = las_file_paths[0]
         df = _read_curves_from_las_file(las_file_path, curves)
@@ -377,7 +378,6 @@ def read_curves_from_las(well_name: str, curves: list[str]) -> pd.DataFrame | No
         print(">>>", df)
     df = pd.concat(dfs, axis=1)
     df = __rename_dup_columns(df)
-    print("--------", df.columns)
     return df
 
 def read_curves_from_las_(well_name: str, curves: list[str]) -> np.ndarray | None:
@@ -622,7 +622,8 @@ def make_pseudo_zones(
 
         # train
         model = train_classifier(x_train, y_train, model_type, **model_params)
-        mlflow.sklearn.log_model(model, name=model_name, input_example=x_train[:5])
+        #mlflow.sklearn.log_model(model, name=model_name, input_example=x_train[:5])
+        mlflow.sklearn.log_model(sk_model=model, artifact_path='models', input_example=x_train[:5])
 
         # predict
         y_pred = model.predict(x_test)
@@ -643,8 +644,6 @@ def make_pseudo_zones(
         
         # write result to file and create comparison logplot
         input_df = read_curves_from_las(target_well, curves)
-        print("*************** INPUT_DF", input_df)
-        print("*************** CURVES", curves)
         selected_curves = [
             find_similar_curves(c, input_df.columns)[-1] for c in curves
         ]
@@ -726,7 +725,8 @@ def make_pseudo_log_classifier(
 
         # train
         model = train_classifier(x_train, y_train, model_type, **model_params)
-        mlflow.sklearn.log_model(model, name=model_name, input_example=x_train[:5])
+        #mlflow.sklearn.log_model(model, name=model_name, input_example=x_train[:5])
+        mlflow.sklearn.log_model(sk_model=model, artifact_path='models', input_example=x_train[:5])
 
         # predict
         y_pred = model.predict(x_test)
@@ -822,7 +822,8 @@ def make_pseudo_log(
         x_train = train_data[:, :-1]
         y_train = train_data[:, -1]
         model = train_model(x_train, y_train, model_type, **model_params)
-        mlflow.sklearn.log_model(model, name=model_name, input_example=x_train[:5])
+        #mlflow.sklearn.log_model(model, name=model_name, input_example=x_train[:5])
+        mlflow.sklearn.log_model(sk_model=model, artifact_path='models', input_example=x_train[:5])
 
         # log metrics
         x_test = test_data[:, :-1]
@@ -1252,6 +1253,7 @@ def get_runs(run_id_prefix: str, exp_name="pseudo_logs"):
     client = MlflowClient()
     experiment = get_mlflow_experiment(client, name = exp_name)
     runs = client.search_runs( experiment_ids=[experiment.experiment_id])
+    print("0000000000000", run_id_prefix)
     matched_runs = [run for run in runs if run.info.run_id.startswith(run_id_prefix)]
     return matched_runs
 

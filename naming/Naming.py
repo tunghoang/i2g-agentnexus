@@ -61,6 +61,10 @@ class Naming:
         return cls.data_path(inpath, prefix=prefix)
 
     @classmethod
+    def mlflow_model_path(cls, experiment_id, model_id, prefix='./mlartifacts'):
+        return cls.data_path(f'{experiment_id}/models/{model_id}', prefix=prefix)
+
+    @classmethod
     def data_path(cls, inpath, prefix="./data"):
         return f"{prefix}/{inpath}"
 

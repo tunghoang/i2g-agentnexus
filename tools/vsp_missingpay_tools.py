@@ -26,8 +26,25 @@ from utils.plot_utils import multi_chart, advLogplot, logplot, write_json
 from xlsx_utils import XLSX
 from multiprocessing import Process
 from mlflow.artifacts import download_artifacts
+import mlflow
 
-from base_utils import iframe, excel_link, getLogRules, getFlagRules, PUBLISH_BASE, find_similar_curves, standard_curve_name
+from sklearn.metrics import (
+    # regression
+    mean_squared_error, r2_score,
+    mean_absolute_percentage_error,
+    mean_absolute_error, max_error,
+    explained_variance_score,
+    # classification
+    accuracy_score,
+    precision_score,
+    recall_score,
+    f1_score,
+    roc_auc_score,
+    confusion_matrix, 
+    roc_curve, 
+    precision_recall_curve
+)
+from base_utils import iframe, excel_link, getLogRules, getFlagRules, PUBLISH_BASE, find_similar_curves, standard_curve_name, load_model
 
 def create_missingpay_tools(mcp_server, data_config: DataConfig) -> List[str]:
     WELLS_DIR_PATH = "wells"
@@ -441,7 +458,7 @@ def create_missingpay_tools(mcp_server, data_config: DataConfig) -> List[str]:
         try:
             input_data = json.loads(input)
             target_well: str = input_data.get('target_well')
-            run_id_prefix: str = input_data.get('run_id')
+            run_id_prefix: str = input_data.get('run_id_prefix')
             
             runs = get_runs(run_id_prefix)
             if runs is None or len(runs) == 0:
@@ -452,11 +469,11 @@ def create_missingpay_tools(mcp_server, data_config: DataConfig) -> List[str]:
             input_curves = run_data.params.get("input_curves", "[]")
             input_curves = json.loads(input_curves)
             model_uri = f'runs:/{run.info.run_id}/model'
-            model = mlflow.sklearn.load_model(model_uri)
+            model = load_model(run)
 
             input_df = read_curves_from_las(target_well, input_curves)
             selected_curves = []
-            for c in curves:
+            for c in input_curves:
                 all_curves = input_df.columns
                 candidates = find_similar_curves(c, all_curves)
                 selected_curves.append(candidates[-1])
@@ -484,6 +501,8 @@ def create_missingpay_tools(mcp_server, data_config: DataConfig) -> List[str]:
                 mse = mean_squared_error(test_data, pred_data)
                 rmse = np.sqrt(mse)
                 mae = mean_absolute_error(test_data, pred_data)
+                mask = test_data != 0
+                mape = mean_absolute_percentage_error(test_data[mask], pred_data[mask]) * 100
                 max_err = max_error(test_data, pred_data)
                 r2 = r2_score(test_data, pred_data)
                 ev = explained_variance_score(test_data, pred_data)
@@ -504,6 +523,10 @@ def create_missingpay_tools(mcp_server, data_config: DataConfig) -> List[str]:
             <tr>
                 <td>MAE</td>
                 <td>{mae:.2f}</td>
+            </tr>
+            <tr>
+                <td>MAPE</td>
+                <td>{mape:.2f}</td>
             </tr>
             <tr>
                 <td>R2-score</td>
