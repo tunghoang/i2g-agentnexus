@@ -476,6 +476,8 @@ def create_missingpay_tools(mcp_server, data_config: DataConfig) -> List[str]:
             for c in input_curves:
                 all_curves = input_df.columns
                 candidates = find_similar_curves(c, all_curves)
+                if len(candidates) == 0:
+                    raise Exception(f"No curve {c} (or its variants) found in well {target_well}")
                 selected_curves.append(candidates[-1])
             input_df = input_df[selected_curves].dropna()
             input_data = input_df.values

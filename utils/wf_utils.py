@@ -377,7 +377,7 @@ def train_lstm(df, experiment, run):
         mlflow.log_artifact(dest_path, artifact_path='report')
         well_links.append(f"<a href='lstm-chart_{owell}.html' target='_blank'>{owell}</a>")
         
-        metrics = compute_metrics(train_models_info[owell]['y_train'].reshape(1,-1), y_tr_pred.reshape(1, -1))
+        metrics = compute_metrics(train_models_info[owell]['y_train'].reshape(-1), y_tr_pred.reshape(-1))
         MAEs.append(metrics['MAE'])
         RMSEs.append(metrics['RMSE'])
         MAPEs.append(metrics['MAPE'])

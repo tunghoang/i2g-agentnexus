@@ -1132,6 +1132,13 @@ def get_training_result(
     mapes: list[str] = []
     rmses: list[str] = []
     r2_scores: list[str] = []
+
+    accuracies: list[str] = []
+    f1_scores: list[str] = []
+    recalls: list[str] = []
+    precisions: list[str] = []
+    roc_aucs: list[str] = []
+
     time_status: list[str] = []
     status_list: list[str] = []
     durations: list[str] = []
@@ -1157,9 +1164,17 @@ def get_training_result(
         input_curves = parse_json_param(data.params.get("input_curves"))
         input_wells = parse_json_param(data.params.get("input_wells"))
         model_params = parse_json_param(data.params.get("model_params"))
+
         mape = parse_float_param(data.metrics.get("mape"))
         rmse = parse_float_param(data.metrics.get("rmse"))
         r2 = parse_float_param(data.metrics.get("r2_score"))
+
+        accuracy = parse_float_param(data.metrics.get('accuracy'))
+        f1_score = parse_float_param(data.metrics.get('f1_score'))
+        recall = parse_float_param(data.metrics.get('recall'))
+        precision = parse_float_param(data.metrics.get('precision'))
+        roc_auc = parse_float_param(data.metrics.get('roc_auc'))
+
         download_link = 'N/A'
         visualization_link = "N/A1"
         try:
@@ -1201,6 +1216,24 @@ def get_training_result(
             "Download": download_link,
             "View": visualization_link
         }])
+        if curve in ['Zone', 'RESTF', 'PAYF']:
+            df = pd.DataFrame([{
+                "ID": run_id[:8],
+                "Model Name": run_name,
+                "Target Curve": curve,
+                "Target Well": well,
+                "From Curves": input_curves,
+                "From Wells": input_wells,
+                "Model Type": model,
+                "Params": model_params,
+                "Accuracy": accuracy,
+                "F1": f1_score,
+                "Recall": recall,
+                "Precision": precision,
+                'ROC_AUC': roc_auc,
+                "Download": download_link,
+                "View": visualization_link
+            }])
         table = df.to_html(index=False, escape=False)
         
         # generate plot
@@ -1225,6 +1258,13 @@ def get_training_result(
         mapes.append(mape)
         rmses.append(rmse)
         r2_scores.append(r2)
+
+        accuracies.append(accuracy)
+        f1_scores.append(f1_score)
+        recalls.append(recall)
+        precisions.append(precision)
+        roc_aucs.append(roc_auc)
+
         time_status.append(time_since_run)
         status_list.append(run_status)
 
@@ -1233,9 +1273,10 @@ def get_training_result(
         "Model Name": model_names,
         "From Curves": curve_list,
         "From Wells": well_list,
-        "MAPE (%)": mapes,
-        "RMSE": rmses,
+        #"MAPE (%)": mapes,
+        #"RMSE": rmses,
         "R² Score": r2_scores,
+        "ROC_AUC": roc_aucs,
         "Created": time_status,
         "Status": status_list,
     })
