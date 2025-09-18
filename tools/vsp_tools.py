@@ -19,7 +19,6 @@ import pandas as pd
 import mlflow
 from mlflow.tracking import MlflowClient
 from calendar import monthrange
-from pywaterflood import CRM
 from tools.plot_tools import getColor
 from utils.plot_utils import multi_chart, production_by_time_chart, production_by_oilcum_chart, plot_charts, pie_map
 from utils.wf_utils import build_wf_input, build_wf_input_for_reservoir, train_crm, train_lstm, get_wf_run
@@ -320,7 +319,7 @@ def create_vsp_tools(mcp_server, data_config: DataConfig) -> List[str]:
         merged_df.to_csv("./data/crm_input.csv")
         return {"text": result_file}
 
-    def do_train_crm_model(iwells, owells, started_event):
+    def do_train_crm_model(iwells, owells, started_event, mode='', cutoff=False):
         client = MlflowClient()
     
         experiment = get_mlflow_experiment(client, name='wf')
@@ -336,7 +335,7 @@ def create_vsp_tools(mcp_server, data_config: DataConfig) -> List[str]:
 
         df = build_wf_input(iwells, owells)
         df = df.fillna(0)
-        train_crm(df, experiment, run, 'per-pair', 'up-to one')
+        train_crm(df, experiment, run, 'per-pair', 'up-to one', mode=mode, cutoff=cutoff)
 
         mlflow.end_run()
 
@@ -367,14 +366,16 @@ def create_vsp_tools(mcp_server, data_config: DataConfig) -> List[str]:
             input_data = json.loads(input)
             iwells = input_data['i_wells']
             owells = input_data['o_wells']
+            mode = input_data.get('mode', '')
+            cutoff = input_data.get('cutoff', False)
 
             # start training
             started_event = Event()
             process = Process(
                 target=do_train_crm_model,
                 args=(
-                    iwells, owells,
-                    started_event,
+                    iwells, owells, 
+                    started_event, mode, cutoff
                 )
             )
             process.start()

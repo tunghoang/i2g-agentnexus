@@ -725,19 +725,24 @@ class ToolExecutingAgentExecutor:
                 return {"status": "error", "result": result}
         tools.append(buildCRMInput)
 
-        def train_crm_model(tool_context: ToolContext, i_wells:list[str], o_wells:list[str]) -> dict:
+        def train_crm_model(tool_context: ToolContext, i_wells:list[str], o_wells:list[str], mode:str = '', cutoff:bool = False) -> dict:
             """Train CRM Model from injection wells i_wells and production wells o_wells
             
             Args:
                 i_wells (list[str]): injection wells
                 o_wells (list[str]): production wells
+                mode (str): Mode of crm models. Supported values:
+                    - '': default mode
+                    - 'P': 'Producer' mode
+                    - 'IP': 'Injector-producer' mode
+                cutoff (bool): Cut-off option. Default is False
 
             Returns:
                 dict: results
             """
             try:
                 executor_instance.logger.info(f"Executing train_crm_model from injection wells {i_wells} and production wells {o_wells}")
-                result = executor_instance._execute_mcp_tool('train_crm_model', json.dumps(dict(i_wells=i_wells, o_wells=o_wells)))
+                result = executor_instance._execute_mcp_tool('train_crm_model', json.dumps(dict(i_wells=i_wells, o_wells=o_wells, mode=mode, cutoff=cutoff)))
                 tool_context.actions.skip_summarization = True
                 return {"status": "success",
                         "result": result}
