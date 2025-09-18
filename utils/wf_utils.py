@@ -35,7 +35,8 @@ def getdaysofmonth(datestr:str):
 def build_wf_input(iwells:list[str], owells:list[str], production_col=2, injection_col=5) -> pd.DataFrame:
     df = XLSX.extract_production_data([*iwells, *owells], idxcols=[0, 1, 6, 10, 12, 14], colnames = None)
     print('------', df.columns)
-    df = df.dropna()
+    #df = df.dropna()
+    df = df.fillna(0)
     print("***********", df.Date.unique())
     df.sort_values(by = ['Date'], ascending = [True])
     grouped = df.groupby('Master.Wellnumber')
@@ -67,7 +68,6 @@ def build_wf_input(iwells:list[str], owells:list[str], production_col=2, injecti
             merged_df = pd.merge(merged_df, df[['Date', colName]], on='Date', how='outer')
 
     merged_df['Time'] = merged_df['Date'].apply(getdaysofmonth).cumsum()
-    print(merged_df)
     merged_df.to_csv('/tmp/crm_input.csv')
     return merged_df
 
@@ -412,11 +412,11 @@ def wf_filter_params(iwells, owells, model_type, seconds, filter_expr):
     filter_params = []
     
     if iwells and len(iwells):
-        filter_params.append(f"params.injection_wells = '{iwells}'")
+        filter_params.append(f"params.injection_wells = '{json.dumps(iwells)}'")
     
     if owells and len(owells):
-        filter_params.append(f"params.production_wells = '{owells}'")
-    
+        filter_params.append(f"params.production_wells = '{json.dumps(owells)}'")
+   
     #if model_type:
     #    filter_params.append(f"params.model_type = '{model_type}'")
     
