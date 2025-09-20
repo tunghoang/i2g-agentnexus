@@ -21,7 +21,7 @@ from config.settings import DataConfig
 from utils.missing_pay_utils import get_well_checklist, get_well_checklist_curves,\
     make_pseudo_log, make_pseudo_zones, make_pseudo_log_classifier, get_training_result, remove_training_result, get_wells_has_curve, \
     get_wells_has_markers, read_curves_from_las, read_curves_meta_data_from_las, \
-    get_runs, get_curves_in_well
+    get_runs, get_curves_in_well, prepare_las_training_data
 from utils.plot_utils import multi_chart, advLogplot, logplot, write_json
 from xlsx_utils import XLSX
 from multiprocessing import Process
@@ -897,12 +897,12 @@ The above conclusions are drawn from {excel_link(publish_path, label="here")}
             if well is None:
                 raise Exception("Please specify well to plot")
 
-            df = prepare_las_training_data([well], ['TVDSS', 'VSHALE', 'PHIE', 'SW'], with_zone=True, with_index=True)
+            df = prepare_las_training_data([well], ['TVDSS', 'VSHALE', 'PHIE', 'SW', 'RT'], with_zone=True, with_index=True)
             df = pd.DataFrame(df)
-
+            
             df.columns = ['MD', 'TVDSS', 'VSHALE', 'PHIE', 'SW', 'RT', 'Zone']
 
-            df_mean = df.groupby('Zone')[['VSHALE', 'PHIE', 'SW']].mean()
+            df_mean = df.groupby('Zone')[['VSHALE', 'PHIE', 'SW', 'RT']].mean()
             df_mean['SOIL'] = 1 - df_mean['SW']
 
             df_min = df.groupby('Zone')[['MD', 'TVDSS']].min()

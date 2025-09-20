@@ -408,7 +408,7 @@ def _read_curves_from_las_file(las_file_path, curves: list[str], use_latest=Fals
                 for c1 in all_cols:
                     if standard_curve_name(c1) == standard_curve_name(c):
                         curve_found = c1
-                        if not use_lastest:
+                        if not use_latest:
                             break
                 if curve_found:
                     selected_curves.append(curve_found)
@@ -619,6 +619,7 @@ def prepare_las_training_data(wells: list[str], curves: list[str], with_zone=Fal
         df_cleaned = df.dropna()
         data = df_cleaned.values
         if data is not None:
+            print("cccc", df_cleaned.columns)
             all_data.append(data)
 
     return np.vstack(all_data) if all_data else np.empty(0)
