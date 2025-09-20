@@ -349,6 +349,7 @@ def __calc_new_col(df, op, operands):
 def advLogplot(df, curves, track_styles, title = None, keyZoneDF = None, zoneDF = None):
     curveNames = lambda : df.columns[1:]
     refCurveName = df.columns[0]
+    print("--- advLogplot ----", curveNames())
 
     PLOT_HEADER = 60
     #TRACK_HEADER = 180
@@ -476,18 +477,21 @@ def advLogplot(df, curves, track_styles, title = None, keyZoneDF = None, zoneDF 
         selectedCurves.append("TVDSS")
     for track_style in track_styles:
         trackConfig = getTrackConfig(track_style)
+        print('--------------1111---------')
         for c in trackConfig['curves']:
             if 'expr' in c and c['name'] not in curveNames():
                 expr = c['expr']
                 operands = []
                 for operand in expr['operands']:
                     new_operand = None
-                    for c in curveNames:
-                        if c == operand or re.match(rf'{operand}:.+$', c):
-                            new_operand = c
-
-                    if new_operand:
-                        operands.append(new_operand)
+                    for cname in curveNames():
+                        #if cname == operand or re.match(rf'{operand}:.+$', cname):
+                        if standard_curve_name(cname) == operand:
+                            new_operand = cname
+                    if new_operand is None:
+                        raise Exception(f"No {operand} curve found")
+                    operands.append(new_operand)
+                print(operands)
                 df[c['name']] = __calc_new_col(df, expr['op'], operands)
                 curves[c['name']] = { "unit": c['unit']}
             if c['name'] in curveNames():
@@ -495,7 +499,7 @@ def advLogplot(df, curves, track_styles, title = None, keyZoneDF = None, zoneDF 
             else: 
                 sim_curves = find_similar_curves(c['name'], curveNames())
                 if len(sim_curves) > 0:
-                    selectedCurves.append(sim_curves[0])
+                    selectedCurves.append(sim_curves[-1])
 
     hoverdata = df[list(set(selectedCurves))]
     hovertemplate = __makeHoverTemplate(list(hoverdata.columns))
@@ -512,7 +516,7 @@ def advLogplot(df, curves, track_styles, title = None, keyZoneDF = None, zoneDF 
                 if len(sim_curves) == 0:
                     print(f"Curve {c} is absent in log file")
                     continue
-                c = sim_curves[0]
+                c = sim_curves[-1]
             have_track = True
             xaxis_index += 1
             #print('>>>', track_idx, TRACK_NUM(), X_DOMAIN(track_idx))

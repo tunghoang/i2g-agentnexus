@@ -385,7 +385,7 @@ def get_well_checklist_curves(
         phie_result,
         sw_result
     )
-def _read_curves_from_las_file(las_file_path, curves: list[str]):
+def _read_curves_from_las_file(las_file_path, curves: list[str], use_latest=False):
     ori_file_path = Naming.to_raw_path(las_file_path)
     las = MemoryCache.get_instance().get(ori_file_path)
     if las is None:
@@ -403,11 +403,15 @@ def _read_curves_from_las_file(las_file_path, curves: list[str]):
                     if c1[1:] == c :
                         selected_curves.append(c1)
                         break
-            else: 
+            else:
+                curve_found = None
                 for c1 in all_cols:
                     if standard_curve_name(c1) == standard_curve_name(c):
-                        selected_curves.append(c1)
-                        break
+                        curve_found = c1
+                        if not use_lastest:
+                            break
+                if curve_found:
+                    selected_curves.append(curve_found)
         df = df[ selected_curves ]
         #df = df[ [all_cols[0]] + selected_curves ]
     #df = df.set_index(all_cols[0])
@@ -456,7 +460,7 @@ def __rename_dup_columns(df):
     df.columns = new_columns
     return df
     
-def read_curves_from_las(well_name: str, curves: list[str]) -> pd.DataFrame | None:
+def read_curves_from_las(well_name: str, curves: list[str], use_latest=False) -> pd.DataFrame | None:
     las_dir = Naming.las_path(well_name)
     las_file_paths = [
         f.path for f in os.scandir(las_dir)
@@ -469,9 +473,8 @@ def read_curves_from_las(well_name: str, curves: list[str]) -> pd.DataFrame | No
     print("LAS_PATHS_ARRAY", las_file_paths)
     for las_file_path in las_file_paths:
         #las_file_path = las_file_paths[0]
-        df = _read_curves_from_las_file(las_file_path, curves)
+        df = _read_curves_from_las_file(las_file_path, curves, use_latest=use_latest)
         dfs.append(df)
-        print(">>>", df)
     df = pd.concat(dfs, axis=1)
     df = __rename_dup_columns(df)
     return df
