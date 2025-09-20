@@ -186,8 +186,7 @@ def get_well_checklist(
         kqdvl_result,
     )
 
-
-def get_well_checklist_curves(
+def _get_well_checklist_curves_1(
     wells: list[str] = [],
     wells_dir: str = "data/wells",
 ):
@@ -288,6 +287,103 @@ def get_well_checklist_curves(
         neutron_result,
         sonic_result,
         pe_result,
+    )
+
+def get_well_checklist_curves(
+    wells: list[str] = [],
+    wells_dir: str = "data/wells",
+):
+    if not os.path.isdir(wells_dir):
+        raise Exception(f"Directory {wells_dir} does not exist")
+
+    well_names = [f.name for f in os.scandir(wells_dir) if f.is_dir()]
+    if wells is not None and len(wells) > 0:
+        well_names = [f for f in well_names if f in wells]
+    well_names.sort()
+    #if len(well_names) > 5:
+    #    well_names = well_names[:5]
+    count = len(well_names)
+    if count == 0:
+        raise Exception(f"No wells found for {wells}")
+
+    gr_result: list[str] = [""] * count
+    sp_result: list[str] = [""] * count
+    cal_result: list[str] = [""] * count
+    deep_res_result: list[str] = [""] * count
+    med_res_result: list[str] = [""] * count
+    shal_res_result: list[str] = [""] * count
+    micro_res_result: list[str] = [""] * count
+    density_result: list[str] = [""] * count
+    neutron_result: list[str] = [""] * count
+    sonic_result: list[str] = [""] * count
+    pe_result: list[str] = [""] * count
+    vshale_result: list[str] = [""] * count
+    phie_result: list[str] = [""] * count
+    sw_result: list[str] = [""] * count
+
+    for wIdx, well in enumerate(well_names):
+        curves = read_curves_meta_data_from_las(well)
+        curve_names = [str.upper(c.mnemonic) for c in curves]
+        if "GR" in curve_names:
+            gr_result[wIdx] = "yes"
+        if "SP" in curve_names:
+            sp_result[wIdx] = "yes"
+        cal_curves = [
+            c for c in curve_names if c in ["CAL", "CALI", "CALIPER", "UCAV"]
+        ]
+        if len(cal_curves) > 0:
+            cal_result[wIdx] = f"yes - {', '.join(cal_curves)}"
+        deep_res_curves = [
+            c
+            for c in curve_names
+            if c in ["LLD", "BK", "RESDT", "ILD", "RT", "P40H"]
+        ]
+        if len(deep_res_curves) > 0:
+            deep_res_result[wIdx] = f"yes - {', '.join(deep_res_curves)}"
+        med_res_curves = [c for c in curve_names if c in ["P22H", "P34H"]]
+        if len(med_res_curves) > 0:
+            med_res_result[wIdx] = f"yes - {', '.join(med_res_curves)}"
+        shal_res_curves = [c for c in curve_names if c in ["LLS", "P16H"]]
+        if len(shal_res_curves) > 0:
+            shal_res_result[wIdx] = f"yes - {', '.join(shal_res_curves)}"
+        micro_res_curves = [c for c in curve_names if c in ["MSFL", "RXO"]]
+        if len(micro_res_curves) > 0:
+            micro_res_result[wIdx] = f"yes - {', '.join(micro_res_curves)}"
+        density_curves = [
+            c for c in curve_names if c in ["RHOB", "RBOB", "ROBB"]
+        ]
+        if len(density_curves) > 0:
+            density_result[wIdx] = f"yes - {', '.join(density_curves)}"
+        neutron_curves = [c for c in curve_names if c in ["NPHI", "TNPH"]]
+        if len(neutron_curves) > 0:
+            neutron_result[wIdx] = f"yes - {', '.join(neutron_curves)}"
+        if "DT" in curve_names:
+            sonic_result[wIdx] = "yes"
+        if "PE" in curve_names:
+            pe_result[wIdx] = "yes"
+        if len(find_similar_curves('VSHALE', curve_names)) > 0:
+            vshale_result = 'yes'
+        if len(find_similar_curves('PHIE', curve_names)) > 0:
+            phie_result = 'yes'
+        if len(find_similar_curves('SW', curve_names)) > 0:
+            sw_result = 'yes'
+
+    return (
+        well_names,
+        gr_result,
+        sp_result,
+        cal_result,
+        deep_res_result,
+        med_res_result,
+        shal_res_result,
+        micro_res_result,
+        density_result,
+        neutron_result,
+        sonic_result,
+        pe_result,
+        vshale_result,
+        phie_result,
+        sw_result
     )
 def _read_curves_from_las_file(las_file_path, curves: list[str]):
     ori_file_path = Naming.to_raw_path(las_file_path)
@@ -491,7 +587,7 @@ def write_curve_to_las_(
     las_obj.write(las_file)
     return las_file 
 
-def prepare_las_training_data(wells: list[str], curves: list[str], with_zone=False) -> np.ndarray:
+def prepare_las_training_data(wells: list[str], curves: list[str], with_zone=False, with_index=False) -> np.ndarray:
     all_data = []
     for well in wells:
         df = read_curves_from_las(well, curves)
@@ -514,6 +610,8 @@ def prepare_las_training_data(wells: list[str], curves: list[str], with_zone=Fal
             zone = zone.set_index('DEPTH')
             df['Zone'] = zone['Surface']
             df['Zone'] = df['Zone'].ffill()
+        if with_index:
+            df = df.reset_index()
 
         df_cleaned = df.dropna()
         data = df_cleaned.values

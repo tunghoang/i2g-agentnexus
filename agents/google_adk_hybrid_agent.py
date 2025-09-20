@@ -511,6 +511,25 @@ class ToolExecutingAgentExecutor:
                 return {"status": "error", "message": str(e)}
         tools.append(build_logplot)
 
+        def interpretation_summarization(tool_context:ToolContext, well:str) -> dict:
+            """View interpretation summarization table for a given well
+
+            Args:
+                well: well to build summarization table
+
+            Returns:
+                dict: results
+            """
+            try:
+                executor_instance.logger.info(f"Executing interpretation_summarization with well: {well}")
+                result = executor_instance._execute_mcp_tool( "interpretation_summarization", { "well": well })
+                tool_context.actions.skip_summarization = True
+                return {"status": "success",
+                        "result": f"{result}" }
+            except Exception as e:
+                executor_instance.logger.error(f"Error in interpretation_summarization: {e}")
+                return {"status": "error", "message": str(e)}
+        tools.append(interpretation_summarization)
 
         def show_sheets(file_path: str) -> dict:
             """Show sheets in an excel file
@@ -1620,7 +1639,7 @@ class ToolExecutingAgentExecutor:
 4. Present the results clearly
 
 # FORMAT OUTPUT FILE:
-Format any html file in output (e.g.: /path/to/file.html) with the following template: http://dashboard.portal:9999/path/to/file.html. Also embed it into an <iframe>
+Format any html file in output (e.g.: /path/to/file.html) with the following template: http://dashboard.portal:8990/path/to/file.html. Also embed it into an <iframe>
 
 # EXAMPLES OF CORRECT BEHAVIOR:
 User: "list files *.las"

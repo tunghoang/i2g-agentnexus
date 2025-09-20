@@ -178,6 +178,9 @@ def create_missingpay_tools(mcp_server, data_config: DataConfig) -> List[str]:
                 neutron_result,
                 sonic_result,
                 pe_result,
+                vshale_result,
+                phie_result,
+                sw_result
             ) = get_well_checklist_curves(wells=well_names_input)
             out_file_relative_path = os.path.join(
                 f"well_checklist_curves{"_".join(well_names[:5])}.html"
@@ -197,6 +200,9 @@ def create_missingpay_tools(mcp_server, data_config: DataConfig) -> List[str]:
                     "Neutron": neutron_result,
                     "Sonic": sonic_result,
                     "PE": pe_result,
+                    "VSHALE": vshale_result,
+                    "PHIE": phie_result,
+                    "Sw": sw_result
                 }
             )
 
@@ -876,6 +882,56 @@ The above conclusions are drawn from {excel_link(publish_path, label="here")}
             new_curves = [{'curve': c.mnemonic, 'path': file_path, 'ref': None} for c in las.curves]
             storage.save_curves_in_well(new_curves, well)
             return dict(text=f"Experiment {run_id_prefix} result is saved to well {well} under file name _{las_file}")
+        except Exception as e:
+            traceback.print_exc()
+            return dict(text=str(e))
+
+    @mcp_server.tool(
+        name="interpretation_summarization",
+        description="Summarize interpretation results"
+    )
+    def interpretation_summarization(input):
+        try:
+            input_data = json.loads(input)
+            well = input_data['well']
+            if well is None:
+                raise Exception("Please specify well to plot")
+
+            df = prepare_las_training_data([well], ['TVDSS', 'VSHALE', 'PHIE', 'SW'], with_zone=True, with_index=True)
+            df = pd.DataFrame(df)
+
+            df.columns = ['MD', 'TVDSS', 'VSHALE', 'PHIE', 'SW', 'RT', 'Zone']
+
+            df_mean = df.groupby('Zone')[['VSHALE', 'PHIE', 'SW']].mean()
+            df_mean['SOIL'] = 1 - df_mean['SW']
+
+            df_min = df.groupby('Zone')[['MD', 'TVDSS']].min()
+            df_max = df.groupby('Zone')[['MD', 'TVDSS']].max()
+            df_net = df_max - df_min
+
+            df_result = df_min[["MD"]]
+            df_result.columns = ['Top_MD']
+            df_result['Bottom_MD'] = df_max['MD']
+            df_result['GrossNET_MD'] = df_net['MD']
+
+            df_result['Top_TVDSS'] = df_min['TVDSS']
+            df_result['Bottom_TVDSS'] = df_max['TVDSS']
+            df_result['GrossNET_TVDSS'] = df_net['TVDSS']
+
+            df_result['Lithology'] = 'N/A'
+            
+            df_result['AvVcl'] = df_mean['VSHALE']
+            df_result['AvPhi'] = df_mean['PHIE']
+            df_result['AvRt'] = df_mean['RT']
+            df_result['AvSoil'] = df_mean['SOIL']
+            df_result['K'] = 'N/A'
+            df_result['Saturation'] = 'N/A'
+            df_result['AvSw'] = df_mean['SW']
+
+            dest_path = Naming.dest_path(f'summarization_{well}', category='interpretation', format='xlsx')
+            publish_path = Naming.publish_path(f'summarization_{well}', category='interpretation', format='xlsx')
+            XLSX.save_dataframe(df_result, dest_path)
+            return dict(text=excel_link(publish_path, label='Interpretation Summarization'))
         except Exception as e:
             traceback.print_exc()
             return dict(text=str(e))

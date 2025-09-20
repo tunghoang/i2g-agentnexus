@@ -1,6 +1,7 @@
 import os
 import json
 import math
+import re
 import hashlib
 import numpy as np
 import lasio
@@ -478,7 +479,16 @@ def advLogplot(df, curves, track_styles, title = None, keyZoneDF = None, zoneDF 
         for c in trackConfig['curves']:
             if 'expr' in c and c['name'] not in curveNames():
                 expr = c['expr']
-                df[c['name']] = __calc_new_col(df, expr['op'], expr['operands'])
+                operands = []
+                for operand in expr['operands']:
+                    new_operand = None
+                    for c in curveNames:
+                        if c == operand or re.match(rf'{operand}:.+$', c):
+                            new_operand = c
+
+                    if new_operand:
+                        operands.append(new_operand)
+                df[c['name']] = __calc_new_col(df, expr['op'], operands)
                 curves[c['name']] = { "unit": c['unit']}
             if c['name'] in curveNames():
                 selectedCurves.append(c['name'])
