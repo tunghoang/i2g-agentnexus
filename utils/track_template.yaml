@@ -1,4 +1,4 @@
-GR:
+__GR:
   curves:
     - name: GR
       mode: lines
@@ -16,6 +16,25 @@ GR:
       marker_size: 12
       marker_symbol: square
       marker_color: red
+      xaxis: 
+        range: [0., 1.]
+GR:
+  curves:
+    - name: GR
+      mode: lines
+      line_color: green
+      xaxis: 
+        range: [0., 150.]
+        nticks: 5
+    - name: SP
+      mode: lines
+      line_color: blue
+      xaxis: 
+        range: [-100., 100.]
+    - name: PERF
+      mode: lines
+      line_width: 12
+      line_color: red
       xaxis: 
         range: [0., 1.]
 LLD:
@@ -117,12 +136,14 @@ INTERP:
 FLAGS:
   curves:
     - name: RESF
-      mode: markers
-      marker_color: red
-      marker_size: 6
-      marker_symbol: square
+      mode: lines
+      line_color: red
+      line_width: 8
+      xaxis:
+        range: [ 0., 1 ]
     - name: PAYF
-      mode: markers
-      marker_color: green
-      marker_size: 6
-      marker_symbol: diamond
+      mode: lines
+      line_color: green
+      line_width: 4
+      xaxis:
+        range: [1., 0.]

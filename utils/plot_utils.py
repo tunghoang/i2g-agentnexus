@@ -666,7 +666,7 @@ def histogram(df, curve_names, num_bins, file_path: str=""):
         fig.add_trace(trace)
     return fig
 
-def multi_chart(chart_titles, traces, chart_titles1 = [], traces1 = []):
+def multi_chart(chart_titles, traces, chart_titles1 = [], traces1 = [], main_title=""):
     colors = ['blue', 'red', 'green', 'purple', 'magenta']
     suffixes = ['Production', 'Train', 'Predict', 'Predict-Future', 'Injection']
     colors1 = ['magenta']
@@ -704,6 +704,7 @@ def multi_chart(chart_titles, traces, chart_titles1 = [], traces1 = []):
         gridcolor=gridcolor(),
     )
     fig.update_layout(
+        title=dict(text=main_title),
         plot_bgcolor="#fff",
         width=800,
         height=chart_cnt * 200 + 200,

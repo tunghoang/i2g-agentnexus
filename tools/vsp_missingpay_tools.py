@@ -44,7 +44,8 @@ from sklearn.metrics import (
     roc_curve, 
     precision_recall_curve
 )
-from base_utils import iframe, excel_link, getLogRules, getFlagRules, PUBLISH_BASE, find_similar_curves, standard_curve_name, load_model
+from base_utils import iframe, excel_link, getLogRules, getFlagRules, PUBLISH_BASE, find_similar_curves, \
+    standard_curve_name, load_model,cutoff
 
 def create_missingpay_tools(mcp_server, data_config: DataConfig) -> List[str]:
     WELLS_DIR_PATH = "wells"
@@ -891,22 +892,53 @@ The above conclusions are drawn from {excel_link(publish_path, label="here")}
         description="Summarize interpretation results"
     )
     def interpretation_summarization(input):
+        def mark_sample(row, state):
+            if row['PAYF'] > 0:
+                state['prev_sample'] = 1
+                return f"{row['Zone']}({state['pay_cnt']})"
+            else:
+                if state['prev_sample'] == 1:
+                    state['pay_cnt'] += 1
+                state['prev_sample'] = 0
+                return None
+                
+        def infer_sw(row):
+            cutoff_val = cutoff(row.name, 'SW')
+            if cutoff_val == 'N/A':
+                return 'N/A'
+            if row['SW'] <= cutoff_val: 
+                return 'Oil'
+            return 'Water'
+
+        def infer_litho(row):
+            cutoff_val = cutoff(row.name, 'VSHALE')
+            if cutoff_val == 'N/A':
+                return 'N/A'
+            if row['VSHALE'] <= cutoff_val: 
+                return 'Sand'
+            return 'Shale'
+
         try:
             input_data = json.loads(input)
             well = input_data['well']
             if well is None:
                 raise Exception("Please specify well to plot")
 
-            df = prepare_las_training_data([well], ['TVDSS', 'VSHALE', 'PHIE', 'SW', 'RT'], with_zone=True, with_index=True)
+            df = prepare_las_training_data([well], ['TVDSS', 'VSHALE', 'PHIE', 'SW', 'RT', "PAYF"], with_zone=True, with_index=True, use_first=True)
             df = pd.DataFrame(df)
             
-            df.columns = ['MD', 'TVDSS', 'VSHALE', 'PHIE', 'SW', 'RT', 'Zone']
+            df.columns = ['MD', 'TVDSS', 'VSHALE', 'PHIE', 'SW', 'RT', 'PAYF', 'Zone']
 
-            df_mean = df.groupby('Zone')[['VSHALE', 'PHIE', 'SW', 'RT']].mean()
+            state = dict(prev_sample = 0, pay_cnt = 0)
+            df['PAY_NAME'] = df.apply(lambda row: mark_sample(row, state) , axis=1)
+            df = df[df['PAY_NAME'].notna()]
+
+            df_mean = df.groupby('PAY_NAME')[['VSHALE', 'PHIE', 'SW', 'RT']].mean()
+            print(df_mean, df_mean.columns)
             df_mean['SOIL'] = 1 - df_mean['SW']
 
-            df_min = df.groupby('Zone')[['MD', 'TVDSS']].min()
-            df_max = df.groupby('Zone')[['MD', 'TVDSS']].max()
+            df_min = df.groupby('PAY_NAME')[['MD', 'TVDSS']].min()
+            df_max = df.groupby('PAY_NAME')[['MD', 'TVDSS']].max()
             df_net = df_max - df_min
 
             df_result = df_min[["MD"]]
@@ -918,15 +950,15 @@ The above conclusions are drawn from {excel_link(publish_path, label="here")}
             df_result['Bottom_TVDSS'] = df_max['TVDSS']
             df_result['GrossNET_TVDSS'] = df_net['TVDSS']
 
-            df_result['Lithology'] = 'N/A'
-            
+            df_result['Lithology'] = df_mean.apply(infer_litho, axis=1)
             df_result['AvVcl'] = df_mean['VSHALE']
             df_result['AvPhi'] = df_mean['PHIE']
             df_result['AvRt'] = df_mean['RT']
             df_result['AvSoil'] = df_mean['SOIL']
             df_result['K'] = 'N/A'
-            df_result['Saturation'] = 'N/A'
+            df_result['Saturation'] = df_mean.apply(infer_sw, axis = 1)
             df_result['AvSw'] = df_mean['SW']
+            df_result = df_result.reset_index()
 
             dest_path = Naming.dest_path(f'summarization_{well}', category='interpretation', format='xlsx')
             publish_path = Naming.publish_path(f'summarization_{well}', category='interpretation', format='xlsx')

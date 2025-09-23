@@ -590,7 +590,7 @@ def write_curve_to_las_(
     las_obj.write(las_file)
     return las_file 
 
-def prepare_las_training_data(wells: list[str], curves: list[str], with_zone=False, with_index=False) -> np.ndarray:
+def prepare_las_training_data(wells: list[str], curves: list[str], with_zone=False, with_index=False, use_first=False) -> np.ndarray:
     all_data = []
     for well in wells:
         df = read_curves_from_las(well, curves)
@@ -601,7 +601,10 @@ def prepare_las_training_data(wells: list[str], curves: list[str], with_zone=Fal
             print("candidates:", candidate, c, all_curves, curves, well)
             if len(candidate) == 0:
                 raise Exception(f"Curve {c} is not found in well {well}")
-            selected_curves.append(candidate[-1])
+            if use_first:
+                selected_curves.append(candidate[0])
+            else:
+                selected_curves.append(candidate[-1])
         
 
         df = df[selected_curves]
@@ -1459,6 +1462,25 @@ def get_wells_has_markers():
             matched_wells.append({'well': w, 'curves': ['Zone'], 'all_curves': curves + ['Zone']})
 
     return matched_wells
+
+def read_missing_pay_data(well):
+    df = read_curves_from_las(well, ['PAYF'])
+
+    index_col = df.index.name or 'index'
+    target_series = df.reset_index()[index_col]
+
+    # perforation
+    perforationDF = XLSX.extract_perforation_curve(well, 'md', target_series)
+    df['PERF'] = perforationDF['PERF']
+
+    # zones
+    keyzone, zone=XLSX.extract_zones1(well)
+    zone['DEPTH'] = zone['start'].apply(lambda x: target_series.iloc[(abs(target_series - x)).idxmin()])
+    zone = zone.set_index('DEPTH')
+    df['Zone'] = zone['Surface']
+    df['Zone'] = df['Zone'].ffill()
+
+    return df
 
 ############ Clastic Interpretation ################
 

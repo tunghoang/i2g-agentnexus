@@ -248,3 +248,20 @@ def load_model(run):
     except:
         traceback.print_exc()
         return None
+
+__CUTOFFs = {
+    '22': {'VSHALE': 0.306,'PHIE': 0.115, 'SW': 0.700},
+    '23': {'VSHALE': 0.306,'PHIE': 0.115, 'SW': 0.700},
+    '24': {'VSHALE': 0.306,'PHIE': 0.115, 'SW': 0.700},
+    '25': {'VSHALE': 0.203,'PHIE': 0.132, 'SW': 0.677},
+    '26': {'VSHALE': 0.203,'PHIE': 0.132, 'SW': 0.677},
+    '27': {'VSHALE': 0.203,'PHIE': 0.132, 'SW': 0.677}
+}
+def cutoff(zone, curve):
+    try:
+        z = re.sub(r'^.-', '',zone)
+        z = re.sub(r'\(.+\)$', '', z)
+        z = re.sub(r'-.$', '',z)
+        return __CUTOFFs[z][curve]
+    except:
+        return 'N/A'

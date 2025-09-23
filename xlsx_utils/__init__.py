@@ -5,6 +5,8 @@ import re
 from cache import MemoryCache
 from naming import Naming
 
+from df_utils import fill_zones
+
 class XLSX:
     #PRODUCTION_MONTHLY_SHEET=4
     PRODUCTION_MONTHLY_SHEET=0
@@ -268,3 +270,9 @@ class XLSX:
         if wells and len(wells) > 0:
             return df[df['Well'].isin(wells) | df['Well1'].isin(wells)]
         return df
+
+    @classmethod
+    def extract_perforation_curve(cls, well, newIndex):
+        perforationDF = XLSX.extract_perforation(well)
+        perforationDF = fill_zones(perforationDF, 'md', newIndex)
+        return perforationDF

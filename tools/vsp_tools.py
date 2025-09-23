@@ -329,6 +329,8 @@ def create_vsp_tools(mcp_server, data_config: DataConfig) -> List[str]:
 
         mlflow.log_param("injection_wells", json.dumps(iwells))
         mlflow.log_param("production_wells", json.dumps(owells))
+        mlflow.log_param("mode", mode)
+        mlflow.log_param("cutoff", cutoff)
 
         if started_event:
             started_event.set()
@@ -980,7 +982,8 @@ def create_vsp_tools(mcp_server, data_config: DataConfig) -> List[str]:
         "welltest_chart", 
         "water_io_ratio_map",
         "water_analysis_map",
-        "production_map"
+        "production_map",
+        "view_wf_experiment"
     ]
 
     return tool_names

@@ -48,10 +48,10 @@ def build_wf_input(iwells:list[str], owells:list[str], production_col=2, injecti
 
     merged_df = None
     for w in owells:
-        print("PPPPPPPPPPP", w)
         colName = f"P{w.strip()}"
         colMapping = { dfs[w].columns[production_col]: colName }
         df = dfs[w].rename(columns=colMapping)
+        df[colName] = df[colName] * 1000
         if merged_df is None:
             merged_df = df[['Date', colName]]
         else:
@@ -63,6 +63,7 @@ def build_wf_input(iwells:list[str], owells:list[str], production_col=2, injecti
         colName = f"I{w.strip()}"
         colMapping = { dfs[w].columns[injection_col]: colName }
         df = dfs[w].rename(columns=colMapping)
+        df[colName] = df[colName] * 1000
         if merged_df is None:
             merged_df = df[['Date', colName]]
         else:
@@ -176,11 +177,11 @@ def train_crm(df, experiment, run, tau_selection = 'per-pair', constraints = 'up
     for idx,owell in enumerate(production_wells):
         start_idx = crm_models[owell]['start_idx']
         test_idx = crm_models[owell]['test_idx']
-        data1 = dict(x=df['Date'].values[start_idx:test_idx], y=q_real[start_idx:test_idx, idx].reshape(-1,1))
+        data1 = dict(x=df['Date'].values[start_idx:], y=q_real[start_idx:, idx].reshape(-1,1))
         data2 = dict(x=df["Date"].values[start_idx:test_idx], y=q_train[:, idx].reshape(-1, 1))
         data3 = dict(x=df["Date"].values[test_idx:], y=q_test[:, idx].reshape(-1,1))
         dataF = dict(x=df_future['Date'].values, y = q_future[:, idx].reshape(-1,1))
-        fig = multi_chart([owell], [data1, data2, data3, dataF], injection_wells, [data4])
+        fig = multi_chart([owell], [data1, data2, data3, dataF], injection_wells, [data4], main_title = f"Summarization CRM mode={mode} cutoff={cutoff}")
         dest_path = Naming.dest_path(f'crm-chart_{owell}', category='wf-crm')
         plot = fig.write_html(dest_path, include_plotlyjs="/js/plotly-3.0.1.min.js")
         
@@ -486,8 +487,8 @@ def get_wf_run(iwells: list[str], owells:list[str], model_type:str, seconds: int
     owells_list: list[str] = []
     status_list: list[str] = []
     durations: list[str] = []
-    tau_selections: list[str] = []
-    constraints_list: list[str] = []
+    modes: list[str] = []
+    cutoffs: list[str] = []
 
     template_path = "templates/training_result_report_tpl.html"
     with open(template_path, "r") as tpl_file:
@@ -507,8 +508,8 @@ def get_wf_run(iwells: list[str], owells:list[str], model_type:str, seconds: int
         owells = parse_json_param(data.params.get("production_wells", "[]"))
         owells = owells[:5]
         model = data.params.get("model_type", "CRM")
-        tau_selection = data.params.get('tau_selection')
-        constraints = data.params.get('constraints')
+        mode = data.params.get('mode', "default")
+        cutoff = data.params.get('cutoff', False)
         
         report_file_link = 'N/A'
         try:
@@ -521,14 +522,14 @@ def get_wf_run(iwells: list[str], owells:list[str], model_type:str, seconds: int
         model_names += [run_name]
         iwells_list += [iwells]
         owells_list += [owells]
-        tau_selections += [tau_selection]
-        constraints_list += [constraints]
+        modes += [mode]
+        cutoffs += [cutoff]
         durations += [time_since_run]
         status_list += [run_status]
         
     # generate table
     table_df = pd.DataFrame(dict(ID=run_ids, Model=model_names, Injection=iwells_list, 
-                            Production=owells_list, TauSelection=tau_selections, Constraints=constraints_list, 
+                            Production=owells_list, Mode=modes, Cutoff=cutoffs, 
                             Duration=durations, Status=status_list))
 
     table = table_df.to_html(index=False, escape=False)
