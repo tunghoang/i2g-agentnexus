@@ -128,7 +128,8 @@ def __do_crm_self_predict(df, crm_models, injection_wells, production_wells):
         test_q = crm.predict(injection=df[injection_wells].values[test_idx:, :], time=df['Time'].astype(np.float64).values[test_idx:])
         train_qs.append(train_q)
         test_qs.append(test_q)
-    return np.hstack(train_qs),np.hstack(test_qs)
+        print("++++++++++", owell, train_q.shape, test_q.shape)
+    return np.hstack(train_qs), np.hstack(test_qs)
 
 def __do_crm_predict(crm_models, injection, time, production_wells):
     qs = []
@@ -148,7 +149,8 @@ def train_crm(df, experiment, run, tau_selection = 'per-pair', constraints = 'up
 
     crm_models = __do_crm_train(df, production_wells, injection_wells, tau_selection=tau_selection, constraints=constraints, mode=mode, cutoff=cutoff)
 
-    q_train, q_test = __do_crm_self_predict(df, crm_models, injection_wells, production_wells)
+    q_real = df[production_wells].values
+    
     # Future injection
     start_date = df['Date'].values[-1]
     start_date = datetime.strptime(start_date, '%Y-%m-%d')
@@ -163,7 +165,6 @@ def train_crm(df, experiment, run, tau_selection = 'per-pair', constraints = 'up
     df_future['Date'] = df_future['Date'].astype(str)
     df_future['Time'] = df_future['Date'].apply(getdaysofmonth).cumsum() + lastTime
     print(df_future)
-    q_future = __do_crm_predict(crm_models, df_future[injection_wells].values, df_future['Time'].astype(np.float64).values, production_wells)
 
     metrics_df = pd.DataFrame()
     well_links = []
@@ -174,21 +175,25 @@ def train_crm(df, experiment, run, tau_selection = 'per-pair', constraints = 'up
 
     data4 = dict(x=df['Date'].values, y=df[injection_wells].values)
     q_real = df[production_wells].values
+
     for idx,owell in enumerate(production_wells):
+        crm = crm_models[owell]['model']
         start_idx = crm_models[owell]['start_idx']
         test_idx = crm_models[owell]['test_idx']
+        train_q = crm.predict(injection=df[injection_wells].values[start_idx:test_idx, :], time=df['Time'].astype(np.float64).values[start_idx:test_idx])
+        test_q = crm.predict(injection=df[injection_wells].values[test_idx:, :], time=df['Time'].astype(np.float64).values[test_idx:])
+        future_q = crm.predict(injection=df_future[injection_wells].values, time=df_future['Time'].astype(np.float64).values)
         data1 = dict(x=df['Date'].values[start_idx:], y=q_real[start_idx:, idx].reshape(-1,1))
-        data2 = dict(x=df["Date"].values[start_idx:test_idx], y=q_train[:, idx].reshape(-1, 1))
-        data3 = dict(x=df["Date"].values[test_idx:], y=q_test[:, idx].reshape(-1,1))
-        dataF = dict(x=df_future['Date'].values, y = q_future[:, idx].reshape(-1,1))
+        data2 = dict(x=df["Date"].values[start_idx:test_idx], y=train_q)
+        data3 = dict(x=df["Date"].values[test_idx:], y=test_q)
+        dataF = dict(x=df_future['Date'].values, y = future_q)
         fig = multi_chart([owell], [data1, data2, data3, dataF], injection_wells, [data4], main_title = f"Summarization CRM mode={mode} cutoff={cutoff}")
         dest_path = Naming.dest_path(f'crm-chart_{owell}', category='wf-crm')
         plot = fig.write_html(dest_path, include_plotlyjs="/js/plotly-3.0.1.min.js")
         
         mlflow.log_artifact(dest_path, artifact_path='report')
         well_links.append(f"<a href='crm-chart_{owell}.html' target='_blank'>{owell}</a>")
-        
-        metrics = compute_metrics(df[owell].values[start_idx:test_idx], q_train[:, idx])
+        metrics = compute_metrics(df[owell].values[start_idx:test_idx], train_q)
         MAEs.append(metrics['MAE'])
         RMSEs.append(metrics['RMSE'])
         MAPEs.append(metrics['MAPE'])
@@ -196,12 +201,6 @@ def train_crm(df, experiment, run, tau_selection = 'per-pair', constraints = 'up
     
     metrics_df = pd.DataFrame({"Well": well_links, "MAE": MAEs, "RMSE": RMSEs, "MAPE": MAPEs, 'R²': R2s})
     table = metrics_df.to_html(index=False, escape=False)
-    #data1 = dict(x=df['Date'].values, y=df[production_wells].values)
-    #data2 = dict(x=df_train["Date"].values, y=q_train)
-    #data3 = dict(x=df_validate["Date"].values, y=q_test)
-    #dataF = dict(x=df_future['Date'].values, y = q_future)
-    #data4 = dict(x=df['Date'].values, y=df[injection_wells].values)
-    #fig = multi_chart(production_wells, [data1, data2, data3, dataF], injection_wells, [data4])
 
     dest_path = Naming.dest_path('crm-chart', category='wf-crm')
     publish_path = Naming.publish_path('crm-chart', category='wf-crm')
@@ -218,10 +217,7 @@ def train_crm(df, experiment, run, tau_selection = 'per-pair', constraints = 'up
     mlflow.log_param('report_file', os.path.basename(dest_path))
     mlflow.log_artifact(dest_path, artifact_path='report')
     return get_mlflow_artifact_path(experiment.experiment_id, run.info.run_id, f'report/{os.path.basename(dest_path)}')
-    #return publish_path
 
-
-#Create subdataset (1 Production Wells + 2 Injection Wells)
 def create_subdataset_production(df, prod_cols, inj_cols):
     subdataset = {}
     for prod in prod_cols:
