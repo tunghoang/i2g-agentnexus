@@ -92,9 +92,9 @@ class XLSX:
         for idx,row in dataDF.iterrows():
             if row['start'] != prev_stop:
                 rows.append(row)
-                prev_stop = row['stop']
             else:
                 rows[-1]['stop'] = row['stop']
+            prev_stop = row['stop']
 
         dataDF = pd.DataFrame(rows)
 

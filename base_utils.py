@@ -265,3 +265,41 @@ def cutoff(zone, curve):
         return __CUTOFFs[z][curve]
     except:
         return 'N/A'
+
+# This function support marking each sample with pay name. It require 'state' (cur_zone, prev_sample, and pay_cnt
+def mark_sample(row, state, payfname='PAYF'):
+    zone = row['Zone']
+    new_zone = False
+    no_new_pay = False
+    if state['cur_zone'] is None:
+        state['cur_zone'] = zone
+        state['pay_cnt'] = 0
+    elif state['cur_zone'] == zone:
+        new_zone = False
+    else:
+        new_zone = True
+
+    if row[payfname] == state['prev_sample']:
+        no_new_pay = True
+    else:
+        no_new_pay = False
+
+    state['prev_sample'] = row[payfname]
+    state['cur_zone'] = zone
+
+    if row[payfname] and no_new_pay == False:
+        state['pay_cnt'] += 1
+    if new_zone:
+        state['pay_cnt'] = 0
+
+    if row[payfname] > 0:
+        if new_zone and no_new_pay:
+            print("Unexpected pay overlaid two zones")
+            toReturn = f"{zone}({state['pay_cnt']}*)"
+        else:
+            toReturn = f"{zone}({state['pay_cnt']})"
+    else:
+        toReturn = None
+    
+    return toReturn
+

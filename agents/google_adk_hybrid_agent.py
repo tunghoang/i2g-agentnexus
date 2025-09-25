@@ -531,6 +531,26 @@ class ToolExecutingAgentExecutor:
                 return {"status": "error", "message": str(e)}
         tools.append(interpretation_summarization)
 
+        def show_missing_pays(tool_context:ToolContext, wells:list[str] = []) -> dict:
+            """View missing pays for given wells
+
+            Args:
+                wells: wells to find missing pays
+
+            Returns:
+                dict: results
+            """
+            try:
+                executor_instance.logger.info(f"Executing show_missing_pays with wells: {wells}")
+                result = executor_instance._execute_mcp_tool( "show_missing_pays", { "wells": wells })
+                tool_context.actions.skip_summarization = True
+                return {"status": "success",
+                        "result": f"{result}" }
+            except Exception as e:
+                executor_instance.logger.error(f"Error in show_missing_pays: {e}")
+                return {"status": "error", "message": str(e)}
+        tools.append(show_missing_pays)
+
         def show_sheets(file_path: str) -> dict:
             """Show sheets in an excel file
 

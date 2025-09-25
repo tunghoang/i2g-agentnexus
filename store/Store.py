@@ -23,7 +23,7 @@ class Store:
             with open(self.store_path(filepath), 'w') as f:
                 json.dump(data, f)
         elif isinstance(data, pd.DataFrame):
-            data.to_csv(self.store_path(filepath))
+            data.to_csv(self.store_path(filepath), index=False)
         else:
             raise Exception("Dont know how to store")
 
@@ -36,6 +36,8 @@ class Store:
         return os.path.isfile(p)
     def load(self, filepath):
         print(f"STORE load {filepath}")
+        if not os.path.isfile(self.store_path(filepath)):
+            return None
         p = self.store_path(filepath)
         _, ext = os.path.splitext(p)
         if ext.lower() in [ '.csv' ]:

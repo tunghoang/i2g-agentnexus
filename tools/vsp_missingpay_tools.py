@@ -21,7 +21,7 @@ from config.settings import DataConfig
 from utils.missing_pay_utils import get_well_checklist, get_well_checklist_curves,\
     make_pseudo_log, make_pseudo_zones, make_pseudo_log_classifier, get_training_result, remove_training_result, get_wells_has_curve, \
     get_wells_has_markers, read_curves_from_las, read_curves_meta_data_from_las, \
-    get_runs, get_curves_in_well, prepare_las_training_data
+    get_runs, get_curves_in_well, prepare_las_training_data, read_missing_pay_data
 from utils.plot_utils import multi_chart, advLogplot, logplot, write_json
 from xlsx_utils import XLSX
 from multiprocessing import Process
@@ -45,7 +45,7 @@ from sklearn.metrics import (
     precision_recall_curve
 )
 from base_utils import iframe, excel_link, getLogRules, getFlagRules, PUBLISH_BASE, find_similar_curves, \
-    standard_curve_name, load_model,cutoff
+    standard_curve_name, load_model,cutoff, mark_sample
 
 def create_missingpay_tools(mcp_server, data_config: DataConfig) -> List[str]:
     WELLS_DIR_PATH = "wells"
@@ -892,16 +892,6 @@ The above conclusions are drawn from {excel_link(publish_path, label="here")}
         description="Summarize interpretation results"
     )
     def interpretation_summarization(input):
-        def mark_sample(row, state):
-            if row['PAYF'] > 0:
-                state['prev_sample'] = 1
-                return f"{row['Zone']}({state['pay_cnt']})"
-            else:
-                if state['prev_sample'] == 1:
-                    state['pay_cnt'] += 1
-                state['prev_sample'] = 0
-                return None
-                
         def infer_sw(row):
             cutoff_val = cutoff(row.name, 'SW')
             if cutoff_val == 'N/A':
@@ -929,8 +919,9 @@ The above conclusions are drawn from {excel_link(publish_path, label="here")}
             
             df.columns = ['MD', 'TVDSS', 'VSHALE', 'PHIE', 'SW', 'RT', 'PAYF', 'Zone']
 
-            state = dict(prev_sample = 0, pay_cnt = 0)
-            df['PAY_NAME'] = df.apply(lambda row: mark_sample(row, state) , axis=1)
+            sim_curves = find_similar_curves('PAYF', list(df.columns))
+            state = dict(prev_sample = 0, pay_cnt = 0, cur_zone=None)
+            df['PAY_NAME'] = df.apply(lambda row: mark_sample(row, state, payfname=sim_curves[-1]) , axis=1)
             df = df[df['PAY_NAME'].notna()]
 
             df_mean = df.groupby('PAY_NAME')[['VSHALE', 'PHIE', 'SW', 'RT']].mean()
@@ -960,13 +951,88 @@ The above conclusions are drawn from {excel_link(publish_path, label="here")}
             df_result['AvSw'] = df_mean['SW']
             df_result = df_result.reset_index()
 
-            dest_path = Naming.dest_path(f'summarization_{well}', category='interpretation', format='xlsx')
-            publish_path = Naming.publish_path(f'summarization_{well}', category='interpretation', format='xlsx')
-            XLSX.save_dataframe(df_result, dest_path)
-            return dict(text=excel_link(publish_path, label='Interpretation Summarization'))
+            #dest_path = Naming.dest_path(f'summarization_{well}', category='interpretation', format='xlsx')
+            #publish_path = Naming.publish_path(f'summarization_{well}', category='interpretation', format='xlsx')
+            #XLSX.save_dataframe(df_result, dest_path)
+            #return dict(text=excel_link(publish_path, label='Interpretation Summarization'))
+
+            html = None
+            with open('templates/table_tpl.html') as f:
+                html = f.read()
+
+            script = '''
+    document.querySelectorAll("td").forEach(td => {
+      if (td.textContent.includes("Sand")) {
+        td.style.backgroundColor = "yellow";
+      }
+      else if (td.textContent.includes("Shale")) {
+        td.style.backgroundColor = '#ccffcc';
+      }
+      else if (td.textContent.includes("Oil")) {
+        td.style.backgroundColor = '#ffbd31';
+      }
+      else if (td.textContent.includes("Water")) {
+        td.style.backgroundColor = '#00ffff';
+      }
+    });
+'''
+            html = html.replace("{{TITLE}}", f"Interpretation Summarization {well}").replace("{{TABLE}}", df_result.to_html(index=False)).replace('{{SCRIPT}}', script)
+            
+            dest_path = Naming.dest_path(f'summarization_{well}', category='interpretation', format='html')
+            
+            with open(dest_path, 'w') as fw:
+                fw.write(html)
+            publish_path = Naming.publish_path(f'summarization_{well}', category='interpretation', format='html')
+            return dict(text=iframe(publish_path, height='960px'))
         except Exception as e:
             traceback.print_exc()
             return dict(text=str(e))
+
+    @mcp_server.tool(
+        name='show_missing_pays',
+        description='Show missing pays for wells'
+    )
+    def show_missing_pays(input):
+        input_data = json.loads(input)
+        wells = input_data['wells']
+        if wells is None:
+            wells = []
+        dfs = read_missing_pay_data(wells)
+
+        tables_html = ''
+        for well,df in dfs.items():
+            tables_html += f"""<div>
+    <h2>{well}</h2>
+    <div>{df.to_html(index=False)}</div>
+</div>"""
+
+
+        html = None
+        with open('templates/table_tpl.html') as f:
+            html = f.read()
+
+        script = '''
+            document.querySelectorAll("td:last-child").forEach(td => {
+              if (td.textContent.includes("NaN")) {
+                td.style.backgroundColor = "#88ff88";
+              }
+              else {
+                td.style.backgroundColor = "#ff8888";
+              }
+            });
+        '''
+        html = html.replace('{{TITLE}}', 'Missing pays').replace('{{SCRIPT}}', script).replace('{{TABLE}}', tables_html)
+
+        fname = "_".join(wells[:5]) if len(wells) > 5 else ("_".join(wells) if len(wells) > 0 else 'all')
+
+        dest_path = Naming.dest_path(fname, category='missing_pay', format='html')
+        publish_path = Naming.publish_path(fname, category='missing_pay', format='html')
+        with open(dest_path, 'w') as fw:
+            fw.write(html)
+
+        returnVal = dict(text=iframe(publish_path))
+        print(returnVal)
+        return returnVal
 
     @mcp_server.tool(
         name="plt_table",
@@ -1001,6 +1067,8 @@ The above conclusions are drawn from {excel_link(publish_path, label="here")}
         "delete_training_experiment",
         "suggest_log_creation",
         "accept_experiment_las_file",
-        "plt_table"
+        "plt_table",
+        "interpretation_summarization",
+        "show_missing_pays"
     ]
     return tool_names

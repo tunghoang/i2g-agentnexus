@@ -61,7 +61,7 @@ from sklearn.metrics import (
 )
 
 from utils.plot_utils import logplot
-from base_utils import aliases_of_curve, standard_curve_name, find_similar_curves, getUnit, get_mlflow_experiment, human_readable_diff, parse_json_param, parse_float_param, get_mlflow_artifact_path, seconds_ago_to_timestamp, excel_link
+from base_utils import aliases_of_curve, standard_curve_name, find_similar_curves, getUnit, get_mlflow_experiment, human_readable_diff, parse_json_param, parse_float_param, get_mlflow_artifact_path, seconds_ago_to_timestamp, excel_link, mark_sample
 
 mlflow_uri = "http://localhost:5000"
 mlflow.set_tracking_uri(mlflow_uri)
@@ -1399,7 +1399,6 @@ def get_runs(run_id_prefix: str, exp_name="pseudo_logs"):
     client = MlflowClient()
     experiment = get_mlflow_experiment(client, name = exp_name)
     runs = client.search_runs( experiment_ids=[experiment.experiment_id])
-    print("0000000000000", run_id_prefix)
     matched_runs = [run for run in runs if run.info.run_id.startswith(run_id_prefix)]
     return matched_runs
 
@@ -1463,24 +1462,81 @@ def get_wells_has_markers():
 
     return matched_wells
 
-def read_missing_pay_data(well):
-    df = read_curves_from_las(well, ['PAYF'])
+def _read_missing_pay_data(well):
+    cached_file = f'missing_pay_cache/{well}.csv'
+    storage = Store()
+
+    df_result = storage.load(cached_file)
+    if df_result is not None:
+        return df_result    
+
+    df = read_curves_from_las(well, ['TVDSS', 'PAYF'])
 
     index_col = df.index.name or 'index'
-    target_series = df.reset_index()[index_col]
+    df = df.reset_index()
+    target_series = df[index_col]
 
-    # perforation
-    perforationDF = XLSX.extract_perforation_curve(well, 'md', target_series)
-    df['PERF'] = perforationDF['PERF']
-
+    try:
+        # perforation
+        perforationDF = XLSX.extract_perforation_curve(well, target_series)
+        df['PERF'] = perforationDF['PERF']
+    except Exception as e:
+        print(e)
+        df['PERF'] = None
+    df = df.set_index(index_col)
     # zones
     keyzone, zone=XLSX.extract_zones1(well)
-    zone['DEPTH'] = zone['start'].apply(lambda x: target_series.iloc[(abs(target_series - x)).idxmin()])
-    zone = zone.set_index('DEPTH')
-    df['Zone'] = zone['Surface']
-    df['Zone'] = df['Zone'].ffill()
+    if zone is not None:
+        zone['DEPTH'] = zone['start'].apply(lambda x: target_series.iloc[(abs(target_series - x)).idxmin()])
+        zone = zone.set_index('DEPTH')
+        zone = zone[~zone.index.duplicated(keep='first')]
+        df['Zone'] = zone['Surface']
+        df['Zone'] = df['Zone'].ffill()
+    else:
+        df['Zone'] = None
 
-    return df
+    sim_curves = find_similar_curves('PAYF', list(df.columns))
+    if sim_curves is None or len(sim_curves) == 0: # No PAYF flag exist
+        df['PAYF'] = np.nan
+        sim_curves = ['PAYF']
+    state = dict(cur_zone=None, prev_sample=0, pay_cnt=0)
+    df['PAY_NAME'] = df.apply(lambda row: mark_sample(row, state, payfname = sim_curves[-1]), axis=1)
+    df = df.reset_index()
+    df = df.rename(columns={index_col: 'MD'})
+
+    df_perf = df.groupby('PAY_NAME')[['PERF']].mean()
+
+    df_min = df.groupby('PAY_NAME')[['MD', 'TVDSS']].min()
+    df_max = df.groupby('PAY_NAME')[['MD', 'TVDSS']].max()
+    df_net = df_max - df_min
+
+    df_result = df_min[["MD"]]
+    df_result.columns = ['Top_MD']
+    df_result['Bottom_MD'] = df_max['MD']
+    df_result['GrossNET_MD'] = df_net['MD']
+
+    df_result['Top_TVDSS'] = df_min['TVDSS']
+    df_result['Bottom_TVDSS'] = df_max['TVDSS']
+    df_result['GrossNET_TVDSS'] = df_net['TVDSS']
+
+    df_result['PERF'] = df_perf['PERF']
+
+    df_result = df_result.reset_index()
+    
+    storage.save(df_result, cached_file)
+
+    return df_result[df_result['GrossNET_MD'] > 0]
+
+def read_missing_pay_data(wells):
+    if wells is None or len(wells) == 0:
+        wells = __get_all_wells()
+    dfs = dict()
+    for well in wells:
+        df = _read_missing_pay_data(well)
+        dfs[well] = df
+        print('_read_missing_pay_data for well', well, list(df.columns))
+
+    return dfs
 
 ############ Clastic Interpretation ################
 
