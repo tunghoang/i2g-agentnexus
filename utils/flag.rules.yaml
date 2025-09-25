@@ -6,8 +6,14 @@ PAYF:
     - VSHALE
     - PHIE
     - SW
-Zone:
+Z_o_n_e:
     - VSHALE
     - PHIE
     - SW
     - TVDSS
+Zone:
+    - GR
+    - LLD
+    - NPHI
+    - DT
+    - RHOB
