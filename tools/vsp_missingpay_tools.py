@@ -22,7 +22,7 @@ from utils.missing_pay_utils import get_well_checklist, get_well_checklist_curve
     make_pseudo_log, make_pseudo_zones, make_pseudo_log_classifier, get_training_result, remove_training_result, get_wells_has_curve, \
     get_wells_has_markers, read_curves_from_las, read_curves_meta_data_from_las, \
     get_runs, get_curves_in_well, prepare_las_training_data, read_missing_pay_data
-from utils.plot_utils import multi_chart, advLogplot, logplot, write_json
+from utils.plot_utils import multi_chart, advLogplot, logplot, write_json, getLogplotConfig
 from xlsx_utils import XLSX
 from multiprocessing import Process
 from mlflow.artifacts import download_artifacts
@@ -45,7 +45,7 @@ from sklearn.metrics import (
     precision_recall_curve
 )
 from base_utils import iframe, excel_link, getLogRules, getFlagRules, PUBLISH_BASE, find_similar_curves, \
-    standard_curve_name, load_model,cutoff, mark_sample
+    standard_curve_name, load_model,cutoff, mark_sample, getUnit
 
 def create_missingpay_tools(mcp_server, data_config: DataConfig) -> List[str]:
     WELLS_DIR_PATH = "wells"
@@ -495,15 +495,27 @@ def create_missingpay_tools(mcp_server, data_config: DataConfig) -> List[str]:
                 print(predicted_curve_data.shape)
 
                 # Comparison logplot
+                sCurve = standard_curve_name(target_curve)
+                track_templates = getLogplotConfig(sCurve)
+                plot_html = None
                 input_df[f"{target_curve}:*"] = predicted_curve_data
-                plot_df = read_curves_from_las(target_well, [target_curve])
-                plot_df[f'{target_curve}:*'] = input_df[f"{target_curve}:*"]
-                las_curves = read_curves_meta_data_from_las(target_well)
-                las_curves.append(lasio.las_items.CurveItem(mnemonic=f'{target_curve}:*', unit="v/v"))
-                fig = logplot(plot_df,las_curves)
-                plot_html = fig.to_html(full_html=False, include_plotlyjs="/js/plotly-3.0.1.min.js")
+                if track_templates is None:
+                    plot_df = read_curves_from_las(target_well, [target_curve])
+                    plot_df[f'{target_curve}:*'] = input_df[f"{target_curve}:*"]
+                    las_curves = read_curves_meta_data_from_las(target_well)
+                    las_curves.append(lasio.las_items.CurveItem(mnemonic=f'{target_curve}:*', unit=getUnit(sCurve)))
+                    fig = logplot(plot_df,las_curves)
+                    plot_html = fig.to_html(full_html=False, include_plotlyjs="/js/plotly-3.0.1.min.js")
+                else:
+                    plot_df = read_curves_from_las(target_well, [])
+                    plot_df[f'{target_curve}:*'] = input_df[f"{target_curve}:*"]
+                    las_curves = read_curves_meta_data_from_las(target_well)
+                    las_curves.append(lasio.las_items.CurveItem(mnemonic=f'{target_curve}:*', unit=getUnit(sCurve)))
+                    plot_df = plot_df.reset_index()
+                    fig = advLogplot(plot_df,las_curves, track_styles=track_templates, title="Plot", select_first=True)
+                    plot_html = fig.to_html(full_html=False, include_plotlyjs="/js/plotly-3.0.1.min.js")
 
-                eval_df = plot_df.dropna()
+                eval_df = plot_df[[target_curve, f'{target_curve}:*']].dropna()
                 test_data = eval_df.iloc[:, 0].values
                 pred_data = eval_df.iloc[:, -1].values
 

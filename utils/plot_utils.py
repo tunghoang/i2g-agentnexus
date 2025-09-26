@@ -10,9 +10,10 @@ import pandas as pd
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 from plotly.io import write_json as __write_json
-from base_utils import recursive_get, update_dict, standard_curve_name, find_similar_curves
+from base_utils import recursive_get, update_dict, standard_curve_name, find_similar_curves, find_star_curves
 _allTrackConfigs = None
 _allCurveSpecs = None
+_allLogplotConfigs = None
 
 __COLOR_PALETTE = (
     "#e6194b",
@@ -73,6 +74,13 @@ def getTrackConfig(trackstyle):
         with open('utils/track_template.yaml') as file:
             _allTrackConfigs = yaml.safe_load(file)
     return _allTrackConfigs.get(trackstyle)
+
+def getLogplotConfig(curve):
+    global _allLogplotConfigs
+    if _allLogplotConfigs is None:
+        with open('utils/tracks4curve.yaml') as f:
+            _allLogplotConfigs = yaml.safe_load(f)
+    return _allLogplotConfigs.get(curve)
 
 def getCurveSpec(curve):
     global _allCurveSpecs
@@ -346,10 +354,12 @@ def __calc_new_col(df, op, operands):
         return ret
     return df.apply(func, axis = 1)
 
-def advLogplot(df, curves, track_styles, title = None, keyZoneDF = None, zoneDF = None):
+def advLogplot(df, curves, track_styles, title = None, keyZoneDF = None, zoneDF = None, select_first=False):
     curveNames = lambda : df.columns[1:]
     refCurveName = df.columns[0]
     print("--- advLogplot ----", curveNames())
+
+    have_dup_track = (len(find_star_curves(curveNames())) > 0)
 
     PLOT_HEADER = 60
     #TRACK_HEADER = 180
@@ -362,7 +372,7 @@ def advLogplot(df, curves, track_styles, title = None, keyZoneDF = None, zoneDF 
     Y_DOMAIN = [0, (PLOT_HEIGHT - TRACK_HEADER) / PLOT_HEIGHT]
     #STATIC_TRACKS = lambda : 1 + (0 if zoneDF is None or zoneDF.empty else 1)
     STATIC_TRACKS = lambda : 2
-    TRACK_NUM = lambda: len(track_styles) + STATIC_TRACKS()
+    TRACK_NUM = lambda: len(track_styles) + STATIC_TRACKS() + (1 if have_dup_track else 0)
     X_DOMAIN_SIZE = lambda: 1/TRACK_NUM()
     X_DOMAIN = lambda trackIdx: [trackIdx*X_DOMAIN_SIZE(), (trackIdx + 1) * X_DOMAIN_SIZE()]
 
@@ -443,7 +453,6 @@ def advLogplot(df, curves, track_styles, title = None, keyZoneDF = None, zoneDF 
                 for _,row in zoneDF.iterrows():
                     trace = go.Scattergl(x=[1,1],y=[row['start'],row['stop']],name="Zone", xaxis="x2", yaxis="y2", line_width=0, fill='tozerox', 
                                          mode='lines')
-                                         #mode='lines+text', text=[row['Surface'], None], textposition="bottom left")
                     fig.add_trace(trace)
                     fig.add_annotation(xref="x2 domain", xanchor="right", x=1, xshift=-10, font_size=8, 
                                        yref="y", yanchor="middle", y=(row['start'] + row['stop'])/2, 
@@ -456,7 +465,6 @@ def advLogplot(df, curves, track_styles, title = None, keyZoneDF = None, zoneDF 
                 for _,row in keyZoneDF.iterrows():
                     trace = go.Scattergl(x=[1,1],y=[row['start'],row['stop']], name="Zone", xaxis="x", line_width=0, fill='tozerox',  
                                          mode='lines')
-                                         #mode='lines+text', text=[row['Surface'], None], textposition="bottom left")
                     fig.add_trace(trace)
                     fig.add_annotation(xref="x domain", xanchor="right", x=1, xshift=-10, font_size=8, 
                                        yref="y", yanchor="middle", y=(row['start'] + row['stop'])/2, 
@@ -469,7 +477,6 @@ def advLogplot(df, curves, track_styles, title = None, keyZoneDF = None, zoneDF 
                                        text=row['Surface'], showarrow=False, bgcolor='#fff')
 
     xaxis_index = len(xaxes.keys())
-    #track_idx = xaxis_index
     track_idx = 2
 
     selectedCurves = [refCurveName]
@@ -477,7 +484,6 @@ def advLogplot(df, curves, track_styles, title = None, keyZoneDF = None, zoneDF 
         selectedCurves.append("TVDSS")
     for track_style in track_styles:
         trackConfig = getTrackConfig(track_style)
-        print('--------------1111---------')
         for c in trackConfig['curves']:
             if 'expr' in c and c['name'] not in curveNames():
                 expr = c['expr']
@@ -494,32 +500,42 @@ def advLogplot(df, curves, track_styles, title = None, keyZoneDF = None, zoneDF 
                 print(operands)
                 df[c['name']] = __calc_new_col(df, expr['op'], operands)
                 curves[c['name']] = { "unit": c['unit']}
-            if c['name'] in curveNames():
-                selectedCurves.append(c['name'])
-            else: 
-                sim_curves = find_similar_curves(c['name'], curveNames())
-                if len(sim_curves) > 0:
+
+            sim_curves = find_similar_curves(c['name'], curveNames())
+            if len(sim_curves) > 0:
+                if select_first:
+                    selectedCurves.append(sim_curves[0])
+                else:
                     selectedCurves.append(sim_curves[-1])
+            star_curves = find_star_curves(sim_curves)
+            if len(star_curves) > 0:
+                selectedCurves.append(star_curves[0])
 
     hoverdata = df[list(set(selectedCurves))]
     hovertemplate = __makeHoverTemplate(list(hoverdata.columns))
 
-    for _idx,track_style in enumerate(track_styles):
+    for track_style in track_styles:
         trackConfig = getTrackConfig(track_style)
         overlaying_idx = None
         have_track = False
         _jdx = 0
+        dup_track_curves = []
         for curveSpec in trackConfig['curves']:
             c = curveSpec['name']
-            if c not in curveNames():
-                sim_curves = find_similar_curves(c, curveNames())
-                if len(sim_curves) == 0:
-                    print(f"Curve {c} is absent in log file")
-                    continue
+            sim_curves = find_similar_curves(c, curveNames())
+            if len(sim_curves) == 0:
+                print(f"Curve {c} is absent in log file")
+                continue
+            if select_first:
+                c = sim_curves[0]
+            else:
                 c = sim_curves[-1]
+            star_curves = find_star_curves(sim_curves)
+            if len(star_curves) > 0:
+                dup_track_curves.append({'name': star_curves[0], 'spec': curveSpec})
+
             have_track = True
             xaxis_index += 1
-            #print('>>>', track_idx, TRACK_NUM(), X_DOMAIN(track_idx))
             xaxes[f'xaxis{xaxis_index}'] = dict(domain=X_DOMAIN(track_idx), 
                                                 tickfont_color=curveSpec.get('line_color', curveSpec.get('marker_color')), 
                                                 linecolor=curveSpec.get('line_color', curveSpec.get('marker_color')),
@@ -577,17 +593,6 @@ def advLogplot(df, curves, track_styles, title = None, keyZoneDF = None, zoneDF 
                             visible=True, line_color='#c0c0c0', line_width=1, fillcolor=curveSpec.get('fill2color'),
                             layer='above'
                             )
-                '''
-                fig.add_shape(
-                    type="rect",
-                    xref=f'x{xdomain} domain', x0=0, x1=1,
-                    yref='y domain', ysizemode='pixel', yanchor=yanchor,y0=TRACK_HEADER,y1=TRACK_HEADER - TRACK_TITLE,
-                    visible=True, fillcolor='#f5deb3',
-                    line_width=0.5,
-                    line_color=borderColor(),
-                    #row=1,
-                    #col=colIdx + 1,
-                )'''
                 fig.add_annotation(text=curveSpec.get('fill2name'), 
                                font=dict(color=curveSpec.get('line_color', curveSpec.get('marker_color')), size=10),
                                bgcolor=curveSpec.get('fill2color'),
@@ -614,6 +619,96 @@ def advLogplot(df, curves, track_styles, title = None, keyZoneDF = None, zoneDF 
             yaxes[f'yaxis{track_idx + 1}'] = {**yaxes['yaxis'], "matches": 'y', "anchor":f'x{overlaying_idx}', "showticklabels":False}
             track_idx += 1
 
+        # Draw duptrack
+        if len(dup_track_curves) > 0:
+            print('HAVE DUP TRACK, ......', dup_track_curves)
+            _jdx = 0
+            for c in dup_track_curves:
+                curveSpec = c['spec']
+                cName = c['name']
+                xaxis_index += 1
+                xaxes[f'xaxis{xaxis_index}'] = dict(domain=X_DOMAIN(track_idx), 
+                                                    tickfont_color=curveSpec.get('line_color', curveSpec.get('marker_color')), 
+                                                    linecolor=curveSpec.get('line_color', curveSpec.get('marker_color')),
+                                                    **curveXAxisLimitProps(curveSpec),
+                                                    **curveXAxisPositionProps(_jdx),
+                                                    **XAXIS_DEFAULT_PROPS )
+                if _jdx == 0:
+                    overlaying_idx = xaxis_index
+                else:
+                    xaxes[f'xaxis{xaxis_index}']['overlaying'] = f'x{overlaying_idx}'
+
+                if curveSpec.get('fill2', None) == 'tonextx':
+                    axisProps = curveXAxisLimitProps(curveSpec)
+                    v = np.max(axisProps.get('range', [0, 1000]))
+                    maxtrace = go.Scattergl(
+                        x=[v]*len(df.index), y=df[refCurveName], xaxis=f'x{xaxis_index}', yaxis=f'y{track_idx + 1}', mode='lines', 
+                        fill='tozerox', fillcolor=curveSpec.get('fill2color')
+                    )
+                    fig.add_trace(maxtrace)
+
+                cprops = curveProps(curveSpec)
+                trace = go.Scattergl(
+                    x=df[cName], y=df[refCurveName], xaxis=f'x{xaxis_index}', yaxis=f'y{track_idx + 1}', **cprops, 
+                    customdata=hoverdata, hovertemplate=hovertemplate
+                )
+                fig.add_trace(trace)
+                # Curve label
+                fig.add_annotation(
+                    text=f"{cName}({curves[cName]['unit']})",
+                    font=dict(color="white", size=10),
+                    bgcolor=curveSpec.get('line_color', curveSpec.get('marker_color')),
+                    showarrow=False,
+                    align="center",
+                    visible=True,
+                    **curveLabelPositionProps(_jdx, overlaying_idx)
+                )
+                # Curve limits
+                fig.add_annotation(text=f"{recursive_get(curveSpec, ['xaxis', 'range'])[0]:.1f}", 
+                                   font_color=curveSpec.get('line_color', curveSpec.get('marker_color')),
+                                   font_size = 10, showarrow=False, visible=True, 
+                                   **curveUnitPositionProps(_jdx, overlaying_idx, 'left'))
+                fig.add_annotation(text=f"{recursive_get(curveSpec, ['xaxis', 'range'])[1]:.1f}", 
+                                   font_color=curveSpec.get('line_color', curveSpec.get('marker_color')),
+                                   font_size = 10, showarrow=False, visible=True, 
+                                   **curveUnitPositionProps(_jdx, overlaying_idx, 'right'))
+                if curveSpec.get('fill2', None) == 'tonextx':
+                    _jdx += 1
+                    fig.add_shape(
+                                type='rect',
+                                xref=f"x{overlaying_idx} domain", x0=0.01, x1=0.99, 
+                                yref=f"y domain", ysizemode='pixel',yanchor=1,
+                                y0=TRACK_HEADER - 2*TRACK_TITLE - _jdx*CURVE_HEADER - 6,
+                                y1=TRACK_HEADER - TRACK_TITLE - _jdx*CURVE_HEADER - 6,
+                                visible=True, line_color='#c0c0c0', line_width=1, fillcolor=curveSpec.get('fill2color'),
+                                layer='above'
+                                )
+                    fig.add_annotation(text=curveSpec.get('fill2name'), 
+                                   font=dict(color=curveSpec.get('line_color', curveSpec.get('marker_color')), size=10),
+                                   bgcolor=curveSpec.get('fill2color'),
+                                   showarrow=False,
+                                   align="center",
+                                   visible=True,
+                                   **curveLabelPositionProps(_jdx, overlaying_idx))
+                # Track grid
+                limits = recursive_get(curveSpec, ['xaxis' , 'range']) or [0.0, 1.0]
+                nticks = recursive_get(curveSpec, ['xaxis' , 'nticks']) or 5
+                step = abs(limits[1] - limits[0])/nticks
+                ticks = recursive_get(curveSpec, ['xaxis', 'ticks']) or [(i + 1)*step for i in range(nticks - 1)]
+                if _jdx == 0:
+                    for x in ticks:
+                        fig.add_shape(type='line', 
+                                      xref=f"x{overlaying_idx}", x0=x, x1=x,
+                                      yref='y domain', y0=0, y1=1,
+                                      line_width=0.5, line_color=gridcolor(), layer="below")
+                _jdx += 1
+            
+            __track_header(fig, TRACK_HEADER, xdomain=overlaying_idx, colIdx=track_idx)
+            __track_body(fig, TRACK_HEADER, PLOT_HEIGHT - TRACK_HEADER - PLOT_HEADER, xdomain=overlaying_idx)
+            yaxes[f'yaxis{track_idx + 1}'] = {**yaxes['yaxis'], "matches": 'y', "anchor":f'x{overlaying_idx}', "showticklabels":False}
+            track_idx += 1
+            dup_track_curves = []
+
     plot_title=title or f"Logplot for {','.join(curveNames())}"
     update_dict(yaxes['yaxis'], dict(position=0.60/TRACK_NUM(), side='left', showgrid=False, showline=False, anchor='free'))
     update_dict(yaxes['yaxis2'], dict(position=1.60/TRACK_NUM(), matches='y', side='left', showgrid=False, showline=False, anchor='free'))
@@ -635,9 +730,6 @@ def advLogplot(df, curves, track_styles, title = None, keyZoneDF = None, zoneDF 
     )
     for idx in range(STATIC_TRACKS()):
         __track_body(fig, TRACK_HEADER, PLOT_HEIGHT - TRACK_HEADER - PLOT_HEADER, xdomain='' if idx == 0 else (idx + 1), colIdx=idx)
-    #fig.update_yaxes(position=0.60/TRACK_NUM(), side='left', showgrid=True, showline=False, anchor='free', row=1, col=1)
-    #fig.update_yaxes(side='left', gridcolor='#aaf', gridwidth=0.5, showgrid=True, row=1, col=3)
-    #fig.update_yaxes(side='left', gridcolor='#aaf', gridwidth=0.5, showgrid=True, row=1, col=4)
 
     return fig
 

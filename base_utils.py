@@ -130,13 +130,19 @@ def find_similar_curves(curve, curves):
     ret_curves = []
 
     for c in curves:
-        short_curve = re.sub(r':[1-9]+$', '', c)
+        short_curve = re.sub(r':[1-9\*]+$', '', c)
         if short_curve == curve or short_curve in aliases:
             ret_curves.append(c)
 
     #ret_curves = [ c for c in curves if c == curve or c in aliases ]
     return ret_curves
  
+def find_star_curves(curves):
+    ret_curves = []
+    for c in curves:
+        if re.search(r':\*+$', c):
+            ret_curves.append(c)
+    return ret_curves
 
 # Hàm tính MAPE
 def calculate_mape(y_true, y_pred):

@@ -1,0 +1,25 @@
+GR:
+  - GR
+  - LLD
+  - NPHI
+RT:
+  - GR
+  - LLD
+  - NPHI
+NPHI:
+  - GR
+  - LLD
+  - NPHI
+DT:
+  - GR
+  - LLD
+  - NPHI
+VSHALE:
+  - INTERP1
+  - INTERP2
+PHIE:
+  - INTERP1
+  - INTERP2
+SW:
+  - INTERP1
+  - INTERP2
