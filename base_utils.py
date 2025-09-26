@@ -14,8 +14,8 @@ import yaml
 import re
 import pickle
 from naming import Naming
-#PUBLISH_BASE="http://dashboard.portal:9999"
-PUBLISH_BASE="http://dashboard.portal:8990"
+PORTAL_HOST = os.getenv('PORTAL_HOST') or 'dashboard.portal'
+PUBLISH_BASE=f"http://{PORTAL_HOST}:8990"
 def __do_get(d, key):
     if type(key) == int and type(d) == list:
         return d[key]

@@ -39,6 +39,7 @@ from xlsx_utils import XLSX
 logger = logging.getLogger(__name__)
 
 AGENT_URL = os.getenv("AGENT_URL") or "http://localhost:8990"
+PORTAL_HOST = os.getenv('PORTAL_HOST') or 'dashboard.portal'
 
 class ToolExecutingAgentExecutor:
     """
@@ -493,6 +494,9 @@ class ToolExecutingAgentExecutor:
                 dict: results
             """
             try:
+                if not track_templates:
+                    track_templates = 'GR,LLD,NPHI'
+
                 executor_instance.logger.info(f"Executing build_logplot with well: {well} and track_templates {track_templates}")
                 result = executor_instance._execute_mcp_tool(
                     "build_logplot",
@@ -1565,7 +1569,7 @@ class ToolExecutingAgentExecutor:
 
     def _create_tool_execution_instruction(self) -> str:
         """Create instruction that emphasizes tool execution"""
-        return """You are a subsurface data analyst with access to specialized tools for analyzing well logs (LAS files) and seismic data (SEG-Y files).
+        return f"""You are a subsurface data analyst with access to specialized tools for analyzing well logs (LAS files) and seismic data (SEG-Y files).
 
 # CRITICAL INSTRUCTIONS - ALWAYS EXECUTE TOOLS:
 
@@ -1659,7 +1663,7 @@ class ToolExecutingAgentExecutor:
 4. Present the results clearly
 
 # FORMAT OUTPUT FILE:
-Format any html file in output (e.g.: /path/to/file.html) with the following template: http://dashboard.portal:8990/path/to/file.html. Also embed it into an <iframe>
+Format any html file in output (e.g.: /path/to/file.html) with the following template: http://{PORTAL_HOST}:8990/path/to/file.html. Also embed it into an <iframe>
 
 # EXAMPLES OF CORRECT BEHAVIOR:
 User: "list files *.las"

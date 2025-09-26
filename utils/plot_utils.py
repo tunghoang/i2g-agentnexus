@@ -484,6 +484,7 @@ def advLogplot(df, curves, track_styles, title = None, keyZoneDF = None, zoneDF 
         selectedCurves.append("TVDSS")
     for track_style in track_styles:
         trackConfig = getTrackConfig(track_style)
+        print("Track config:", track_style, trackConfig)
         for c in trackConfig['curves']:
             if 'expr' in c and c['name'] not in curveNames():
                 expr = c['expr']
