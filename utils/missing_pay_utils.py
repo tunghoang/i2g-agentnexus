@@ -324,49 +324,63 @@ def get_well_checklist_curves(
     for wIdx, well in enumerate(well_names):
         curves = read_curves_meta_data_from_las(well)
         curve_names = [str.upper(c.mnemonic) for c in curves]
-        if "GR" in curve_names:
-            gr_result[wIdx] = "yes"
-        if "SP" in curve_names:
-            sp_result[wIdx] = "yes"
-        cal_curves = [
-            c for c in curve_names if c in ["CAL", "CALI", "CALIPER", "UCAV"]
-        ]
-        if len(cal_curves) > 0:
-            cal_result[wIdx] = f"yes - {', '.join(cal_curves)}"
-        deep_res_curves = [
-            c
-            for c in curve_names
-            if c in ["LLD", "BK", "RESDT", "ILD", "RT", "P40H"]
-        ]
-        if len(deep_res_curves) > 0:
-            deep_res_result[wIdx] = f"yes - {', '.join(deep_res_curves)}"
-        med_res_curves = [c for c in curve_names if c in ["P22H", "P34H"]]
-        if len(med_res_curves) > 0:
-            med_res_result[wIdx] = f"yes - {', '.join(med_res_curves)}"
-        shal_res_curves = [c for c in curve_names if c in ["LLS", "P16H"]]
-        if len(shal_res_curves) > 0:
-            shal_res_result[wIdx] = f"yes - {', '.join(shal_res_curves)}"
-        micro_res_curves = [c for c in curve_names if c in ["MSFL", "RXO"]]
-        if len(micro_res_curves) > 0:
-            micro_res_result[wIdx] = f"yes - {', '.join(micro_res_curves)}"
-        density_curves = [
-            c for c in curve_names if c in ["RHOB", "RBOB", "ROBB"]
-        ]
-        if len(density_curves) > 0:
-            density_result[wIdx] = f"yes - {', '.join(density_curves)}"
-        neutron_curves = [c for c in curve_names if c in ["NPHI", "TNPH"]]
-        if len(neutron_curves) > 0:
-            neutron_result[wIdx] = f"yes - {', '.join(neutron_curves)}"
-        if "DT" in curve_names:
-            sonic_result[wIdx] = "yes"
-        if "PE" in curve_names:
-            pe_result[wIdx] = "yes"
-        if len(find_similar_curves('VSHALE', curve_names)) > 0:
-            vshale_result = 'yes'
-        if len(find_similar_curves('PHIE', curve_names)) > 0:
-            phie_result = 'yes'
-        if len(find_similar_curves('SW', curve_names)) > 0:
-            sw_result = 'yes'
+
+        sim_curves = find_similar_curves("GR", curve_names)
+        if len(sim_curves) > 0:
+            gr_result[wIdx] = f"yes - {', '.join(sim_curves)}"
+
+        sim_curves = find_similar_curves("SP", curve_names)
+        if len(sim_curves) > 0:
+            sp_result[wIdx] = f"yes - {', '.join(sim_curves)}"
+
+
+        sim_curves = find_similar_curves("CALI", curve_names)
+        if len(sim_curves) > 0:
+            cal_result[wIdx] = f"yes - {', '.join(sim_curves)}"
+
+        sim_curves = find_similar_curves("RT", curve_names)
+        if len(sim_curves) > 0:
+            deep_res_result[wIdx] = f"yes - {', '.join(sim_curves)}"
+
+        sim_curves = find_similar_curves("P22H", curve_names)
+        if len(sim_curves) > 0:
+            med_res_result[wIdx] = f"yes - {', '.join(sim_curves)}"
+
+        sim_curves = find_similar_curves("LLS", curve_names)
+        if len(sim_curves) > 0:
+            shal_res_result[wIdx] = f"yes - {', '.join(sim_curves)}"
+
+        sim_curves = find_similar_curves("MSFL", curve_names)
+        if len(sim_curves) > 0:
+            micro_res_result[wIdx] = f"yes - {', '.join(sim_curves)}"
+
+        sim_curves = find_similar_curves("RHOB", curve_names)
+        if len(sim_curves) > 0:
+            density_result[wIdx] = f"yes - {', '.join(sim_curves)}"
+
+        sim_curves = find_similar_curves("NPHI", curve_names)
+        if len(sim_curves) > 0:
+            neutron_result[wIdx] = f"yes - {', '.join(sim_curves)}"
+
+        sim_curves = find_similar_curves("DT", curve_names)
+        if len(sim_curves) > 0:
+            sonic_result[wIdx] = f"yes - {', '.join(sim_curves)}"
+
+        sim_curves = find_similar_curves("PE", curve_names)
+        if len(sim_curves) > 0:
+            pe_result[wIdx] = f"yes - {', '.join(sim_curves)}"
+
+        sim_curves = find_similar_curves("VSHALE", curve_names)
+        if len(sim_curves) > 0:
+            vshale_result = f"yes - {', '.join(sim_curves)}"
+
+        sim_curves = find_similar_curves("PHIE", curve_names)
+        if len(sim_curves) > 0:
+            phie_result = f"yes - {', '.join(sim_curves)}"
+
+        sim_curves = find_similar_curves("SW", curve_names)
+        if len(sim_curves) > 0:
+            sw_result = f"yes - {', '.join(sim_curves)}"
 
     return (
         well_names,
